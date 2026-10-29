@@ -55,7 +55,9 @@ export function SearchForm({ vocab }: { vocab: Vocab }) {
   const [resetToken, setResetToken] = useState(0);
 
   const urlKey = searchParams.toString();
-  const lastCommitted = useRef(urlKey);
+  // Tracks filter state only — `page` is deliberately excluded. Paging must not
+  // look like a filter change, and a filter change must reset to page 1.
+  const lastFilters = useRef(toQueryString(values));
 
   const options: Record<FieldKey, string[]> = useMemo(
     () => ({
@@ -67,24 +69,28 @@ export function SearchForm({ vocab }: { vocab: Vocab }) {
     [vocab],
   );
 
-  // Follow back/forward navigation, but ignore the URL changes we caused.
+  // Follow back/forward navigation, but ignore our own commits and page changes.
   useEffect(() => {
-    if (urlKey === lastCommitted.current) return;
-    lastCommitted.current = urlKey;
-    setValues(parseSearchParams(searchParams));
+    const next = parseSearchParams(searchParams);
+    const nextFilters = toQueryString(next);
+
+    if (nextFilters === lastFilters.current) return;
+
+    lastFilters.current = nextFilters;
+    setValues(next);
     // Remount the inputs so any half-typed text gives way to the URL state.
     setResetToken((token) => token + 1);
   }, [urlKey, searchParams]);
 
   // Commit once typing settles, so one keystroke burst = one query.
   useEffect(() => {
-    const query = toQueryString(values);
-    if (query === lastCommitted.current) return;
+    const filters = toQueryString(values);
+    if (filters === lastFilters.current) return;
 
     const timer = setTimeout(() => {
-      lastCommitted.current = query;
+      lastFilters.current = filters;
       startTransition(() => {
-        router.replace(query ? `/?${query}` : "/", { scroll: false });
+        router.replace(filters ? `/?${filters}` : "/", { scroll: false });
       });
     }, COMMIT_DELAY_MS);
 

@@ -1,10 +1,14 @@
+import Link from "next/link";
 import { Suspense } from "react";
 
 import {
+  RESULTS_PAGE_SIZE,
   TERM_LABEL,
   getSearchVocab,
   parseFilters,
+  parsePage,
   searchSections,
+  type Filters,
   type RawSearchParams,
 } from "@/lib/queries";
 
@@ -52,8 +56,12 @@ async function Results({
 }: {
   searchParams: Promise<RawSearchParams>;
 }) {
-  const filters = parseFilters(await searchParams);
-  const rows = await searchSections(filters);
+  const params = await searchParams;
+  const filters = parseFilters(params);
+  const { rows, total, page, pageCount } = await searchSections(
+    filters,
+    parsePage(params),
+  );
 
   if (rows.length === 0) {
     return (
@@ -63,12 +71,13 @@ async function Results({
     );
   }
 
+  const firstRow = (page - 1) * RESULTS_PAGE_SIZE + 1;
+  const lastRow = firstRow + rows.length - 1;
+
   return (
     <>
       <p className="mb-3 text-xs uppercase tracking-wide text-zinc-500">
-        {rows.length === 10
-          ? "First 10 matches"
-          : `${rows.length} match${rows.length === 1 ? "" : "es"}`}
+        Showing {firstRow}–{lastRow} of {total.toLocaleString()}
       </p>
 
       <div className="overflow-x-auto rounded-lg border border-black/[.08] dark:border-white/[.145]">
@@ -93,8 +102,70 @@ async function Results({
           </tbody>
         </table>
       </div>
+
+      <Pagination filters={filters} page={page} pageCount={pageCount} />
     </>
   );
+}
+
+const PAGE_LINK =
+  "rounded-lg border border-black/[.12] px-3 py-1.5 transition-colors hover:bg-black/[.04] dark:border-white/[.18] dark:hover:bg-white/[.06]";
+
+function Pagination({
+  filters,
+  page,
+  pageCount,
+}: {
+  filters: Filters;
+  page: number;
+  pageCount: number;
+}) {
+  if (pageCount <= 1) return null;
+
+  return (
+    <nav
+      aria-label="Pagination"
+      className="mt-4 flex items-center justify-between text-sm"
+    >
+      {page > 1 ? (
+        <Link href={pageHref(filters, page - 1)} className={PAGE_LINK}>
+          ← Previous
+        </Link>
+      ) : (
+        <span className={`${PAGE_LINK} opacity-40`} aria-disabled="true">
+          ← Previous
+        </span>
+      )}
+
+      <span className="text-zinc-500">
+        Page {page} of {pageCount}
+      </span>
+
+      {page < pageCount ? (
+        <Link href={pageHref(filters, page + 1)} className={PAGE_LINK}>
+          Next →
+        </Link>
+      ) : (
+        <span className={`${PAGE_LINK} opacity-40`} aria-disabled="true">
+          Next →
+        </span>
+      )}
+    </nav>
+  );
+}
+
+function pageHref(filters: Filters, page: number) {
+  const params = new URLSearchParams();
+
+  for (const [key, value] of Object.entries(filters)) {
+    if (value) params.set(key, value);
+  }
+
+  if (page > 1) params.set("page", String(page));
+
+  const query = params.toString();
+
+  return query ? `/?${query}` : "/";
 }
 
 function SearchFormSkeleton() {

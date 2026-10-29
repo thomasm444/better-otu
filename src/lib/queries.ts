@@ -170,51 +170,105 @@ export async function getSearchVocab(
   };
 }
 
+export const RESULTS_PAGE_SIZE = 10;
+
+export type SearchResults = {
+  rows: Section[];
+  total: number;
+  page: number;
+  pageCount: number;
+};
+
 /**
- * Up to 10 sections matching the filters, ordered by course code.
+ * One page of sections matching the filters, ordered by course code.
  *
  * `crn` is the final sort key: without it several sections share `CSCI 1030U`
- * and LIMIT 10 could return a different set on each request.
+ * and a LIMIT/OFFSET window could return a different set on each request.
  */
 export async function searchSections(
   filters: Filters,
-  limit = 10,
-): Promise<Section[]> {
+  page = 1,
+): Promise<SearchResults> {
   "use cache";
   cacheLife("hours");
   cacheTag("sections");
 
   const supabase = getPublicClient();
+  const withInstructor = Boolean(filters.instructor);
 
-  let query = supabase
-    .from("courses")
-    .select(sectionSelect(Boolean(filters.instructor)))
-    .eq("term", CURRENT_TERM);
+  const build = (
+    select: string,
+    options?: { count?: "exact"; head?: boolean },
+  ) => {
+    let query = supabase
+      .from("courses")
+      .select(select, options)
+      .eq("term", CURRENT_TERM);
 
-  if (filters.subject) query = query.eq("subject", filters.subject);
-  if (filters.classType) {
-    query = query.eq("schedule_type_description", filters.classType);
+    if (filters.subject) query = query.eq("subject", filters.subject);
+    if (filters.classType) {
+      query = query.eq("schedule_type_description", filters.classType);
+    }
+    if (filters.instructor) {
+      query = query.eq("course_faculty.display_name", filters.instructor);
+    }
+    if (filters.courseCode) {
+      const code = splitCourseCode(filters.courseCode);
+      if (code.subject) query = query.eq("subject", code.subject);
+      if (code.number) query = query.eq("course_number", code.number);
+    }
+
+    return query;
+  };
+
+  const fetchPage = (pageNumber: number) =>
+    build(sectionSelect(withInstructor), { count: "exact" })
+      .order("subject", { ascending: true })
+      .order("course_number", { ascending: true })
+      .order("crn", { ascending: true })
+      .range(
+        (pageNumber - 1) * RESULTS_PAGE_SIZE,
+        pageNumber * RESULTS_PAGE_SIZE - 1,
+      );
+
+  let currentPage = Math.max(1, Math.trunc(page));
+  const first = await fetchPage(currentPage);
+
+  let total = first.count ?? 0;
+  let rows = first.data ?? [];
+
+  // PostgREST replies 416 (PGRST103) when the offset is past the end of the
+  // result set, so an out-of-range ?page= has to be clamped explicitly rather
+  // than treated as "no rows".
+  if (first.error) {
+    if (first.error.code !== "PGRST103") {
+      throw new Error(`searchSections failed: ${first.error.message}`);
+    }
+
+    const counted = await build("id", { count: "exact", head: true });
+
+    if (counted.error) {
+      throw new Error(`searchSections failed: ${counted.error.message}`);
+    }
+
+    total = counted.count ?? 0;
+    currentPage = Math.max(1, Math.ceil(total / RESULTS_PAGE_SIZE));
+
+    const retry = await fetchPage(currentPage);
+
+    if (retry.error) {
+      throw new Error(`searchSections failed: ${retry.error.message}`);
+    }
+
+    rows = retry.data ?? [];
   }
-  if (filters.instructor) {
-    query = query.eq("course_faculty.display_name", filters.instructor);
-  }
-  if (filters.courseCode) {
-    const code = splitCourseCode(filters.courseCode);
-    if (code.subject) query = query.eq("subject", code.subject);
-    if (code.number) query = query.eq("course_number", code.number);
-  }
 
-  const { data, error } = await query
-    .order("subject", { ascending: true })
-    .order("course_number", { ascending: true })
-    .order("crn", { ascending: true })
-    .limit(limit);
-
-  if (error) {
-    throw new Error(`searchSections failed: ${error.message}`);
-  }
-
-  return (data ?? []) as unknown as Section[];
+  return {
+    rows: rows as unknown as Section[],
+    total,
+    page: currentPage,
+    pageCount: Math.max(1, Math.ceil(total / RESULTS_PAGE_SIZE)),
+  };
 }
 
 /**
@@ -244,6 +298,14 @@ export function parseFilters(input: RawSearchParams): Filters {
     classType: first(input.classType),
     instructor: first(input.instructor),
   };
+}
+
+/** 1-based page number; anything unparseable or < 1 means page 1. */
+export function parsePage(input: RawSearchParams): number {
+  const raw = Array.isArray(input.page) ? input.page[0] : input.page;
+  const parsed = Number.parseInt(raw ?? "", 10);
+
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 1;
 }
 
 function compareText(a: string, b: string) {
