@@ -43,3 +43,7 @@ next-env.d.ts
 
 # local-only course scrape + ingest scripts, not part of the app
 /python_scripts
+
+# supabase CLI local state
+/supabase/.temp
+/supabase/.branches

@@ -16,6 +16,16 @@ backed by Supabase Postgres.
 - `src/app/` — App Router UI. Read the matching guide in `node_modules/next/dist/docs/`
   before using an unfamiliar API; this Next version diverges from most training data.
 - Application code lives under `src/`; `public/`, config files and `.env*` stay at the root.
+- Supabase clients live in `src/lib/supabase/`: `client.ts` (browser), `server.ts`
+  (per-request, reads cookies), `admin.ts` (service key, guarded by `server-only`).
+  Session refresh is in `src/proxy.ts` — Next 16 renamed Middleware to Proxy, so a
+  `middleware.ts` file would be silently ignored.
+- `src/lib/supabase/public.ts` is the cookie-less anon client. Use it inside
+  `'use cache'` functions, which may not read cookies.
+- All reads go through `src/lib/queries.ts` (`'use cache'` + `cacheLife`). PostgREST
+  caps responses at 1,000 rows, so "get everything" queries must use `collectPages()`.
+- A Python venv inside the repo (`python_scripts/.venv`) makes `next dev` noisy.
+  Keep venvs outside the project; `tsconfig.json` already excludes `python_scripts`.
 - Database — [`docs/database.md`](docs/database.md) documents the three tables
   (`courses`, `course_faculty`, `course_meetings`), their columns, relationships,
   access rules and example queries. Read it before writing any Supabase code.
@@ -30,8 +40,10 @@ backed by Supabase Postgres.
 - Writes need `SUPABASE_SERVICE_KEY` and must stay server-side.
 - `service_role` bypasses RLS but **not** table privileges — new tables need explicit
   `GRANT` plus `GRANT USAGE, SELECT ON ALL SEQUENCES`, or writes fail with `42501`.
-- `python_scripts/schema.sql` is a reset script that **drops all three tables**. Never
-  point it at anything but a scratch project.
+- Schema changes go in `supabase/migrations/` — committed, idempotent, applied
+  oldest first. This is the only record of the database structure.
+- `python_scripts/schema.sql` is a local **reset** script that drops all three
+  tables. Never point it at anything but a scratch project.
 - After any DDL change, run `notify pgrst, 'reload schema';` or the API returns
   `PGRST204 ... schema cache` for columns that do exist.
 

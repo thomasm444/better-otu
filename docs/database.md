@@ -3,9 +3,23 @@
 Supabase (Postgres). Three tables, all in the `public` schema, all populated from a
 Banner course-schedule scrape.
 
-The authoritative DDL lives in `python_scripts/schema.sql`, which is **gitignored**
-along with the rest of `python_scripts/`. If you need to recreate the database, get
-that file from the project owner; this document is the committed description of it.
+The authoritative DDL lives in [`supabase/migrations/`](../supabase/migrations/) —
+two committed, idempotent migrations. Apply them oldest first:
+
+| migration | what it does |
+| --- | --- |
+| `20261028000000_baseline_courses_schema.sql` | creates the three tables, base indexes, grants and RLS policies |
+| `20261028120000_search_optimizations.sql` | repairs HTML entities, adds the search indexes, refreshes planner statistics |
+
+```bash
+# With the Supabase CLI
+supabase link --project-ref <project-ref>
+supabase db push
+```
+
+Without the CLI, paste each file into Dashboard → SQL Editor, oldest first.
+`python_scripts/schema.sql` (gitignored) is a reset script for a scratch project
+only — it is no longer the source of truth.
 
 ## Relationships
 
@@ -82,8 +96,18 @@ several sections with different CRNs).
 | `instructional_method_description` | `text` | often null |
 | `updated_at` | `timestamptz` | defaults to `now()` |
 
-Unique index on `(term, crn)` — treat that as the natural key. Indexes on `term`,
-`subject`, `course_number`, `course_title`.
+Unique index on `(term, crn)` — treat that as the natural key.
+
+Indexes:
+
+| index | columns | serves |
+| --- | --- | --- |
+| `courses_term_crn_key` (unique) | `(term, crn)` | natural key |
+| `courses_search_order_idx` | `(term, subject, course_number, crn)` | search filter **and** the `ORDER BY subject, course_number, crn LIMIT 10` — no sort step |
+| `courses_term_class_type_idx` | `(term, schedule_type_description)` | class-type filter |
+| `courses_term_idx` | `(term)` | redundant prefix of `courses_search_order_idx`; safe to drop |
+| `courses_subject_idx`, `courses_course_number_idx` | single column | subject/course lookups without a term |
+| `courses_title_idx` | `(course_title)` | exact title lookups |
 
 Earlier revisions of this table held `faculty` and `meetings` as `jsonb`; they are
 now proper child rows. There is no jsonb in this schema.
@@ -104,7 +128,9 @@ One row per instructor on a section.
 | `primary_indicator` | `boolean` | `true` for the instructor of record |
 
 Unique on `(course_id, banner_id, display_name)`. Indexes on `course_id`,
-`banner_id`, `email_address`.
+`banner_id`, `email_address`, plus `(display_name, course_id)` for filtering
+sections by instructor and `(term, display_name)` for the instructor suggestion
+list.
 
 ## `course_meetings`
 
@@ -142,8 +168,9 @@ Indexes on `course_id`, `(building, room)`, `begin_time`.
 
 ## Ingest
 
-Source data is `courses.json` (Banner scrape, ~4,024 sections). Both the script and
-the DDL are gitignored under `python_scripts/`.
+Source data is `courses.json` (Banner scrape, ~4,024 sections). The script and the
+scrape output are gitignored under `python_scripts/`; the schema itself lives in
+`supabase/migrations/`.
 
 ```bash
 cd python_scripts
@@ -156,16 +183,94 @@ The script:
    `09/08/2026` → `2026-09-08`
 2. upserts `courses` on `id`
 3. deletes `course_faculty` / `course_meetings` **for each term**, then re-inserts
+4. runs `html.unescape()` over every text value — Banner ships `Lecture &amp; Lab`
+   and `Women&#39;s Health`, which would otherwise render literally
 
 Step 3 is what makes re-runs idempotent. If a section moves between terms, stale
 child rows for the old term will linger.
 
 `schema.sql` is a **reset** script — it drops all three tables before recreating
-them. Only ever run it against a scratch project.
+them. It mirrors the baseline migration plus a wipe; only ever run it against a
+scratch project. For anything real, use `supabase/migrations/`.
 
-Because PostgREST caches the schema, `schema.sql` ends with
-`notify pgrst, 'reload schema';`. If you add columns by hand and get
+Because PostgREST caches the schema, both `schema.sql` and the baseline migration
+end with `notify pgrst, 'reload schema';`. If you add columns by hand and get
 `PGRST204 ... schema cache`, send that same statement.
+
+Search-specific changes (entity repair + indexes) live in
+[`supabase/migrations/20261028120000_search_optimizations.sql`](../supabase/migrations/20261028120000_search_optimizations.sql).
+It is idempotent, so re-running it is harmless.
+
+## Querying from the app
+
+### The 1,000-row response cap
+
+PostgREST returns **at most 1,000 rows** per request (`db-max-rows`), even if you
+ask for `limit=5000`. A naive `select=subject` therefore returns only the first
+1,000 sections — which is why it appears to have 23 distinct subjects instead of
+56.
+
+- Page with `.range(from, to)` for anything that needs every row.
+- `collectPages()` in `src/lib/queries.ts` does this; it only requests 1,000 rows
+  at a time by design.
+- Never treat one response as "all rows".
+
+### Suggestion lists
+
+`getSearchVocab()` builds the four dropdown lists for the current term and caches
+them for a day (`'use cache'`, tag `search-vocab`). Measured for `202609`:
+
+| list | count |
+| --- | --- |
+| subjects | 56 |
+| course codes | 693 |
+| class types | 16 |
+| instructor names | 436 |
+
+That is ~18 KB in total, so the browser filters them locally and no query runs
+per keystroke — a round trip to Supabase measures ~390 ms, which rules that out.
+
+`'use cache'` functions may not read cookies, so these queries use
+`src/lib/supabase/public.ts` (cookie-less anon client) rather than
+`server.ts`.
+
+### Ordering
+
+Results are ordered `subject, course_number, crn`, limited to 10.
+
+Every `course_number` is 4 digits + 1 letter (`1030U`, `6000G`), so text
+ordering equals numeric ordering (`1030U < 2050U < 9000U`). If a shorter code
+such as `900U` ever appears, plain text sort breaks and a numeric expression is
+needed.
+
+`crn` is the tiebreaker: several sections share the same `CSCI 1030U`, and
+without it `LIMIT 10` can return a different set on each request.
+
+`subject_course` is the concatenation **without** a space (`APBS6000G`), so user
+input has to be normalised first — see `splitCourseCode()` in
+`src/lib/queries.ts`.
+
+### Filtering by instructor
+
+`course_faculty` is a child table, so filtering by instructor needs the inner
+join hint. Without `!inner` the embedded rows are filtered but every parent
+section is still returned:
+
+```ts
+supabase
+  .from("courses")
+  .select("crn, course_faculty!inner(display_name)")
+  .eq("course_faculty.display_name", "Banga, Janette");
+```
+
+### Text encoding
+
+The scrape escapes HTML entities. `courses.course_title` contained 704 `&amp;`,
+17 `&#39;` and 1 `&ndash;` before the repair in
+`20261028120000_search_optimizations.sql`;
+`schedule_type_description` contained `Lecture &amp; Lab`. The ingest now runs
+`html.unescape()`, so re-ingesting produces clean text — do not re-introduce it
+in any other pipeline.
 
 ## Example queries
 
