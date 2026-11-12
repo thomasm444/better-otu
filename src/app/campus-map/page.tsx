@@ -1,19 +1,21 @@
-import Link from "next/link";
+import { CampusMapView } from "./campus-map-view";
+
+export const metadata = {
+  title: "Campus Map & Room Availability | Better OTU",
+  description:
+    "Interactive campus map and live room vacancy finder for Ontario Tech University.",
+};
 
 export default function CampusMapPage() {
   return (
-    <main className="mx-auto w-full max-w-6xl flex-1 px-6 py-12 font-sans">
-      <Link
-        href="/"
-        className="text-xs text-zinc-500 transition-colors hover:text-zinc-900 dark:hover:text-zinc-100"
-      >
-        &larr; Back to Home
-      </Link>
-      <h1 className="mt-4 text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
-        Campus Map
-      </h1>
-      {/* Group member can build their feature here */}
-    </main>
+    <>
+      <link
+        rel="stylesheet"
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+        crossOrigin=""
+      />
+      <CampusMapView />
+    </>
   );
 }
-

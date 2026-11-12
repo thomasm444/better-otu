@@ -81,7 +81,7 @@ function sectionSelect(withInstructor: boolean) {
 }
 
 /** Walks every 1,000-row page. Needed because of the response cap above. */
-async function collectPages(
+export async function collectPages(
   fetchPage: (from: number, to: number) => PromiseLike<{
     data: unknown;
     error: { message: string } | null;
@@ -311,3 +311,85 @@ export function parsePage(input: RawSearchParams): number {
 function compareText(a: string, b: string) {
   return a.localeCompare(b, "en");
 }
+
+export type CampusMapFeature = {
+  type: "Feature";
+  id: string;
+  geometry: {
+    type: "Polygon" | "MultiPolygon";
+    coordinates: number[][][] | number[][][][];
+  };
+  properties: {
+    name: string | null;
+    externalId: string | null;
+    floor: string | null;
+    floorName: string | null;
+    building: string | null;
+    venue: string | null;
+    type: string | null;
+    capacity: number | null;
+    minCapacity: number | null;
+    capacitySource: string | null;
+    configType: string | null;
+    isBuildingContainer: boolean;
+    hasSchedule: boolean;
+    isLibraryRoom: boolean;
+    rooms?: string[];
+    roomsData?: Record<string, {
+      roomId: string;
+      capacity: number | null;
+      capacitySource: string | null;
+      type: string;
+      schedules?: Record<string, Record<string, Array<{ start: number; end: number; title: string; type: string }>>>;
+      courses?: Record<string, string[]>;
+    }>;
+    schedules?: Record<string, Record<string, Array<{ start: number; end: number; title: string; type: string }>>>;
+    courses?: Record<string, string[]>;
+    allCourses?: string[];
+  };
+};
+
+export type CampusMapData = {
+  type: "FeatureCollection";
+  features: CampusMapFeature[];
+  unmappedDetailedRes: Array<{
+    roomId: string;
+    building: string;
+    roomType: string;
+    capacity: string;
+    description: string;
+  }>;
+};
+
+/**
+ * Returns the full GeoJSON FeatureCollection of all campus spaces & rooms,
+ * cached using Next.js 'use cache'.
+ */
+export async function getCampusMapData(
+  floor?: string,
+  building?: string,
+): Promise<CampusMapData> {
+  "use cache";
+  cacheLife("hours");
+  cacheTag("campus-map");
+
+  const supabase = getPublicClient();
+  const { data, error } = await supabase.rpc(
+    "get_campus_map_data" as never,
+    {
+      p_floor: floor || null,
+      p_building: building || null,
+    } as never,
+  );
+
+  if (error) {
+    throw new Error(`getCampusMapData failed: ${error.message}`);
+  }
+
+  return (data as CampusMapData) || {
+    type: "FeatureCollection",
+    features: [],
+    unmappedDetailedRes: [],
+  };
+}
+

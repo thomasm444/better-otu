@@ -4,12 +4,13 @@ Supabase (Postgres). Three tables, all in the `public` schema, all populated fro
 Banner course-schedule scrape.
 
 The authoritative DDL lives in [`supabase/migrations/`](../supabase/migrations/) —
-two committed, idempotent migrations. Apply them oldest first:
+three committed, idempotent migrations. Apply them oldest first:
 
 | migration | what it does |
 | --- | --- |
-| `20261028000000_baseline_courses_schema.sql` | creates the three tables, base indexes, grants and RLS policies |
+| `20261028000000_baseline_courses_schema.sql` | creates the three courses tables, base indexes, grants and RLS policies |
 | `20261028120000_search_optimizations.sql` | repairs HTML entities, adds the search indexes, refreshes planner statistics |
+| `20261112000000_campus_map_schema.sql` | creates campus map tables (`campus_spaces`, `campus_unmapped_spaces`, booking registry, library study rooms, reservations), spatial indexes, and `get_campus_map_data()` RPC |
 
 ```bash
 # With the Supabase CLI
