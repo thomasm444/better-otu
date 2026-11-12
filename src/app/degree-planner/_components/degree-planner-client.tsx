@@ -533,15 +533,18 @@ export function DegreePlannerClient({
 
           {/* Credit Progress Hero */}
           <div className="flex items-center gap-2.5">
-            <strong className="text-xl font-semibold tracking-tight tabular-nums">
+            <strong className="text-xl font-semibold tracking-tight tabular-nums text-emerald-600 dark:text-emerald-400">
               {totalPlacedCredits}
             </strong>
             <span className="text-[13px] text-zinc-500 dark:text-zinc-400">
               / {totalTarget} cr
             </span>
-            <div className="h-2 w-36 overflow-hidden rounded-full bg-zinc-200 sm:w-44 dark:bg-zinc-800">
+            <div
+              className="h-2.5 w-36 overflow-hidden rounded-full bg-red-500/85 sm:w-44 dark:bg-red-500/75"
+              title={`${totalPlacedCredits} completed · ${Math.max(0, totalTarget - totalPlacedCredits)} remaining`}
+            >
               <div
-                className="h-full bg-gradient-to-r from-blue-500 to-blue-700 transition-all duration-300"
+                className="h-full bg-emerald-500 transition-all duration-300"
                 style={{ width: `${heroPct}%` }}
               />
             </div>
