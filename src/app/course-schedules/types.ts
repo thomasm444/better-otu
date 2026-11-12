@@ -188,6 +188,16 @@ export function formatHourLabel(hour: number): string {
   return `${displayHour} ${period}`;
 }
 
+function formatScheduleType(description: string | null): string {
+  if (!description) return "LEC";
+  const lower = description.toLowerCase();
+  if (lower === "lecture") return "LEC";
+  if (lower === "laboratory" || lower === "lab") return "LAB";
+  if (lower === "tutorial") return "TUT";
+  if (lower === "seminar") return "SEM";
+  return description;
+}
+
 /**
  * Utility to convert database `Section` results into schedule blocks for Week 1 or Week 2.
  */
@@ -196,8 +206,10 @@ export function convertSectionToScheduleBlocks(
   color: ColorTheme = "blue",
 ): ScheduleBlock[] {
   const blocks: ScheduleBlock[] = [];
+  const seen = new Set<string>();
   const faculty = section.course_faculty?.find((f) => f.primary_indicator) ?? section.course_faculty?.[0];
   const meetings = section.course_meetings ?? [];
+  const shortType = formatScheduleType(section.schedule_type_description);
 
   for (let i = 0; i < meetings.length; i++) {
     const meeting = meetings[i];
@@ -215,11 +227,15 @@ export function convertSectionToScheduleBlocks(
     if (meeting.friday) activeDays.push("friday");
 
     for (const day of activeDays) {
+      const dedupeKey = `${day}|${meeting.begin_time}|${meeting.end_time}|${location}`;
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+
       blocks.push({
         id: `${section.crn}-${day}-${meeting.begin_time}-${i}`,
         courseCode: `${section.subject} ${section.course_number}`,
         title: section.course_title ?? "Untitled Course",
-        type: section.schedule_type_description ?? "Lecture",
+        type: shortType,
         crn: section.crn ?? undefined,
         room: location || undefined,
         instructor: faculty?.display_name ?? undefined,

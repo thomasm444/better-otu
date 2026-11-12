@@ -59,6 +59,10 @@ export type Filters = {
   instructor?: string;
 };
 
+export type SectionSearchFilters = Filters & {
+  crn?: string;
+};
+
 export type RawSearchParams = Record<string, string | string[] | undefined>;
 
 /**
@@ -186,7 +190,7 @@ export type SearchResults = {
  * and a LIMIT/OFFSET window could return a different set on each request.
  */
 export async function searchSections(
-  filters: Filters,
+  filters: SectionSearchFilters,
   page = 1,
 ): Promise<SearchResults> {
   "use cache";
@@ -206,6 +210,7 @@ export async function searchSections(
       .eq("term", CURRENT_TERM);
 
     if (filters.subject) query = query.eq("subject", filters.subject);
+    if (filters.crn) query = query.eq("crn", filters.crn);
     if (filters.classType) {
       query = query.eq("schedule_type_description", filters.classType);
     }
@@ -288,7 +293,7 @@ export function splitCourseCode(value: string) {
   return { subject: match[1], number: match[2] as string | undefined };
 }
 
-export function parseFilters(input: RawSearchParams): Filters {
+export function parseFilters(input: RawSearchParams): SectionSearchFilters {
   const first = (value: string | string[] | undefined) =>
     (Array.isArray(value) ? value[0] : value)?.trim() || undefined;
 
@@ -297,6 +302,7 @@ export function parseFilters(input: RawSearchParams): Filters {
     courseCode: first(input.courseCode),
     classType: first(input.classType),
     instructor: first(input.instructor),
+    crn: first(input.crn),
   };
 }
 
@@ -391,5 +397,139 @@ export async function getCampusMapData(
     features: [],
     unmappedDetailedRes: [],
   };
+}
+
+const WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday"] as const;
+
+function parseTimeToMins(value: string | null): number {
+  if (!value) return -1;
+  const [h, m] = value.split(":");
+  const hours = Number.parseInt(h ?? "", 10);
+  const mins = Number.parseInt(m ?? "", 10);
+  if (!Number.isFinite(hours) || !Number.isFinite(mins)) return -1;
+  return hours * 60 + mins;
+}
+
+type TimeSlot = { day: (typeof WEEKDAYS)[number]; start: number; end: number };
+
+function extractSlots(section: Section): TimeSlot[] {
+  const slots: TimeSlot[] = [];
+  for (const m of section.course_meetings ?? []) {
+    const start = parseTimeToMins(m.begin_time);
+    const end = parseTimeToMins(m.end_time);
+    if (start < 0 || end <= start) continue;
+    for (const day of WEEKDAYS) {
+      if (m[day]) slots.push({ day, start, end });
+    }
+  }
+  return slots;
+}
+
+function hasOverlap(existing: TimeSlot[], candidate: TimeSlot[]): boolean {
+  return candidate.some((c) =>
+    existing.some((e) => e.day === c.day && c.start < e.end && e.start < c.end),
+  );
+}
+
+/**
+ * Fetches a realistic, non-overlapping sample of real course sections from
+ * the database for the initial Course Schedules timetable view.
+ */
+export async function getSampleScheduleSections(
+  term: string = CURRENT_TERM,
+): Promise<{
+  shared: Section[];
+  week1Only: Section[];
+  week2Only: Section[];
+}> {
+  "use cache";
+  cacheLife("hours");
+  cacheTag("sections");
+
+  const supabase = getPublicClient();
+
+  const selectWithMeetings = `
+    crn,
+    subject,
+    course_number,
+    course_title,
+    schedule_type_description,
+    seats_available,
+    maximum_enrollment,
+    course_faculty ( display_name, primary_indicator ),
+    course_meetings!inner ( building, room, begin_time, end_time, monday, tuesday, wednesday, thursday, friday )
+  `;
+
+  const [lectureRes, labTutRes] = await Promise.all([
+    supabase
+      .from("courses")
+      .select(selectWithMeetings)
+      .eq("term", term)
+      .eq("schedule_type_description", "Lecture")
+      .not("course_meetings.begin_time", "is", null)
+      .not("course_meetings.end_time", "is", null)
+      .order("subject", { ascending: true })
+      .order("course_number", { ascending: true })
+      .order("crn", { ascending: true })
+      .limit(60),
+    supabase
+      .from("courses")
+      .select(selectWithMeetings)
+      .eq("term", term)
+      .in("schedule_type_description", ["Laboratory", "Tutorial"])
+      .not("course_meetings.begin_time", "is", null)
+      .not("course_meetings.end_time", "is", null)
+      .order("subject", { ascending: true })
+      .order("course_number", { ascending: true })
+      .order("crn", { ascending: true })
+      .limit(40),
+  ]);
+
+  if (lectureRes.error) {
+    throw new Error(`getSampleScheduleSections failed: ${lectureRes.error.message}`);
+  }
+  if (labTutRes.error) {
+    throw new Error(`getSampleScheduleSections failed: ${labTutRes.error.message}`);
+  }
+
+  const lectures = (lectureRes.data ?? []) as unknown as Section[];
+  const labTuts = (labTutRes.data ?? []) as unknown as Section[];
+
+  const shared: Section[] = [];
+  const sharedSlots: TimeSlot[] = [];
+  const seenCourseCodes = new Set<string>();
+
+  for (const sec of lectures) {
+    if (shared.length >= 4) break;
+    const code = `${sec.subject ?? ""} ${sec.course_number ?? ""}`.trim();
+    if (!code || seenCourseCodes.has(code)) continue;
+    const slots = extractSlots(sec);
+    if (slots.length === 0 || hasOverlap(sharedSlots, slots)) continue;
+
+    shared.push(sec);
+    sharedSlots.push(...slots);
+    seenCourseCodes.add(code);
+  }
+
+  const week1Only: Section[] = [];
+  const week2Only: Section[] = [];
+  const usedCrns = new Set(shared.map((s) => s.crn));
+
+  for (const sec of labTuts) {
+    if (week1Only.length >= 1 && week2Only.length >= 1) break;
+    if (!sec.crn || usedCrns.has(sec.crn)) continue;
+    const slots = extractSlots(sec);
+    if (slots.length === 0 || hasOverlap(sharedSlots, slots)) continue;
+
+    if (week1Only.length === 0) {
+      week1Only.push(sec);
+      usedCrns.add(sec.crn);
+    } else if (week2Only.length === 0) {
+      week2Only.push(sec);
+      usedCrns.add(sec.crn);
+    }
+  }
+
+  return { shared, week1Only, week2Only };
 }
 

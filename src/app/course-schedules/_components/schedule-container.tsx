@@ -1,183 +1,30 @@
 "use client";
 
 import React, { useState } from "react";
+import type { Vocab } from "@/lib/queries";
 import { WeekScheduleGrid } from "./timetable-grid";
 import { AddCourseModal } from "./add-course-modal";
 import type { ScheduleBlock } from "../types";
 
-/**
- * Sample Ontario Tech schedule demonstration:
- * Demonstrates shared weekly lectures, plus bi-weekly alternating labs/tutorials.
- */
-const INITIAL_SHARED_LECTURES: ScheduleBlock[] = [
-  {
-    id: "csci1030-lec-mon",
-    courseCode: "CSCI 1030U",
-    title: "Intro to Computer Science",
-    type: "LEC",
-    crn: "44778",
-    room: "SCI 1350",
-    instructor: "Banga, Janette",
-    day: "monday",
-    startTime: "09:40",
-    endTime: "11:00",
-    color: "blue",
-  },
-  {
-    id: "csci1030-lec-wed",
-    courseCode: "CSCI 1030U",
-    title: "Intro to Computer Science",
-    type: "LEC",
-    crn: "44778",
-    room: "SCI 1350",
-    instructor: "Banga, Janette",
-    day: "wednesday",
-    startTime: "09:40",
-    endTime: "11:00",
-    color: "blue",
-  },
-  {
-    id: "math1010-lec-tue",
-    courseCode: "MATH 1010U",
-    title: "Calculus I",
-    type: "LEC",
-    crn: "42109",
-    room: "UA 1140",
-    instructor: "Marchese, Paula",
-    day: "tuesday",
-    startTime: "11:10",
-    endTime: "12:30",
-    color: "emerald",
-  },
-  {
-    id: "math1010-lec-thu",
-    courseCode: "MATH 1010U",
-    title: "Calculus I",
-    type: "LEC",
-    crn: "42109",
-    room: "UA 1140",
-    instructor: "Marchese, Paula",
-    day: "thursday",
-    startTime: "11:10",
-    endTime: "12:30",
-    color: "emerald",
-  },
-  {
-    id: "phy1010-lec-mon",
-    courseCode: "PHY 1010U",
-    title: "Physics I",
-    type: "LEC",
-    crn: "41982",
-    room: "SCI 1230",
-    instructor: "Hagag, Hany",
-    day: "monday",
-    startTime: "08:10",
-    endTime: "09:30",
-    color: "purple",
-  },
-  {
-    id: "phy1010-lec-wed",
-    courseCode: "PHY 1010U",
-    title: "Physics I",
-    type: "LEC",
-    crn: "41982",
-    room: "SCI 1230",
-    instructor: "Hagag, Hany",
-    day: "wednesday",
-    startTime: "08:10",
-    endTime: "09:30",
-    color: "purple",
-  },
-  {
-    id: "infr1010-lec-fri",
-    courseCode: "INFR 1010U",
-    title: "Discrete Mathematics",
-    type: "LEC",
-    crn: "45123",
-    room: "UA 1350",
-    instructor: "Bradbury, Jeremy",
-    day: "friday",
-    startTime: "10:10",
-    endTime: "13:00",
-    color: "indigo",
-  },
-];
-
-// Week 1 specific courses (e.g. Chem Lab + CS Lab A)
-const INITIAL_WEEK1_ONLY: ScheduleBlock[] = [
-  {
-    id: "chem1010-lab-w1",
-    courseCode: "CHEM 1010U",
-    title: "Chemistry I Lab (Bi-weekly Week 1)",
-    type: "LAB",
-    crn: "43301",
-    room: "UA 3130",
-    instructor: "Easton, Bradley",
-    day: "tuesday",
-    startTime: "13:10",
-    endTime: "16:00",
-    color: "amber",
-  },
-  {
-    id: "csci1030-lab-w1",
-    courseCode: "CSCI 1030U",
-    title: "Computer Science Lab",
-    type: "LAB",
-    crn: "44780",
-    room: "UA 2120",
-    instructor: "Teaching Assistant",
-    day: "thursday",
-    startTime: "14:10",
-    endTime: "15:30",
-    color: "cyan",
-  },
-];
-
-// Week 2 specific courses (e.g. Physics Lab + Math Tut B)
-const INITIAL_WEEK2_ONLY: ScheduleBlock[] = [
-  {
-    id: "phy1010-lab-w2",
-    courseCode: "PHY 1010U",
-    title: "Physics I Lab (Bi-weekly Week 2)",
-    type: "LAB",
-    crn: "41985",
-    room: "SCI 2140",
-    instructor: "Teaching Assistant",
-    day: "tuesday",
-    startTime: "13:10",
-    endTime: "16:00",
-    color: "rose",
-  },
-  {
-    id: "math1010-tut-w2",
-    courseCode: "MATH 1010U",
-    title: "Calculus Problem Session",
-    type: "TUT",
-    crn: "42115",
-    room: "UA 2240",
-    instructor: "Teaching Assistant",
-    day: "thursday",
-    startTime: "15:40",
-    endTime: "17:00",
-    color: "teal",
-  },
-];
-
 interface ScheduleContainerProps {
-  initialWeek1Courses?: ScheduleBlock[];
-  initialWeek2Courses?: ScheduleBlock[];
+  initialWeek1Courses: ScheduleBlock[];
+  initialWeek2Courses: ScheduleBlock[];
+  vocab: Vocab;
+  termLabel: string;
 }
 
 export function ScheduleContainer({
   initialWeek1Courses,
   initialWeek2Courses,
+  vocab,
+  termLabel,
 }: ScheduleContainerProps) {
   const [week1Courses, setWeek1Courses] = useState<ScheduleBlock[]>(() => [
-    ...(initialWeek1Courses ?? [...INITIAL_SHARED_LECTURES, ...INITIAL_WEEK1_ONLY]),
+    ...initialWeek1Courses,
   ]);
 
   const [week2Courses, setWeek2Courses] = useState<ScheduleBlock[]>(() => [
-    ...(initialWeek2Courses ?? [...INITIAL_SHARED_LECTURES, ...INITIAL_WEEK2_ONLY]),
+    ...initialWeek2Courses,
   ]);
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -186,14 +33,23 @@ export function ScheduleContainer({
   const [fitToHeight, setFitToHeight] = useState(true);
 
   const handleAddCourse = (
-    newBlock: ScheduleBlock,
+    blocks: ScheduleBlock | ScheduleBlock[],
     target: "week1" | "week2" | "both",
   ) => {
+    const list = Array.isArray(blocks) ? blocks : [blocks];
+    if (list.length === 0) return;
+
     if (target === "week1" || target === "both") {
-      setWeek1Courses((prev) => [...prev, { ...newBlock, id: `${newBlock.id}-w1` }]);
+      setWeek1Courses((prev) => [
+        ...prev,
+        ...list.map((b) => ({ ...b, id: `${b.id}-w1-${Date.now()}` })),
+      ]);
     }
     if (target === "week2" || target === "both") {
-      setWeek2Courses((prev) => [...prev, { ...newBlock, id: `${newBlock.id}-w2` }]);
+      setWeek2Courses((prev) => [
+        ...prev,
+        ...list.map((b) => ({ ...b, id: `${b.id}-w2-${Date.now()}` })),
+      ]);
     }
   };
 
@@ -210,9 +66,9 @@ export function ScheduleContainer({
     setIsAddModalOpen(true);
   };
 
-  const handleResetDemo = () => {
-    setWeek1Courses([...INITIAL_SHARED_LECTURES, ...INITIAL_WEEK1_ONLY]);
-    setWeek2Courses([...INITIAL_SHARED_LECTURES, ...INITIAL_WEEK2_ONLY]);
+  const handleResetSample = () => {
+    setWeek1Courses([...initialWeek1Courses]);
+    setWeek2Courses([...initialWeek2Courses]);
   };
 
   const handleClearAll = () => {
@@ -222,7 +78,7 @@ export function ScheduleContainer({
 
   return (
     <div className="space-y-4">
-      {/* Control Bar: View Toggle, Fit Mode, Add Course & Presets */}
+      {/* Control Bar: View Toggle, Fit Mode, Add Course & Reset */}
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-zinc-200 bg-zinc-50/80 p-3 dark:border-zinc-800 dark:bg-zinc-900/50">
         <div className="flex items-center gap-2">
           {/* View Mode Selector */}
@@ -277,11 +133,11 @@ export function ScheduleContainer({
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={handleResetDemo}
+            onClick={handleResetSample}
             className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-600 transition hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
-            title="Restore sample Ontario Tech courses"
+            title={`Restore sample ${termLabel} courses from database`}
           >
-            Reset Demo
+            Reset Sample
           </button>
           <button
             type="button"
@@ -345,12 +201,17 @@ export function ScheduleContainer({
       </div>
 
       {/* Add Course Modal */}
-      <AddCourseModal
-        isOpen={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
-        defaultWeek={modalDefaultWeek}
-        onAddCourse={handleAddCourse}
-      />
+      {isAddModalOpen && (
+        <AddCourseModal
+          key={modalDefaultWeek}
+          isOpen={isAddModalOpen}
+          onClose={() => setIsAddModalOpen(false)}
+          defaultWeek={modalDefaultWeek}
+          vocab={vocab}
+          termLabel={termLabel}
+          onAddCourse={handleAddCourse}
+        />
+      )}
     </div>
   );
 }
