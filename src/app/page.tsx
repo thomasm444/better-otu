@@ -1,15 +1,20 @@
 import Link from "next/link";
 
+import { AuthButton } from "@/components/auth-button";
+
 export default function Home() {
   return (
     <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-16 font-sans">
-      <header className="mb-12">
-        <h1 className="text-3xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
-          Better OTU
-        </h1>
-        <p className="mt-2 text-base text-zinc-600 dark:text-zinc-400">
-          Ontario Tech University Student Portal
-        </p>
+      <header className="mb-12 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h1 className="text-3xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
+            Better OTU
+          </h1>
+          <p className="mt-2 text-base text-zinc-600 dark:text-zinc-400">
+            Ontario Tech University Student Portal
+          </p>
+        </div>
+        <AuthButton />
       </header>
 
       <nav className="grid grid-cols-1 gap-4 sm:grid-cols-3">

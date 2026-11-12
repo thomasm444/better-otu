@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AuthButton } from "@/components/auth-button";
 import { ScheduleContainer } from "./_components/schedule-container";
 
 export const metadata = {
@@ -26,6 +27,7 @@ export default function CourseSchedulesPage() {
             Spreadsheet-style timetables for bi-weekly Ontario Tech schedules. Week 1 (odd weeks) on the left and Week 2 (even weeks) on the right.
           </p>
         </div>
+        <AuthButton />
       </div>
 
       {/* Spreadsheet Elements Container */}
