@@ -175,6 +175,8 @@ export function DegreePlannerClient({
     customs: CustomCourse[];
   } | null>(null);
   const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const drawerDragStartXRef = useRef<number | null>(null);
 
   const [picker, setPicker] = useState<PickerState | null>(null);
   const [pickerTransferMode, setPickerTransferMode] = useState(false);
@@ -968,7 +970,13 @@ export function DegreePlannerClient({
       )}
 
       {/* Main Layout */}
-      <main className="mx-auto grid max-w-[1440px] grid-cols-1 items-start gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_390px]">
+      <main
+        className={`mx-auto max-w-[1440px] p-4 ${
+          sidebarOpen && program && model
+            ? "grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_390px]"
+            : ""
+        }`}
+      >
         {/* Planner Grid */}
         <section>
           {loadingProgram ? (
@@ -1369,40 +1377,87 @@ export function DegreePlannerClient({
           )}
         </section>
 
-        {/* Right Sidebar */}
+        {/* Right Column ("What you need") — Side-by-side when open, pull-tab when closed */}
         {program && model ? (
-          <RequirementsSidebar
-            program={program}
-            model={model}
-            terms={terms}
-            catalogMap={catalogMap}
-            offeringsMap={offeringsMap}
-            offeringContext={offeringContext}
-            startYear={startYear}
-            customs={customs}
-            unscheduled={unscheduled}
-            onPickBucket={(bucketKey) => {
-              const emptyTerm = terms.findIndex((t) => t.slots.includes(null));
-              const termIndex = emptyTerm >= 0 ? emptyTerm : 0;
-              const slotIndex =
-                emptyTerm >= 0
-                  ? terms[termIndex].slots.indexOf(null)
-                  : (terms[0]?.slots.length ?? 0);
-              setPickerTransferMode(false);
-              setPicker({ termIndex, slotIndex, bucketKey });
-            }}
-            onOpenTransferPicker={() => {
-              const free = firstFreeSlot(terms);
-              setPickerTransferMode(true);
-              setPicker({
-                termIndex: free.termIndex,
-                slotIndex: free.slotIndex,
-                bucketKey: null,
-              });
-            }}
-            onPlaceTransfer={handlePlaceTransfer}
-            onRemoveTransfer={handleRemoveTransfer}
-          />
+          sidebarOpen ? (
+            <div className="relative">
+              <div className="mb-2 flex justify-end">
+                <button
+                  type="button"
+                  onPointerDown={(e) => {
+                    drawerDragStartXRef.current = e.clientX;
+                  }}
+                  onPointerUp={(e) => {
+                    if (drawerDragStartXRef.current === null) return;
+                    const deltaX = e.clientX - drawerDragStartXRef.current;
+                    drawerDragStartXRef.current = null;
+                    if (deltaX > 25 || Math.abs(deltaX) <= 25) {
+                      setSidebarOpen(false);
+                    }
+                  }}
+                  title="Drag right or click to push to the side"
+                  className="cursor-grab rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-xs font-medium text-zinc-600 shadow-sm transition-colors select-none hover:border-zinc-300 hover:text-zinc-900 active:cursor-grabbing dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100"
+                >
+                  Push to side ▶
+                </button>
+              </div>
+              <RequirementsSidebar
+                program={program}
+                model={model}
+                terms={terms}
+                catalogMap={catalogMap}
+                offeringsMap={offeringsMap}
+                offeringContext={offeringContext}
+                startYear={startYear}
+                customs={customs}
+                unscheduled={unscheduled}
+                onPickBucket={(bucketKey) => {
+                  const emptyTerm = terms.findIndex((t) =>
+                    t.slots.includes(null),
+                  );
+                  const termIndex = emptyTerm >= 0 ? emptyTerm : 0;
+                  const slotIndex =
+                    emptyTerm >= 0
+                      ? terms[termIndex].slots.indexOf(null)
+                      : (terms[0]?.slots.length ?? 0);
+                  setPickerTransferMode(false);
+                  setPicker({ termIndex, slotIndex, bucketKey });
+                }}
+                onOpenTransferPicker={() => {
+                  const free = firstFreeSlot(terms);
+                  setPickerTransferMode(true);
+                  setPicker({
+                    termIndex: free.termIndex,
+                    slotIndex: free.slotIndex,
+                    bucketKey: null,
+                  });
+                }}
+                onPlaceTransfer={handlePlaceTransfer}
+                onRemoveTransfer={handleRemoveTransfer}
+              />
+            </div>
+          ) : (
+            <button
+              type="button"
+              onPointerDown={(e) => {
+                drawerDragStartXRef.current = e.clientX;
+              }}
+              onPointerUp={(e) => {
+                if (drawerDragStartXRef.current === null) return;
+                const deltaX = e.clientX - drawerDragStartXRef.current;
+                drawerDragStartXRef.current = null;
+                if (deltaX < -25 || Math.abs(deltaX) <= 25) {
+                  setSidebarOpen(true);
+                }
+              }}
+              title="Drag left or click to open What you need"
+              className="fixed top-[62%] right-0 z-40 flex h-36 w-9 -translate-y-1/2 cursor-grab items-center justify-center rounded-l-xl border border-r-0 border-zinc-300 bg-white/95 text-xs font-semibold tracking-wide text-zinc-700 shadow-lg backdrop-blur select-none active:cursor-grabbing dark:border-zinc-700 dark:bg-zinc-900/95 dark:text-zinc-200"
+            >
+              <span className="[writing-mode:vertical-rl] rotate-180">
+                ◀ What you need
+              </span>
+            </button>
+          )
         ) : (
           <aside className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
             <div className="border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
