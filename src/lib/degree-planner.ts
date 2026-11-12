@@ -308,27 +308,31 @@ export function prereqFlag(
 ): PrereqFlag | null {
   const term = terms[termIndex];
   const startYear = options?.startYear ?? DEFAULT_START_YEAR;
-  if (term && term.season !== "Summer") {
+  if (term) {
     const calYear = termCalendarYear(startYear, term.year, term.season);
-    if (!isOffered(code, offeringsMap, customs)) {
-      return {
-        cls: "bad",
-        icon: "⚠",
-        title: "No recorded offerings in the course database",
-      };
-    }
-    if (
-      !offeredIn(code, term.season, offeringsMap, customs, {
-        calendarYear: calYear,
-        context: options?.context,
-      }) &&
-      !term.summer
-    ) {
-      return {
-        cls: "bad",
-        icon: "⚠",
-        title: `Not offered in ${term.season} ${calYear}`,
-      };
+    const shouldCheckOfferings =
+      term.season !== "Summer" ||
+      Boolean(options?.context?.knownTermKeys.has(termKey("Summer", calYear)));
+    if (shouldCheckOfferings) {
+      if (!isOffered(code, offeringsMap, customs)) {
+        return {
+          cls: "bad",
+          icon: "⚠",
+          title: "No recorded offerings in the course database",
+        };
+      }
+      if (
+        !offeredIn(code, term.season, offeringsMap, customs, {
+          calendarYear: calYear,
+          context: options?.context,
+        })
+      ) {
+        return {
+          cls: "bad",
+          icon: "⚠",
+          title: `Not offered in ${term.season} ${calYear}`,
+        };
+      }
     }
   }
 
@@ -928,7 +932,10 @@ export function collectWarnings(
 
     term.slots.forEach((code, slotIdx) => {
       if (!code) return;
-      if (term.season !== "Summer") {
+      const shouldCheckOfferings =
+        term.season !== "Summer" ||
+        Boolean(context?.knownTermKeys.has(termKey("Summer", calYear)));
+      if (shouldCheckOfferings) {
         if (!isOffered(code, offeringsMap, customs)) {
           out.push({
             id: `not-offered-${termIndex}-${slotIdx}`,

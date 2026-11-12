@@ -211,7 +211,7 @@ export function CoursePickerModal({
   );
 
   const filteredRows = useMemo(() => {
-    if (!term || term.season === "Summer") return [];
+    if (!term) return [];
 
     let rows = catalogCourses;
     if (filterOffered) {
@@ -326,9 +326,7 @@ export function CoursePickerModal({
     ? "Credit you already earned elsewhere — pick how it should count and it lands in the first free slot."
     : bucket
       ? `${bucket.credits} credits needed · choosing from the whole catalogue`
-      : term.season === "Summer"
-        ? "Summer 2027 offerings aren't published yet — add what you plan to take as a custom course."
-        : "Defaults to courses offered in this term whose prerequisites you already meet.";
+      : "Defaults to courses offered in this term whose prerequisites you already meet.";
 
   return (
     <div
@@ -565,26 +563,7 @@ export function CoursePickerModal({
         {/* Course list */}
         {!initialTransferMode && (
           <div className="flex-1 overflow-auto p-2 pb-3">
-            {term.season === "Summer" ? (
-              <div className="px-6 py-8 text-center text-[13px] text-zinc-500 dark:text-zinc-400">
-                Summer 2027 courses aren&apos;t in the timetable yet, so nothing
-                can be listed here.
-                <br />
-                Add the course you plan to take as a custom course — you can set
-                its subject, level and credits.
-                <div className="mt-3">
-                  <button
-                    type="button"
-                    onClick={() => openCustomForm("", false)}
-                    className="rounded-lg border border-blue-200 bg-blue-50 px-3.5 py-1.5 text-xs font-medium text-blue-800 hover:border-blue-400 dark:border-blue-800 dark:bg-blue-950/60 dark:text-blue-300"
-                  >
-                    ＋ Add a custom course
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <>
-                {filteredRows.length === 0 ? (
+            {filteredRows.length === 0 ? (
                   <div className="px-6 py-8 text-center text-[13px] text-zinc-500 dark:text-zinc-400">
                     {query.trim()
                       ? `Nothing here matches “${query.trim()}”.`
@@ -699,8 +678,6 @@ export function CoursePickerModal({
                     ＋ custom
                   </button>
                 </div>
-              </>
-            )}
           </div>
         )}
       </div>
