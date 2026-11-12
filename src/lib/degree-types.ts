@@ -32,6 +32,8 @@ export type CatalogCourse = {
 
 export type CourseOffering = {
   subject_course: string;
+  subject?: string;
+  course_number?: string;
   terms: string[];
   sections: number;
   credit_hours: number;
@@ -39,8 +41,15 @@ export type CourseOffering = {
 
 export type OfferingEntry = {
   terms: Set<string>;
+  termKeys: Set<string>;
   sections: number;
   credits: number;
+};
+
+export type OfferingContext = {
+  knownTermKeys: Set<string>;
+  minCalendarYear: number;
+  maxCalendarYear: number;
 };
 
 export type ProgramSummary = {

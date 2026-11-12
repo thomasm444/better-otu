@@ -21,16 +21,23 @@ import { createClient } from "@/lib/supabase/client";
 import {
   buildDefaultPlan,
   buildModel,
+  buildOfferingContext,
   buildOfferingsMap,
   courseOf,
   creditsOf,
   CREDIT_CAP,
+  DEFAULT_START_YEAR,
   firstFreeSlot,
+  matchingBuckets,
+  MAX_START_YEAR,
+  MIN_START_YEAR,
   placedCodes,
   placedTermIndex,
   prereqFlag,
+  seasonsOf,
   SLOTS_PER_TERM,
   STORE_PREFIX,
+  termCalendarYear,
   termCredits,
 } from "@/lib/degree-planner";
 import type {
@@ -55,6 +62,8 @@ type DegreePlannerClientProps = {
 type SavedPlan = {
   terms?: PlannerTerm[];
   customs?: CustomCourse[];
+  startYear?: number;
+  gapYears?: number[];
 };
 
 function loadSavedPlan(programId: string): SavedPlan {
@@ -73,6 +82,8 @@ function persistPlan(
   programId: string,
   terms: PlannerTerm[],
   customs: Map<string, CustomCourse>,
+  startYear: number = DEFAULT_START_YEAR,
+  gapYears: number[] = [],
 ) {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(
@@ -80,6 +91,8 @@ function persistPlan(
     JSON.stringify({
       terms,
       customs: [...customs.values()],
+      startYear,
+      gapYears,
     }),
   );
 }
@@ -98,6 +111,19 @@ export function DegreePlannerClient({
     () => buildOfferingsMap(bootstrap.offerings, bootstrap.courses),
     [bootstrap.offerings, bootstrap.courses],
   );
+
+  const offeringContext = useMemo(
+    () => buildOfferingContext(bootstrap.offerings, bootstrap.courses),
+    [bootstrap.offerings, bootstrap.courses],
+  );
+
+  const startYearOptions = useMemo(() => {
+    const years: number[] = [];
+    for (let y = MAX_START_YEAR; y >= MIN_START_YEAR; y--) {
+      years.push(y);
+    }
+    return years;
+  }, []);
 
   const { subjects, subjectFaculty } = useMemo(() => {
     const seen = new Map<string, string | null>();
@@ -132,6 +158,9 @@ export function DegreePlannerClient({
   );
   const [menuOpen, setMenuOpen] = useState(false);
 
+  const [startYear, setStartYear] = useState<number>(DEFAULT_START_YEAR);
+  const [gapYears, setGapYears] = useState<number[]>([]);
+
   const [customs, setCustoms] = useState<Map<string, CustomCourse>>(
     () => new Map(),
   );
@@ -149,6 +178,11 @@ export function DegreePlannerClient({
 
   const [picker, setPicker] = useState<PickerState | null>(null);
   const [pickerTransferMode, setPickerTransferMode] = useState(false);
+  const [selectedCourse, setSelectedCourse] = useState<{
+    code: string;
+    termIndex: number;
+    slotIndex: number;
+  } | null>(null);
   const [dragTargetKey, setDragTargetKey] = useState<string | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
@@ -175,6 +209,11 @@ export function DegreePlannerClient({
       const nextCustoms = new Map(
         (saved.customs ?? []).map((c) => [c.code, c]),
       );
+      const nextStartYear = saved.startYear ?? startYear;
+      const nextGapYears = saved.gapYears ?? [];
+      setStartYear(nextStartYear);
+      setGapYears(nextGapYears);
+
       if (saved.terms && saved.terms.length > 0) {
         setTerms(saved.terms);
         setUnscheduled([]);
@@ -184,6 +223,7 @@ export function DegreePlannerClient({
           catalogMap,
           offeringsMap,
           nextCustoms,
+          { startYear: nextStartYear, gapYears: nextGapYears, context: offeringContext },
         );
         setTerms(built.terms);
         setUnscheduled(built.unscheduled);
@@ -192,7 +232,7 @@ export function DegreePlannerClient({
       setProgram(prog);
       setProgramQuery(prog.name);
     },
-    [catalogMap, offeringsMap],
+    [catalogMap, offeringsMap, offeringContext, startYear],
   );
 
   const loadProgramDetail = useCallback(async (programId: string) => {
@@ -416,12 +456,25 @@ export function DegreePlannerClient({
   }, [terms, catalogMap, customs]);
 
   const commitPlan = useCallback(
-    (nextTerms: PlannerTerm[], nextCustoms: Map<string, CustomCourse>) => {
+    (
+      nextTerms: PlannerTerm[],
+      nextCustoms: Map<string, CustomCourse>,
+      nextStartYear = startYear,
+      nextGapYears = gapYears,
+    ) => {
       setTerms(nextTerms);
       setCustoms(nextCustoms);
+      setStartYear(nextStartYear);
+      setGapYears(nextGapYears);
       if (!program) return;
 
-      persistPlan(program.program_id, nextTerms, nextCustoms);
+      persistPlan(
+        program.program_id,
+        nextTerms,
+        nextCustoms,
+        nextStartYear,
+        nextGapYears,
+      );
 
       if (user?.email) {
         void upsertDegreePlan(supabase, {
@@ -435,7 +488,7 @@ export function DegreePlannerClient({
         });
       }
     },
-    [program, showToast, supabase, user],
+    [program, showToast, supabase, user, startYear, gapYears],
   );
 
   const placeCourse = useCallback(
@@ -537,12 +590,97 @@ export function DegreePlannerClient({
       catalogMap,
       offeringsMap,
       emptyCustoms,
+      { startYear, gapYears, context: offeringContext },
     );
     setCustoms(emptyCustoms);
     setTerms(built.terms);
     setUnscheduled(built.unscheduled);
-    showToast("Plan reset to the published year map");
-  }, [program, terms, customs, catalogMap, offeringsMap, showToast]);
+    showToast(`Plan reset for ${startYear}–${startYear + 1}+`);
+  }, [
+    program,
+    terms,
+    customs,
+    catalogMap,
+    offeringsMap,
+    startYear,
+    gapYears,
+    offeringContext,
+    showToast,
+  ]);
+
+  const handleChangeStartYear = useCallback(
+    (nextYear: number) => {
+      if (program) {
+        commitPlan(terms, customs, nextYear, gapYears);
+      } else {
+        setStartYear(nextYear);
+      }
+      showToast(`Degree start year set to ${nextYear}`);
+    },
+    [program, terms, customs, gapYears, commitPlan, showToast],
+  );
+
+  const handleInsertGapYear = useCallback(
+    (academicYear: number) => {
+      const nextTerms = terms.map((t) =>
+        t.year >= academicYear ? { ...t, year: t.year + 1 } : t,
+      );
+      const nextGapYears = [
+        ...gapYears.map((g) => (g >= academicYear ? g + 1 : g)),
+        academicYear,
+      ].sort((a, b) => a - b);
+      commitPlan(nextTerms, customs, startYear, nextGapYears);
+      showToast(
+        `Added gap year for ${startYear + academicYear - 1}–${startYear + academicYear}`,
+      );
+    },
+    [terms, gapYears, customs, startYear, commitPlan, showToast],
+  );
+
+  const handleRemoveGapYear = useCallback(
+    (academicYear: number) => {
+      const nextTerms = terms.map((t) =>
+        t.year > academicYear ? { ...t, year: t.year - 1 } : t,
+      );
+      const nextGapYears = gapYears
+        .filter((g) => g !== academicYear)
+        .map((g) => (g > academicYear ? g - 1 : g));
+      commitPlan(nextTerms, customs, startYear, nextGapYears);
+      showToast("Removed gap year");
+    },
+    [terms, gapYears, customs, startYear, commitPlan, showToast],
+  );
+
+  const handleAddYear = useCallback(() => {
+    const maxY = Math.max(
+      0,
+      ...terms.map((t) => t.year),
+      ...gapYears,
+    );
+    const nextY = maxY + 1;
+    const emptySlots = () => Array.from({ length: SLOTS_PER_TERM }, () => null);
+    const nextTerms: PlannerTerm[] = [
+      ...terms,
+      { label: "Fall", season: "Fall", year: nextY, slots: emptySlots() },
+      { label: "Winter", season: "Winter", year: nextY, slots: emptySlots() },
+    ];
+    commitPlan(nextTerms, customs, startYear, gapYears);
+    showToast(`Added ${startYear + nextY - 1}–${startYear + nextY}`);
+  }, [terms, gapYears, customs, startYear, commitPlan, showToast]);
+
+  const handleRemoveYear = useCallback(
+    (academicYear: number) => {
+      const nextTerms = terms
+        .filter((t) => t.year !== academicYear)
+        .map((t) => (t.year > academicYear ? { ...t, year: t.year - 1 } : t));
+      const nextGapYears = gapYears
+        .filter((g) => g !== academicYear)
+        .map((g) => (g > academicYear ? g - 1 : g));
+      commitPlan(nextTerms, customs, startYear, nextGapYears);
+      showToast("Removed year");
+    },
+    [terms, gapYears, customs, startYear, commitPlan, showToast],
+  );
 
   const handleRestorePrevious = useCallback(() => {
     if (!program || !previousPlan) return;
@@ -621,15 +759,42 @@ export function DegreePlannerClient({
     [terms, customs, commitPlan],
   );
 
-  const termsByYear = useMemo(() => {
+  const academicYears = useMemo(() => {
     const grouped = new Map<number, { term: PlannerTerm; index: number }[]>();
     terms.forEach((term, index) => {
       const list = grouped.get(term.year) ?? [];
       list.push({ term, index });
       grouped.set(term.year, list);
     });
-    return [...grouped.entries()];
-  }, [terms]);
+    const maxY = Math.max(
+      0,
+      ...grouped.keys(),
+      ...gapYears,
+    );
+    const gapSet = new Set(gapYears);
+    const rows: {
+      academicYear: number;
+      studyYear: number;
+      isGap: boolean;
+      calStart: number;
+      calEnd: number;
+      yearTerms: { term: PlannerTerm; index: number }[];
+    }[] = [];
+    let studyCounter = 0;
+    for (let y = 1; y <= maxY; y++) {
+      const isGap = gapSet.has(y);
+      if (!isGap) studyCounter++;
+      rows.push({
+        academicYear: y,
+        studyYear: studyCounter,
+        isGap,
+        calStart: startYear + (y - 1),
+        calEnd: startYear + y,
+        yearTerms: grouped.get(y) ?? [],
+      });
+    }
+    return rows;
+  }, [terms, gapYears, startYear]);
 
   const heroPct = totalTarget
     ? Math.min(100, (totalPlacedCredits / totalTarget) * 100)
@@ -650,9 +815,25 @@ export function DegreePlannerClient({
           <div className="font-semibold tracking-tight">
             Degree Planner{" "}
             <small className="ml-1.5 text-xs font-normal text-zinc-500 dark:text-zinc-400">
-              Ontario Tech · 2026-27
+              Ontario Tech · {startYear}–{startYear + 1}+
             </small>
           </div>
+
+          <label className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400">
+            <span>Start:</span>
+            <select
+              value={startYear}
+              onChange={(e) => handleChangeStartYear(Number(e.target.value))}
+              aria-label="Degree start year"
+              className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs font-medium text-zinc-900 focus:border-blue-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+            >
+              {startYearOptions.map((y) => (
+                <option key={y} value={y}>
+                  {y} ({y}–{String(y + 1).slice(-2)})
+                </option>
+              ))}
+            </select>
+          </label>
 
           {/* Searchable Program Dropdown */}
           <div ref={menuContainerRef} className="relative">
@@ -798,48 +979,115 @@ export function DegreePlannerClient({
             <div className="rounded-xl border border-zinc-200 bg-white p-10 text-center text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
               Pick a program above to start building a term-by-term plan.
             </div>
-          ) : termsByYear.length === 0 ? (
+          ) : academicYears.length === 0 ? (
             <div className="rounded-xl border border-zinc-200 bg-white p-10 text-center text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400">
               No terms.
             </div>
           ) : (
             <div className="space-y-5">
-              {termsByYear.map(([year, yearTerms]) => {
-                const yearCreds = yearTerms.reduce(
-                  (sum, { term }) => sum + termCredits(term, catalogMap, customs),
-                  0,
-                );
-                return (
-                  <div key={year}>
-                    <div className="mb-2 flex items-baseline gap-2.5 px-0.5">
-                      <h3 className="text-[15px] font-semibold tracking-tight">
-                        Year {year}
-                      </h3>
-                      <span className="text-xs text-zinc-500 dark:text-zinc-400">
-                        {yearCreds} credits
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => addSummer(year)}
-                        className="ml-auto rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-xs text-zinc-600 transition-colors hover:border-zinc-300 hover:text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100"
+              {academicYears.map(
+                ({
+                  academicYear,
+                  studyYear,
+                  isGap,
+                  calStart,
+                  calEnd,
+                  yearTerms,
+                }) => {
+                  if (isGap) {
+                    return (
+                      <div
+                        key={`gap-${academicYear}`}
+                        className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-dashed border-amber-300 bg-amber-50/60 px-4 py-3 dark:border-amber-800/70 dark:bg-amber-950/25"
                       >
-                        + Summer term
-                      </button>
-                    </div>
+                        <div className="flex items-center gap-2.5">
+                          <span className="rounded-md bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800 dark:bg-amber-900/60 dark:text-amber-200">
+                            Gap Year
+                          </span>
+                          <span className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                            {calStart}–{calEnd}
+                          </span>
+                          <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                            No courses scheduled · subsequent years shifted +1
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveGapYear(academicYear)}
+                          className="rounded-lg border border-amber-300 bg-white px-2.5 py-1 text-xs font-medium text-amber-800 transition-colors hover:bg-amber-100 dark:border-amber-800 dark:bg-zinc-900 dark:text-amber-300 dark:hover:bg-amber-950/60"
+                        >
+                          Remove gap year
+                        </button>
+                      </div>
+                    );
+                  }
 
-                    <div className="flex flex-wrap gap-3">
-                      {yearTerms.map(({ term, index: termIndex }) => {
-                        const creds = termCredits(term, catalogMap, customs);
-                        const over = creds > CREDIT_CAP;
-                        return (
-                          <div
-                            key={`${year}-${term.season}-${termIndex}`}
-                            className="min-w-[235px] flex-1 basis-[235px] rounded-xl border border-zinc-200 bg-white p-2.5 dark:border-zinc-800 dark:bg-zinc-900"
+                  const yearCreds = yearTerms.reduce(
+                    (sum, { term }) => sum + termCredits(term, catalogMap, customs),
+                    0,
+                  );
+                  const isEmptyYear = yearTerms.every((t) =>
+                    t.term.slots.every((s) => !s),
+                  );
+                  return (
+                    <div key={`year-${academicYear}`}>
+                      <div className="mb-2 flex flex-wrap items-baseline gap-2.5 px-0.5">
+                        <h3 className="text-[15px] font-semibold tracking-tight">
+                          Year {studyYear}
+                        </h3>
+                        <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[11px] font-medium text-zinc-600 tabular-nums dark:bg-zinc-800 dark:text-zinc-300">
+                          {calStart}–{calEnd}
+                        </span>
+                        <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                          {yearCreds} credits
+                        </span>
+                        <div className="ml-auto flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleInsertGapYear(academicYear)}
+                            className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-xs text-zinc-600 transition-colors hover:border-amber-300 hover:text-amber-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:text-amber-300"
+                            title={`Insert a gap year at ${calStart}–${calEnd}`}
                           >
-                            <div className="mb-2 flex items-center gap-2">
-                              <span className="text-[13px] font-semibold">
-                                {term.season}
-                              </span>
+                            + Gap year
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => addSummer(academicYear)}
+                            className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-xs text-zinc-600 transition-colors hover:border-zinc-300 hover:text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100"
+                          >
+                            + Summer term
+                          </button>
+                          {academicYears.length > 1 && isEmptyYear && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveYear(academicYear)}
+                              className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-400 transition-colors hover:border-red-300 hover:text-red-600 dark:border-zinc-700 dark:bg-zinc-900"
+                              title="Remove empty year"
+                            >
+                              ×
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-3">
+                        {yearTerms.map(({ term, index: termIndex }) => {
+                          const creds = termCredits(term, catalogMap, customs);
+                          const over = creds > CREDIT_CAP;
+                          const calYear = termCalendarYear(
+                            startYear,
+                            term.year,
+                            term.season,
+                          );
+                          return (
+                            <div
+                              key={`${academicYear}-${term.season}-${termIndex}`}
+                              className="min-w-[235px] flex-1 basis-[235px] rounded-xl border border-zinc-200 bg-white p-2.5 dark:border-zinc-800 dark:bg-zinc-900"
+                            >
+                              <div className="mb-2 flex items-center gap-2">
+                                <span className="text-[13px] font-semibold">
+                                  {term.season} {calYear}
+                                </span>
                               {term.summer && (
                                 <span className="text-[10.5px] font-medium tracking-wider text-purple-700 uppercase dark:text-purple-400">
                                   summer
@@ -935,12 +1183,20 @@ export function DegreePlannerClient({
                                   catalogMap,
                                   offeringsMap,
                                   customs,
+                                  { startYear, context: offeringContext },
                                 );
 
                                 return (
                                   <div
                                     key={slotKey}
                                     draggable
+                                    onClick={() =>
+                                      setSelectedCourse({
+                                        code,
+                                        termIndex,
+                                        slotIndex,
+                                      })
+                                    }
                                     onDragStart={(e) => {
                                       e.dataTransfer.setData(
                                         "text/plain",
@@ -975,8 +1231,8 @@ export function DegreePlannerClient({
                                         : isCustom
                                           ? " (custom course)"
                                           : ""
-                                    }`}
-                                    className={`flex min-h-[38px] cursor-grab items-center gap-2 rounded-lg border px-2 py-1 text-[12.5px] transition-colors active:cursor-grabbing ${
+                                    }${flag ? ` · ${flag.title}` : ""}`}
+                                    className={`group relative flex min-h-[38px] cursor-grab items-center gap-2 rounded-lg border px-2 py-1 text-[12.5px] transition-colors active:cursor-grabbing ${
                                       isDragOver
                                         ? "border-blue-500 bg-blue-50 ring-1 ring-blue-500 dark:bg-blue-950/40"
                                         : isCustom
@@ -984,6 +1240,18 @@ export function DegreePlannerClient({
                                           : "border-zinc-200 bg-zinc-50/60 hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-950/50 dark:hover:border-zinc-700"
                                     }`}
                                   >
+                                    {flag && (
+                                      <div
+                                        role="tooltip"
+                                        className={`pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 hidden w-max max-w-[260px] -translate-x-1/2 rounded-lg border px-2.5 py-1.5 text-[11.5px] font-medium shadow-lg group-hover:block ${
+                                          flag.cls === "bad"
+                                            ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-700/80 dark:bg-zinc-900 dark:text-amber-300"
+                                            : "border-zinc-200 bg-white text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
+                                        }`}
+                                      >
+                                        {flag.icon} {flag.title}
+                                      </div>
+                                    )}
                                     <span className="shrink-0 font-mono text-[11.5px] text-blue-800 dark:text-blue-300">
                                       {code}
                                     </span>
@@ -1000,7 +1268,7 @@ export function DegreePlannerClient({
                                     ) : isCustom ? (
                                       <span
                                         className="text-[11px] text-blue-600 dark:text-blue-400"
-                                        title="Custom course — not taken from the 2026-27 timetable"
+                                        title="Custom course — not taken from the course timetable"
                                       >
                                         ✎
                                       </span>
@@ -1022,9 +1290,10 @@ export function DegreePlannerClient({
                                     </span>
                                     <button
                                       type="button"
-                                      onClick={() =>
-                                        clearSlot(termIndex, slotIndex)
-                                      }
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        clearSlot(termIndex, slotIndex);
+                                      }}
                                       title="Remove"
                                       className="px-0.5 text-sm leading-none text-zinc-400 hover:text-red-600"
                                     >
@@ -1088,6 +1357,14 @@ export function DegreePlannerClient({
                   </div>
                 );
               })}
+
+              <button
+                type="button"
+                onClick={handleAddYear}
+                className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-zinc-300 bg-white/60 py-2.5 text-xs font-medium text-zinc-600 transition-colors hover:border-blue-400 hover:bg-blue-50/40 hover:text-blue-700 dark:border-zinc-700 dark:bg-zinc-900/40 dark:text-zinc-400 dark:hover:border-blue-600 dark:hover:text-blue-300"
+              >
+                + Add Year ({startYear + academicYears.length}–{startYear + academicYears.length + 1})
+              </button>
             </div>
           )}
         </section>
@@ -1100,6 +1377,8 @@ export function DegreePlannerClient({
             terms={terms}
             catalogMap={catalogMap}
             offeringsMap={offeringsMap}
+            offeringContext={offeringContext}
+            startYear={startYear}
             customs={customs}
             unscheduled={unscheduled}
             onPickBucket={(bucketKey) => {
@@ -1147,6 +1426,8 @@ export function DegreePlannerClient({
           catalogCourses={bootstrap.courses}
           catalogMap={catalogMap}
           offeringsMap={offeringsMap}
+          offeringContext={offeringContext}
+          startYear={startYear}
           customs={customs}
           subjects={subjects}
           subjectFaculty={subjectFaculty}
@@ -1160,12 +1441,221 @@ export function DegreePlannerClient({
         />
       )}
 
+      {/* Course Details Modal */}
+      {selectedCourse && (
+        <CourseDetailsModal
+          selectedCourse={selectedCourse}
+          terms={terms}
+          startYear={startYear}
+          catalogMap={catalogMap}
+          offeringsMap={offeringsMap}
+          offeringContext={offeringContext}
+          customs={customs}
+          model={model}
+          onClose={() => setSelectedCourse(null)}
+          onRemove={() => {
+            clearSlot(selectedCourse.termIndex, selectedCourse.slotIndex);
+            setSelectedCourse(null);
+          }}
+        />
+      )}
+
       {/* Toast */}
       {toastMsg && (
         <div className="fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-full bg-zinc-900 px-4 py-2 text-xs font-medium text-white shadow-lg dark:bg-zinc-100 dark:text-zinc-900">
           {toastMsg}
         </div>
       )}
+    </div>
+  );
+}
+
+function CourseDetailsModal({
+  selectedCourse,
+  terms,
+  startYear,
+  catalogMap,
+  offeringsMap,
+  offeringContext,
+  customs,
+  model,
+  onClose,
+  onRemove,
+}: {
+  selectedCourse: { code: string; termIndex: number; slotIndex: number };
+  terms: PlannerTerm[];
+  startYear: number;
+  catalogMap: Map<string, CatalogCourse>;
+  offeringsMap: Map<string, import("@/lib/degree-types").OfferingEntry>;
+  offeringContext: import("@/lib/degree-types").OfferingContext;
+  customs: Map<string, CustomCourse>;
+  model: import("@/lib/degree-types").RequirementModel | null;
+  onClose: () => void;
+  onRemove: () => void;
+}) {
+  const course = courseOf(selectedCourse.code, catalogMap, customs);
+  const term = terms[selectedCourse.termIndex];
+  const calYear = term
+    ? termCalendarYear(startYear, term.year, term.season)
+    : startYear;
+  const academicBaseYear = term ? startYear + (term.year - 1) : startYear;
+  const flag = prereqFlag(
+    selectedCourse.code,
+    selectedCourse.termIndex,
+    terms,
+    catalogMap,
+    offeringsMap,
+    customs,
+    { startYear, context: offeringContext },
+  );
+  const isCustom = customs.has(selectedCourse.code);
+  const isTransfer = Boolean(
+    isCustom && customs.get(selectedCourse.code)?.transfer,
+  );
+  const yearOfferings = seasonsOf(selectedCourse.code, offeringsMap, customs, {
+    academicBaseYear,
+    context: offeringContext,
+  });
+  const buckets = course ? matchingBuckets(course, model) : [];
+
+  return (
+    <div
+      onClick={onClose}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-lg rounded-2xl border border-zinc-200 bg-white p-5 shadow-2xl dark:border-zinc-800 dark:bg-zinc-900"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-mono text-sm font-semibold text-blue-700 dark:text-blue-400">
+                {selectedCourse.code}
+              </span>
+              <span className="rounded bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+                {creditsOf(selectedCourse.code, catalogMap, customs)} cr
+              </span>
+              {term && (
+                <span className="rounded bg-blue-50 px-2 py-0.5 text-[11px] font-medium text-blue-700 dark:bg-blue-950/60 dark:text-blue-300">
+                  {term.season} {calYear}
+                </span>
+              )}
+              {isTransfer && (
+                <span className="rounded bg-purple-50 px-2 py-0.5 text-[11px] font-medium text-purple-700 dark:bg-purple-950/60 dark:text-purple-300">
+                  Transfer credit
+                </span>
+              )}
+              {isCustom && !isTransfer && (
+                <span className="rounded bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
+                  Custom course
+                </span>
+              )}
+            </div>
+            <h3 className="mt-1.5 text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+              {course?.title ?? "Unknown course"}
+            </h3>
+            {course &&
+              !("custom" in course) &&
+              (course.subject_name || course.faculty) && (
+                <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+                  {[course.subject_name, course.faculty]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </p>
+              )}
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-md p-1 text-lg leading-none text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200"
+            aria-label="Close course details"
+          >
+            &times;
+          </button>
+        </div>
+
+        {flag && (
+          <div
+            className={`mt-3 rounded-lg border px-3 py-2 text-xs font-medium ${
+              flag.cls === "bad"
+                ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300"
+                : "border-zinc-200 bg-zinc-50 text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-300"
+            }`}
+          >
+            {flag.icon} {flag.title}
+          </div>
+        )}
+
+        <div className="mt-4 space-y-2.5 border-t border-zinc-100 pt-3 text-xs dark:border-zinc-800">
+          <div className="flex justify-between gap-4">
+            <span className="shrink-0 text-zinc-500 dark:text-zinc-400">
+              Offerings ({academicBaseYear}–{academicBaseYear + 1})
+            </span>
+            <span className="text-right font-medium text-zinc-800 dark:text-zinc-200">
+              {yearOfferings.length > 0
+                ? yearOfferings.join(" · ")
+                : `Not offered in ${academicBaseYear}–${academicBaseYear + 1}`}
+            </span>
+          </div>
+
+          {course && !("custom" in course) && (
+            <div className="flex justify-between gap-4">
+              <span className="shrink-0 text-zinc-500 dark:text-zinc-400">
+                Prerequisites
+              </span>
+              <span className="text-right text-zinc-700 dark:text-zinc-300">
+                {course.prerequisite_text ||
+                  (course.prerequisite_codes.length > 0
+                    ? course.prerequisite_codes.join(", ")
+                    : "None")}
+              </span>
+            </div>
+          )}
+
+          {buckets.length > 0 && (
+            <div className="flex justify-between gap-4">
+              <span className="shrink-0 text-zinc-500 dark:text-zinc-400">
+                Counts toward
+              </span>
+              <span className="text-right text-zinc-700 dark:text-zinc-300">
+                {buckets.join(", ")}
+              </span>
+            </div>
+          )}
+        </div>
+
+        <div className="mt-5 flex items-center justify-between gap-2 border-t border-zinc-100 pt-3 dark:border-zinc-800">
+          <div>
+            {course && !("custom" in course) && course.calendar_url && (
+              <a
+                href={course.calendar_url}
+                target="_blank"
+                rel="noreferrer"
+                className="text-xs font-medium text-blue-600 hover:underline dark:text-blue-400"
+              >
+                View in Academic Calendar &rarr;
+              </a>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onRemove}
+              className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 transition-colors hover:bg-red-50 dark:border-red-900/60 dark:text-red-400 dark:hover:bg-red-950/40"
+            >
+              Remove from term
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg bg-zinc-900 px-3.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

@@ -119,13 +119,15 @@ export async function getCourseOfferings(): Promise<CourseOffering[]> {
   const rows = await collectPages((from, to) =>
     supabase
       .from("course_offerings_summary")
-      .select("subject_course, terms, sections, credit_hours")
+      .select("subject_course, subject, course_number, terms, sections, credit_hours")
       .order("subject_course", { ascending: true })
       .range(from, to),
   );
 
   return (rows as Record<string, unknown>[]).map((row) => ({
     subject_course: String(row.subject_course),
+    subject: row.subject ? String(row.subject) : undefined,
+    course_number: row.course_number ? String(row.course_number) : undefined,
     terms: Array.isArray(row.terms) ? (row.terms as string[]) : [],
     sections: Number(row.sections ?? 0),
     credit_hours: Number(row.credit_hours ?? 0),
@@ -137,12 +139,47 @@ export async function getDegreeBootstrap(): Promise<DegreeBootstrapData> {
   cacheLife("days");
   cacheTag("degree-bootstrap");
 
-  const [subjects, programs, courses, offerings] = await Promise.all([
+  const [subjects, programs, catalogCourses, offerings] = await Promise.all([
     getDegreeSubjects(),
     getProgramSummaries(),
     getCatalogCourses(),
     getCourseOfferings(),
   ]);
+
+  const subjectMap = new Map(subjects.map((s) => [s.code, s]));
+  const existingKeys = new Set(
+    catalogCourses.map((c) => c.subject_course.toUpperCase()),
+  );
+  const courses = [...catalogCourses];
+
+  for (const off of offerings) {
+    const key = off.subject_course.toUpperCase();
+    if (existingKeys.has(key) || !off.subject || !off.course_number) continue;
+    existingKeys.add(key);
+
+    const numMatch = off.course_number.match(/\d{4}/);
+    const level = numMatch ? Math.floor(Number(numMatch[0]) / 1000) * 1000 : 0;
+    const subj = subjectMap.get(off.subject);
+
+    courses.push({
+      code: `${off.subject} ${off.course_number}`,
+      subject: off.subject,
+      number: off.course_number,
+      subject_course: off.subject_course,
+      level,
+      faculty: subj?.faculty ?? null,
+      subject_name: subj?.name ?? null,
+      title: `${off.subject} ${off.course_number}`,
+      short_title: null,
+      credit_hours: off.credit_hours > 0 ? off.credit_hours : 3,
+      terms_offered: off.terms,
+      sections_in_offerings: off.sections,
+      prerequisite_codes: [],
+      prerequisite_text: null,
+      prerequisite_ast: null,
+      calendar_url: null,
+    });
+  }
 
   return { subjects, programs, courses, offerings };
 }

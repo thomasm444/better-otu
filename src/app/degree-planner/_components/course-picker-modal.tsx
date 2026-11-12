@@ -6,7 +6,6 @@ import {
   completedBefore,
   evalPrereq,
   findBucket,
-  isOffered,
   matchesBucket,
   matchingBuckets,
   normalizeCode,
@@ -14,10 +13,12 @@ import {
   offeringOf,
   placedCodes,
   seasonsOf,
+  termCalendarYear,
 } from "@/lib/degree-planner";
 import type {
   CatalogCourse,
   CustomCourse,
+  OfferingContext,
   OfferingEntry,
   PickerState,
   PlannerTerm,
@@ -32,6 +33,8 @@ type CoursePickerModalProps = {
   catalogCourses: CatalogCourse[];
   catalogMap: Map<string, CatalogCourse>;
   offeringsMap: Map<string, OfferingEntry>;
+  offeringContext: OfferingContext;
+  startYear: number;
   customs: Map<string, CustomCourse>;
   subjects: string[];
   subjectFaculty: Map<string, string | null>;
@@ -52,6 +55,8 @@ export function CoursePickerModal({
   catalogCourses,
   catalogMap,
   offeringsMap,
+  offeringContext,
+  startYear,
   customs,
   subjects,
   subjectFaculty,
@@ -101,6 +106,10 @@ export function CoursePickerModal({
   }, [onClose]);
 
   const term = terms[picker.termIndex];
+  const calYear = term
+    ? termCalendarYear(startYear, term.year, term.season)
+    : startYear;
+  const academicBaseYear = term ? startYear + (term.year - 1) : startYear;
 
   const openCustomForm = (prefill = "", transfer = false) => {
     const cleanPrefill = /[a-z]/i.test(prefill)
@@ -206,13 +215,22 @@ export function CoursePickerModal({
 
     let rows = catalogCourses;
     if (filterOffered) {
-      rows = rows.filter((c) => isOffered(c.code, offeringsMap, customs));
+      rows = rows.filter(
+        (c) =>
+          seasonsOf(c.code, offeringsMap, customs, {
+            academicBaseYear,
+            context: offeringContext,
+          }).length > 0,
+      );
     }
 
     const seasonal = filterTerm && !(filterBucket && bucket);
     if (seasonal) {
       rows = rows.filter((c) =>
-        offeredIn(c.code, term.season, offeringsMap, customs),
+        offeredIn(c.code, term.season, offeringsMap, customs, {
+          calendarYear: calYear,
+          context: offeringContext,
+        }),
       );
     }
     if (filterBucket && bucket) {
@@ -239,10 +257,16 @@ export function CoursePickerModal({
         const usedA = placed.has(a.code) ? 1 : 0;
         const usedB = placed.has(b.code) ? 1 : 0;
         if (usedA !== usedB) return usedA - usedB;
-        const seasonA = offeredIn(a.code, term.season, offeringsMap, customs)
+        const seasonA = offeredIn(a.code, term.season, offeringsMap, customs, {
+          calendarYear: calYear,
+          context: offeringContext,
+        })
           ? 0
           : 1;
-        const seasonB = offeredIn(b.code, term.season, offeringsMap, customs)
+        const seasonB = offeredIn(b.code, term.season, offeringsMap, customs, {
+          calendarYear: calYear,
+          context: offeringContext,
+        })
           ? 0
           : 1;
         if (seasonA !== seasonB) return seasonA - seasonB;
@@ -262,6 +286,9 @@ export function CoursePickerModal({
     query,
     filterPrereq,
     offeringsMap,
+    offeringContext,
+    calYear,
+    academicBaseYear,
     customs,
     completed,
     placed,
@@ -350,7 +377,7 @@ export function CoursePickerModal({
                 onClick: () => setFilterTerm((v) => !v),
               },
               {
-                label: "Offered 26–27",
+                label: `Offered ${String(academicBaseYear).slice(-2)}–${String(academicBaseYear + 1).slice(-2)}`,
                 active: filterOffered,
                 onClick: () => setFilterOffered((v) => !v),
               },
@@ -391,7 +418,7 @@ export function CoursePickerModal({
             <button
               type="button"
               onClick={() => openCustomForm(query, false)}
-              title="A course the 2026-27 timetable doesn't list"
+              title="A course not listed in the timetable"
               className="rounded-full border border-zinc-200 bg-white px-3 py-1 text-xs text-zinc-600 hover:border-blue-400 hover:text-blue-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
             >
               ＋ Custom course
@@ -579,9 +606,25 @@ export function CoursePickerModal({
                   filteredRows.map((course) => {
                     const check = evalPrereq(course.prerequisite_ast, completed);
                     const used = placed.has(course.code);
-                    const offered =
-                      seasonsOf(course.code, offeringsMap, customs).join(" · ") ||
-                      "not offered in 2026-27";
+                    const academicBaseYear = startYear + (term.year - 1);
+                    const isOfferedThisTerm = offeredIn(
+                      course.code,
+                      term.season,
+                      offeringsMap,
+                      customs,
+                      { calendarYear: calYear, context: offeringContext },
+                    );
+                    const yearTerms = isOfferedThisTerm
+                      ? []
+                      : seasonsOf(course.code, offeringsMap, customs, {
+                          academicBaseYear,
+                          context: offeringContext,
+                        });
+                    const offered = isOfferedThisTerm
+                      ? `Offered in ${term.season} ${calYear}`
+                      : yearTerms.length > 0
+                        ? `Offered in ${yearTerms.join(" · ")}`
+                        : `Not offered in ${academicBaseYear}–${academicBaseYear + 1}`;
 
                     let missingText = "";
                     if (check === false) {

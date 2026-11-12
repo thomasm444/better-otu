@@ -16,6 +16,7 @@ import type {
   CustomCourse,
   DegreeProgramDetail,
   ElectiveBucket,
+  OfferingContext,
   OfferingEntry,
   PlannerTerm,
   RequirementModel,
@@ -28,6 +29,8 @@ type RequirementsSidebarProps = {
   terms: PlannerTerm[];
   catalogMap: Map<string, CatalogCourse>;
   offeringsMap: Map<string, OfferingEntry>;
+  offeringContext: OfferingContext;
+  startYear: number;
   customs: Map<string, CustomCourse>;
   unscheduled: UnscheduledItem[];
   onPickBucket: (bucketKey: string) => void;
@@ -42,6 +45,8 @@ export function RequirementsSidebar({
   terms,
   catalogMap,
   offeringsMap,
+  offeringContext,
+  startYear,
   customs,
   unscheduled,
   onPickBucket,
@@ -66,6 +71,7 @@ export function RequirementsSidebar({
     catalogMap,
     offeringsMap,
     customs,
+    { startYear, context: offeringContext },
   );
 
   const subheader = [program.name, program.credential, program.degree_abbrev]

@@ -6,6 +6,7 @@ import type {
   DegreeProgramDetail,
   ElectiveBucket,
   ElectiveMatch,
+  OfferingContext,
   OfferingEntry,
   PlannerTerm,
   PrereqAstNode,
@@ -19,6 +20,35 @@ import type {
 export const STORE_PREFIX = "otu-plan-v3:";
 export const SLOTS_PER_TERM = 5;
 export const CREDIT_CAP = 15;
+export const DEFAULT_START_YEAR = 2026;
+export const MIN_START_YEAR = 2008;
+export const MAX_START_YEAR = 2027;
+
+export function parseTermDesc(
+  termDesc: string,
+): { season: TermSeason; calendarYear: number } | null {
+  const yearMatch = termDesc.match(/\b(20\d{2})\b/);
+  if (!yearMatch) return null;
+  const calendarYear = Number(yearMatch[1]);
+  const lower = termDesc.toLowerCase();
+  if (lower.includes("fall")) return { season: "Fall", calendarYear };
+  if (lower.includes("winter")) return { season: "Winter", calendarYear };
+  if (lower.includes("summer")) return { season: "Summer", calendarYear };
+  return null;
+}
+
+export function termKey(season: TermSeason, calendarYear: number): string {
+  return `${season}:${calendarYear}`;
+}
+
+export function termCalendarYear(
+  startYear: number,
+  academicYear: number,
+  season: TermSeason,
+): number {
+  const base = startYear + (academicYear - 1);
+  return season === "Fall" ? base : base + 1;
+}
 
 export function compactCourseKey(code: string | null | undefined): string {
   return String(code ?? "")
@@ -34,6 +64,43 @@ export function normalizeCode(raw: string): string {
   return parts ? `${parts[1]} ${parts[2]}` : flat;
 }
 
+function extractTermKeys(terms: Iterable<string>): Set<string> {
+  const keys = new Set<string>();
+  for (const raw of terms) {
+    const parsed = parseTermDesc(raw);
+    if (parsed) {
+      keys.add(termKey(parsed.season, parsed.calendarYear));
+    }
+  }
+  return keys;
+}
+
+export function buildOfferingContext(
+  offerings: CourseOffering[],
+  courses: CatalogCourse[],
+): OfferingContext {
+  const knownTermKeys = new Set<string>();
+  let minCalendarYear = MAX_START_YEAR;
+  let maxCalendarYear = MIN_START_YEAR;
+
+  const scan = (terms: Iterable<string>) => {
+    for (const raw of terms) {
+      const parsed = parseTermDesc(raw);
+      if (!parsed) continue;
+      knownTermKeys.add(termKey(parsed.season, parsed.calendarYear));
+      if (parsed.calendarYear < minCalendarYear) minCalendarYear = parsed.calendarYear;
+      if (parsed.calendarYear > maxCalendarYear) maxCalendarYear = parsed.calendarYear;
+    }
+  };
+
+  for (const row of offerings) scan(row.terms);
+  if (knownTermKeys.size === 0) {
+    for (const course of courses) scan(course.terms_offered);
+  }
+
+  return { knownTermKeys, minCalendarYear, maxCalendarYear };
+}
+
 export function buildOfferingsMap(
   offerings: CourseOffering[],
   courses: CatalogCourse[],
@@ -44,6 +111,7 @@ export function buildOfferingsMap(
     if (!row.subject_course) continue;
     map.set(row.subject_course, {
       terms: new Set(row.terms),
+      termKeys: extractTermKeys(row.terms),
       sections: row.sections,
       credits: row.credit_hours,
     });
@@ -55,6 +123,7 @@ export function buildOfferingsMap(
       if (!course.terms_offered.length) continue;
       map.set(compactCourseKey(course.code), {
         terms: new Set(course.terms_offered),
+        termKeys: extractTermKeys(course.terms_offered),
         sections: course.sections_in_offerings,
         credits: course.credit_hours,
       });
@@ -86,10 +155,29 @@ export function offeredIn(
   season: TermSeason,
   offeringsMap: Map<string, OfferingEntry>,
   customs: Map<string, CustomCourse>,
+  options?: {
+    calendarYear?: number;
+    context?: OfferingContext;
+  },
 ): boolean {
   if (customs.has(code)) return true;
   const entry = offeringOf(code, offeringsMap);
   if (!entry || !entry.terms.size) return false;
+
+  if (options?.calendarYear !== undefined && options?.context) {
+    const key = termKey(season, options.calendarYear);
+    if (options.context.knownTermKeys.has(key)) {
+      return entry.termKeys.has(key);
+    }
+    // Future term not yet in the database: check recent 2 years for that season
+    const recentCutoff = options.context.maxCalendarYear - 2;
+    for (const k of entry.termKeys) {
+      const [kSeason, kYearStr] = k.split(":");
+      if (kSeason === season && Number(kYearStr) >= recentCutoff) return true;
+    }
+    return false;
+  }
+
   if (season === "Summer") return false;
   const needle = season.toLowerCase();
   for (const term of entry.terms) {
@@ -102,10 +190,33 @@ export function seasonsOf(
   code: string,
   offeringsMap: Map<string, OfferingEntry>,
   customs: Map<string, CustomCourse>,
+  options?: {
+    academicBaseYear?: number;
+    context?: OfferingContext;
+  },
 ): string[] {
   if (customs.has(code)) return ["custom"];
   const entry = offeringOf(code, offeringsMap);
-  return entry ? [...entry.terms] : [];
+  if (!entry) return [];
+
+  if (options?.academicBaseYear !== undefined) {
+    const base = options.academicBaseYear;
+    const checks: [TermSeason, number][] = [
+      ["Fall", base],
+      ["Winter", base + 1],
+      ["Summer", base + 1],
+    ];
+    return checks
+      .filter(([season, calYear]) =>
+        offeredIn(code, season, offeringsMap, customs, {
+          calendarYear: calYear,
+          context: options.context,
+        }),
+      )
+      .map(([season, calYear]) => `${season} ${calYear}`);
+  }
+
+  return [...entry.terms];
 }
 
 export function courseOf(
@@ -190,21 +301,33 @@ export function prereqFlag(
   catalogMap: Map<string, CatalogCourse>,
   offeringsMap: Map<string, OfferingEntry>,
   customs: Map<string, CustomCourse>,
+  options?: {
+    startYear?: number;
+    context?: OfferingContext;
+  },
 ): PrereqFlag | null {
   const term = terms[termIndex];
+  const startYear = options?.startYear ?? DEFAULT_START_YEAR;
   if (term && term.season !== "Summer") {
+    const calYear = termCalendarYear(startYear, term.year, term.season);
     if (!isOffered(code, offeringsMap, customs)) {
       return {
         cls: "bad",
         icon: "⚠",
-        title: "Not offered in Fall 2026 / Winter 2027",
+        title: "No recorded offerings in the course database",
       };
     }
-    if (!offeredIn(code, term.season, offeringsMap, customs) && !term.summer) {
+    if (
+      !offeredIn(code, term.season, offeringsMap, customs, {
+        calendarYear: calYear,
+        context: options?.context,
+      }) &&
+      !term.summer
+    ) {
       return {
         cls: "bad",
         icon: "⚠",
-        title: `Only offered in ${seasonsOf(code, offeringsMap, customs).join(" / ")}`,
+        title: `Not offered in ${term.season} ${calYear}`,
       };
     }
   }
@@ -335,10 +458,15 @@ function distributeYear(
   offeringsMap: Map<string, OfferingEntry>,
   customs: Map<string, CustomCourse>,
   unscheduled: UnscheduledItem[],
+  startYear: number,
+  context?: OfferingContext,
 ): (string | null)[] {
   const present = new Set(codes.filter((c): c is string => Boolean(c)));
   const termOf = new Map<string, number>();
   const remaining: (string | null)[] = [];
+  const calStart = ownTerms[0]
+    ? startYear + (ownTerms[0].year - 1)
+    : startYear;
 
   for (const code of codes) {
     if (
@@ -348,7 +476,7 @@ function distributeYear(
     ) {
       unscheduled.push({
         code,
-        reason: "not offered in Fall 2026 / Winter 2027",
+        reason: `not offered in ${calStart}–${calStart + 1}`,
       });
       continue;
     }
@@ -357,6 +485,7 @@ function distributeYear(
 
   for (let t = 0; t < ownTerms.length; t++) {
     const term = ownTerms[t];
+    const calYear = termCalendarYear(startYear, term.year, term.season);
     while (term.slots.length < SLOTS_PER_TERM && remaining.length) {
       const eligible: { index: number; code: string | null }[] = [];
       remaining.forEach((code, index) => {
@@ -366,7 +495,10 @@ function distributeYear(
         }
         if (
           offeringsMap.size > 0 &&
-          !offeredIn(code, term.season, offeringsMap, customs)
+          !offeredIn(code, term.season, offeringsMap, customs, {
+            calendarYear: calYear,
+            context,
+          })
         ) {
           return;
         }
@@ -393,12 +525,28 @@ export function buildDefaultPlan(
   catalogMap: Map<string, CatalogCourse>,
   offeringsMap: Map<string, OfferingEntry>,
   customs: Map<string, CustomCourse>,
+  options?: {
+    startYear?: number;
+    gapYears?: number[];
+    context?: OfferingContext;
+  },
 ): { terms: PlannerTerm[]; unscheduled: UnscheduledItem[] } {
+  const startYear = options?.startYear ?? DEFAULT_START_YEAR;
+  const gapSet = new Set(options?.gapYears ?? []);
+  const context = options?.context;
+
   const unscheduled: UnscheduledItem[] = [];
   const terms: PlannerTerm[] = [];
-  for (let y = 1; y <= 4; y++) {
-    terms.push({ label: "Fall", season: "Fall", year: y, slots: [] });
-    terms.push({ label: "Winter", season: "Winter", year: y, slots: [] });
+  const studyToAcademicYear = new Map<number, number>();
+  let academicYear = 1;
+  for (let studyYear = 1; studyYear <= 4; studyYear++) {
+    while (gapSet.has(academicYear)) {
+      academicYear++;
+    }
+    studyToAcademicYear.set(studyYear, academicYear);
+    terms.push({ label: "Fall", season: "Fall", year: academicYear, slots: [] });
+    terms.push({ label: "Winter", season: "Winter", year: academicYear, slots: [] });
+    academicYear++;
   }
 
   const plan = new Map<number, (string | null)[]>();
@@ -473,15 +621,18 @@ export function buildDefaultPlan(
   }
 
   let carry: (string | null)[] = [];
-  for (let y = 1; y <= 4; y++) {
-    const codes = (plan.get(y) ?? []).slice();
+  for (let studyYear = 1; studyYear <= 4; studyYear++) {
+    const targetAcademicYear = studyToAcademicYear.get(studyYear) ?? studyYear;
+    const codes = (plan.get(studyYear) ?? []).slice();
     carry = distributeYear(
       orderWithinYear(carry.concat(codes), catalogMap),
-      terms.filter((t) => t.year === y),
+      terms.filter((t) => t.year === targetAcademicYear),
       catalogMap,
       offeringsMap,
       customs,
       unscheduled,
+      startYear,
+      context,
     );
   }
 
@@ -500,7 +651,15 @@ export function buildDefaultPlan(
       for (let index = 0; index < terms.length && !done; index++) {
         const term = terms[index];
         if (term.season === "Summer") continue;
-        if (!offeredIn(code, term.season, offeringsMap, customs)) continue;
+        const calYear = termCalendarYear(startYear, term.year, term.season);
+        if (
+          !offeredIn(code, term.season, offeringsMap, customs, {
+            calendarYear: calYear,
+            context,
+          })
+        ) {
+          continue;
+        }
         const slot =
           term.slots.length < SLOTS_PER_TERM
             ? term.slots.length
@@ -747,16 +906,23 @@ export function collectWarnings(
   catalogMap: Map<string, CatalogCourse>,
   offeringsMap: Map<string, OfferingEntry>,
   customs: Map<string, CustomCourse>,
+  options?: {
+    startYear?: number;
+    context?: OfferingContext;
+  },
 ): PlannerWarning[] {
   const out: PlannerWarning[] = [];
   const placed = placedCodes(terms);
+  const startYear = options?.startYear ?? DEFAULT_START_YEAR;
+  const context = options?.context;
 
   terms.forEach((term, termIndex) => {
+    const calYear = termCalendarYear(startYear, term.year, term.season);
     const credits = termCredits(term, catalogMap, customs);
     if (credits > CREDIT_CAP) {
       out.push({
         id: `cap-${termIndex}`,
-        text: `Year ${term.year} ${term.season} has ${credits} credits (over ${CREDIT_CAP}).`,
+        text: `${term.season} ${calYear} has ${credits} credits (over ${CREDIT_CAP}).`,
       });
     }
 
@@ -767,16 +933,20 @@ export function collectWarnings(
           out.push({
             id: `not-offered-${termIndex}-${slotIdx}`,
             code,
-            text: `${code} is not offered in 2026-27 at all.`,
+            text: `${code} has no recorded offerings in the course database.`,
           });
           return;
         }
-        if (!offeredIn(code, term.season, offeringsMap, customs)) {
-          const seasons = seasonsOf(code, offeringsMap, customs).join(" / ");
+        if (
+          !offeredIn(code, term.season, offeringsMap, customs, {
+            calendarYear: calYear,
+            context,
+          })
+        ) {
           out.push({
             id: `wrong-season-${termIndex}-${slotIdx}`,
             code,
-            text: `${code} isn't offered in ${term.season} — only ${seasons}.`,
+            text: `${code} isn't offered in ${term.season} ${calYear}.`,
           });
           return;
         }
@@ -789,6 +959,7 @@ export function collectWarnings(
         catalogMap,
         offeringsMap,
         customs,
+        { startYear, context },
       );
       if (flag?.kind === "prereq") {
         const course = courseOf(code, catalogMap, customs);
