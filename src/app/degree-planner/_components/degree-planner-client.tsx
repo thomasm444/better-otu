@@ -132,6 +132,11 @@ export function DegreePlannerClient({
   const [unscheduled, setUnscheduled] = useState<UnscheduledItem[]>(
     () => initialDefaultPlan.unscheduled,
   );
+  const [previousPlan, setPreviousPlan] = useState<{
+    terms: PlannerTerm[];
+    customs: CustomCourse[];
+  } | null>(null);
+  const [resetConfirmOpen, setResetConfirmOpen] = useState(false);
 
   const [picker, setPicker] = useState<PickerState | null>(null);
   const [pickerTransferMode, setPickerTransferMode] = useState(false);
@@ -365,6 +370,11 @@ export function DegreePlannerClient({
 
   const handleReset = useCallback(() => {
     if (!program) return;
+    setResetConfirmOpen(false);
+    setPreviousPlan({
+      terms: terms.map((t) => ({ ...t, slots: [...t.slots] })),
+      customs: [...customs.values()],
+    });
     if (typeof window !== "undefined") {
       window.localStorage.removeItem(STORE_PREFIX + program.program_id);
     }
@@ -379,7 +389,18 @@ export function DegreePlannerClient({
     setTerms(built.terms);
     setUnscheduled(built.unscheduled);
     showToast("Plan reset to the published year map");
-  }, [program, catalogMap, offeringsMap, showToast]);
+  }, [program, terms, customs, catalogMap, offeringsMap, showToast]);
+
+  const handleRestorePrevious = useCallback(() => {
+    if (!program || !previousPlan) return;
+    const restoredCustoms = new Map<string, CustomCourse>();
+    for (const c of previousPlan.customs) {
+      restoredCustoms.set(c.code, c);
+    }
+    commitPlan(previousPlan.terms, restoredCustoms);
+    setPreviousPlan(null);
+    showToast("Restored your previous plan");
+  }, [program, previousPlan, commitPlan, showToast]);
 
   const handleSaveCustom = useCallback(
     (
@@ -550,16 +571,65 @@ export function DegreePlannerClient({
             </div>
           </div>
 
+          {previousPlan && (
+            <button
+              type="button"
+              onClick={handleRestorePrevious}
+              className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 dark:hover:bg-emerald-900/60"
+            >
+              Undo reset
+            </button>
+          )}
+
           <button
             type="button"
             disabled={!program}
-            onClick={handleReset}
+            onClick={() => setResetConfirmOpen(true)}
             className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-600 transition-colors hover:border-zinc-300 hover:text-zinc-900 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100"
           >
             Reset to defaults
           </button>
         </div>
       </header>
+
+      {/* Reset Confirmation Modal */}
+      {resetConfirmOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border-2 border-red-500 bg-white p-6 shadow-2xl dark:bg-zinc-900">
+            <div className="mb-3 flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-600 dark:bg-red-950 dark:text-red-400">
+                <span className="text-lg font-bold">!</span>
+              </div>
+              <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+                Reset plan to defaults?
+              </h2>
+            </div>
+
+            <p className="mb-6 text-sm text-zinc-600 dark:text-zinc-400">
+              Are you sure you want to reset your plan back to the default
+              template? (You can still click <strong>Undo reset</strong>{" "}
+              afterward if you change your mind.)
+            </p>
+
+            <div className="flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setResetConfirmOpen(false)}
+                className="rounded-lg border border-zinc-200 bg-white px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleReset}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-red-700"
+              >
+                Yes, reset plan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Main Layout */}
       <main className="mx-auto grid max-w-[1440px] grid-cols-1 items-start gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_390px]">
