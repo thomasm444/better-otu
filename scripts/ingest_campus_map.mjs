@@ -273,6 +273,70 @@ async function ingest() {
     }
     console.log("\nFinished ingesting campus_spaces!");
 
+    console.log("Refreshing campus_map_cache...");
+    await client.query(`
+      INSERT INTO public.campus_map_cache (id, data, updated_at)
+      VALUES (
+        'default',
+        (
+          SELECT json_build_object(
+            'type', 'FeatureCollection',
+            'features', coalesce(
+              (
+                SELECT json_agg(
+                  json_build_object(
+                    'type', 'Feature',
+                    'id', id,
+                    'geometry', geometry,
+                    'properties', json_build_object(
+                      'name', name,
+                      'externalId', external_id,
+                      'floor', floor,
+                      'floorName', floor_name,
+                      'building', building,
+                      'venue', venue,
+                      'type', room_type,
+                      'capacity', capacity,
+                      'minCapacity', min_capacity,
+                      'capacitySource', capacity_source,
+                      'configType', config_type,
+                      'isBuildingContainer', is_building_container,
+                      'hasSchedule', has_schedule,
+                      'isLibraryRoom', is_library_room,
+                      'rooms', sub_rooms,
+                      'roomsData', rooms_data,
+                      'schedules', schedules,
+                      'courses', courses,
+                      'allCourses', all_courses
+                    )
+                  )
+                )
+                FROM public.campus_spaces
+              ),
+              '[]'::json
+            ),
+            'unmappedDetailedRes', coalesce(
+              (
+                SELECT json_agg(
+                  json_build_object(
+                    'roomId', room_id,
+                    'building', building,
+                    'roomType', room_type,
+                    'capacity', capacity,
+                    'description', description
+                  )
+                )
+                FROM public.campus_unmapped_spaces
+              ),
+              '[]'::json
+            )
+          )
+        ),
+        now()
+      )
+      ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = now();
+    `);
+
     await client.query("NOTIFY pgrst, 'reload schema';");
     await client.query("COMMIT;");
     console.log("Ingestion successfully committed to Supabase!");

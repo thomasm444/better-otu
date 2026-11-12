@@ -833,7 +833,11 @@ export function CampusMapView() {
         <div ref={mapContainerRef} className="h-full w-full" id="map-container" />
 
         {/* Legend Overlay */}
-        <div className="absolute bottom-6 left-4 z-20 flex flex-col gap-1 rounded-xl border border-slate-200/80 bg-white/95 p-3 text-xs shadow-lg backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/95 dark:text-zinc-200">
+        <div
+          onMouseDown={(e) => e.stopPropagation()}
+          onTouchStart={(e) => e.stopPropagation()}
+          className="absolute bottom-6 left-4 z-[1000] flex flex-col gap-1 rounded-xl border border-slate-200/90 bg-white/95 p-3 text-xs shadow-xl backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/95 dark:text-zinc-200"
+        >
           <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Status Legend</div>
           {currentMode === "availability" ? (
             <>
@@ -864,7 +868,11 @@ export function CampusMapView() {
 
         {/* Floating Timeline Control Bar */}
         {currentMode === "availability" && (
-          <div className="absolute bottom-6 left-1/2 z-20 w-[94%] max-w-2xl -translate-x-1/2 rounded-2xl border border-slate-200/90 bg-white/95 p-3.5 shadow-2xl backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/95 dark:text-zinc-100">
+          <div
+            onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+            className="absolute bottom-6 left-1/2 z-[1000] w-[94%] max-w-2xl -translate-x-1/2 rounded-2xl border border-slate-200/95 bg-white/95 p-3.5 shadow-2xl backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/95 dark:text-zinc-100"
+          >
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2 dark:border-zinc-800">
               {/* Day Pills */}
               <div className="flex gap-1">

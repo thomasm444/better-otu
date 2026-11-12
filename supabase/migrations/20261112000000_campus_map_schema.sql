@@ -148,23 +148,52 @@ create policy "room_detailed_reservations are publicly readable"
   on public.room_detailed_reservations for select to anon, authenticated using (true);
 
 -- ─────────────────────────────────────────────────────────────────────────────
+-- 6. campus_map_cache — materialized GeoJSON FeatureCollection
+-- ─────────────────────────────────────────────────────────────────────────────
+create table if not exists public.campus_map_cache (
+  id         text primary key,
+  data       json not null,
+  updated_at timestamptz not null default now()
+);
+
+grant select on public.campus_map_cache to anon, authenticated, service_role;
+grant select, insert, update, delete on public.campus_map_cache to service_role;
+alter table public.campus_map_cache enable row level security;
+
+drop policy if exists "campus_map_cache is publicly readable" on public.campus_map_cache;
+create policy "campus_map_cache is publicly readable"
+  on public.campus_map_cache for select to anon, authenticated using (true);
+
+-- ─────────────────────────────────────────────────────────────────────────────
 -- Fast Map FeatureCollection RPC
 -- ─────────────────────────────────────────────────────────────────────────────
+drop function if exists public.get_campus_map_data(text, text);
+
 create or replace function public.get_campus_map_data(p_floor text default null, p_building text default null)
-returns jsonb
-language sql
+returns json
+language plpgsql
 stable
 as $$
-  select jsonb_build_object(
+declare
+  result json;
+begin
+  if p_floor is null and p_building is null then
+    select data into result from public.campus_map_cache where id = 'default';
+    if result is not null then
+      return result;
+    end if;
+  end if;
+
+  select json_build_object(
     'type', 'FeatureCollection',
     'features', coalesce(
       (
-        select jsonb_agg(
-          jsonb_build_object(
+        select json_agg(
+          json_build_object(
             'type', 'Feature',
             'id', id,
             'geometry', geometry,
-            'properties', jsonb_build_object(
+            'properties', json_build_object(
               'name', name,
               'externalId', external_id,
               'floor', floor,
@@ -191,12 +220,12 @@ as $$
         where (p_floor is null or floor = p_floor)
           and (p_building is null or building = p_building)
       ),
-      '[]'::jsonb
+      '[]'::json
     ),
     'unmappedDetailedRes', coalesce(
       (
-        select jsonb_agg(
-          jsonb_build_object(
+        select json_agg(
+          json_build_object(
             'roomId', room_id,
             'building', building,
             'roomType', room_type,
@@ -206,9 +235,12 @@ as $$
         )
         from public.campus_unmapped_spaces
       ),
-      '[]'::jsonb
+      '[]'::json
     )
-  );
+  ) into result;
+
+  return result;
+end;
 $$;
 
 grant execute on function public.get_campus_map_data(text, text) to anon, authenticated, service_role;
