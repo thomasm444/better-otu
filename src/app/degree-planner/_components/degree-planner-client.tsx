@@ -171,6 +171,7 @@ export function DegreePlannerClient({
     () => initialDefaultPlan.unscheduled,
   );
   const [previousPlan, setPreviousPlan] = useState<{
+    programId: string;
     terms: PlannerTerm[];
     customs: CustomCourse[];
   } | null>(null);
@@ -403,6 +404,11 @@ export function DegreePlannerClient({
       setMenuOpen(false);
       setProgramQuery(summary.name);
 
+      if (summary.program_id !== programRef.current?.program_id) {
+        setPreviousPlan(null);
+        setResetConfirmOpen(false);
+      }
+
       if (typeof window !== "undefined") {
         const url = new URL(window.location.href);
         url.searchParams.set("program", summary.program_id);
@@ -580,6 +586,7 @@ export function DegreePlannerClient({
     if (!program) return;
     setResetConfirmOpen(false);
     setPreviousPlan({
+      programId: program.program_id,
       terms: terms.map((t) => ({ ...t, slots: [...t.slots] })),
       customs: [...customs.values()],
     });
@@ -685,7 +692,10 @@ export function DegreePlannerClient({
   );
 
   const handleRestorePrevious = useCallback(() => {
-    if (!program || !previousPlan) return;
+    if (!program || !previousPlan || previousPlan.programId !== program.program_id) {
+      setPreviousPlan(null);
+      return;
+    }
     const restoredCustoms = new Map<string, CustomCourse>();
     for (const c of previousPlan.customs) {
       restoredCustoms.set(c.code, c);
