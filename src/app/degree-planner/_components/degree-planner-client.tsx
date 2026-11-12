@@ -1,5 +1,6 @@
 "use client";
 
+import type { User } from "@supabase/supabase-js";
 import Link from "next/link";
 import React, {
   useCallback,
@@ -8,6 +9,14 @@ import React, {
   useRef,
   useState,
 } from "react";
+
+import { AuthButton } from "@/components/auth-button";
+import {
+  fetchDegreePlanByProgram,
+  fetchLatestDegreePlan,
+  upsertDegreePlan,
+} from "@/lib/degree-plan-storage";
+import { createClient } from "@/lib/supabase/client";
 
 import {
   buildDefaultPlan,
@@ -143,8 +152,17 @@ export function DegreePlannerClient({
   const [dragTargetKey, setDragTargetKey] = useState<string | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
+  const supabase = useMemo(() => createClient(), []);
+  const [user, setUser] = useState<User | null>(null);
+  const userRef = useRef<User | null>(null);
+  const programRef = useRef<DegreeProgramDetail | null>(initialProgram);
+
   const menuContainerRef = useRef<HTMLDivElement>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    programRef.current = program;
+  }, [program]);
 
   const showToast = useCallback((msg: string) => {
     setToastMsg(msg);
@@ -152,9 +170,8 @@ export function DegreePlannerClient({
     toastTimerRef.current = setTimeout(() => setToastMsg(null), 1800);
   }, []);
 
-  const activateProgram = useCallback(
-    (prog: DegreeProgramDetail) => {
-      const saved = loadSavedPlan(prog.program_id);
+  const applyProgramWithSaved = useCallback(
+    (prog: DegreeProgramDetail, saved: SavedPlan) => {
       const nextCustoms = new Map(
         (saved.customs ?? []).map((c) => [c.code, c]),
       );
@@ -178,6 +195,50 @@ export function DegreePlannerClient({
     [catalogMap, offeringsMap],
   );
 
+  const loadProgramDetail = useCallback(async (programId: string) => {
+    const cached = programCacheRef.current.get(programId);
+    if (cached) return cached;
+
+    const res = await fetch(
+      `/api/degree-planner/programs/${encodeURIComponent(programId)}`,
+    );
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const detail = (await res.json()) as DegreeProgramDetail;
+    programCacheRef.current.set(detail.program_id, detail);
+    return detail;
+  }, []);
+
+  const activateProgram = useCallback(
+    async (prog: DegreeProgramDetail, activeUser?: User | null) => {
+      const localSaved = loadSavedPlan(prog.program_id);
+      applyProgramWithSaved(prog, localSaved);
+
+      const resolvedUser = activeUser !== undefined ? activeUser : userRef.current;
+      if (!resolvedUser?.email) return;
+
+      try {
+        const remote = await fetchDegreePlanByProgram(
+          supabase,
+          resolvedUser.email,
+          prog.program_id,
+        );
+        if (remote && (remote.terms.length > 0 || remote.customs.length > 0)) {
+          const nextCustoms = new Map(
+            remote.customs.map((c) => [c.code, c]),
+          );
+          applyProgramWithSaved(prog, {
+            terms: remote.terms,
+            customs: remote.customs,
+          });
+          persistPlan(prog.program_id, remote.terms, nextCustoms);
+        }
+      } catch {
+        // Keep local state if remote fetch fails.
+      }
+    },
+    [applyProgramWithSaved, supabase],
+  );
+
   // Hydrate saved localStorage plan for SSR-preloaded program after mount
   useEffect(() => {
     if (!initialProgram) return;
@@ -185,10 +246,88 @@ export function DegreePlannerClient({
     const saved = loadSavedPlan(initialProgram.program_id);
     if (!saved.terms?.length && !saved.customs?.length) return;
     const timer = setTimeout(() => {
-      activateProgram(initialProgram);
+      applyProgramWithSaved(initialProgram, saved);
     }, 0);
     return () => clearTimeout(timer);
-  }, [initialProgram, activateProgram]);
+  }, [initialProgram, applyProgramWithSaved]);
+
+  // Sync auth state and load the student's saved Supabase plan on mount / sign-in
+  useEffect(() => {
+    let active = true;
+
+    async function hydrateForUser(nextUser: User | null) {
+      userRef.current = nextUser;
+      setUser(nextUser);
+      if (!nextUser?.email) return;
+
+      const currentProg = programRef.current;
+      try {
+        if (currentProg) {
+          const remote = await fetchDegreePlanByProgram(
+            supabase,
+            nextUser.email,
+            currentProg.program_id,
+          );
+          if (
+            active &&
+            remote &&
+            (remote.terms.length > 0 || remote.customs.length > 0)
+          ) {
+            const nextCustoms = new Map(
+              remote.customs.map((c) => [c.code, c]),
+            );
+            applyProgramWithSaved(currentProg, {
+              terms: remote.terms,
+              customs: remote.customs,
+            });
+            persistPlan(currentProg.program_id, remote.terms, nextCustoms);
+          }
+          return;
+        }
+
+        const latest = await fetchLatestDegreePlan(supabase, nextUser.email);
+        if (!active || !latest) return;
+
+        setLoadingProgram(true);
+        const detail = await loadProgramDetail(latest.program_id);
+        if (!active) return;
+
+        if (typeof window !== "undefined") {
+          const url = new URL(window.location.href);
+          url.searchParams.set("program", detail.program_id);
+          window.history.replaceState(null, "", url.toString());
+        }
+
+        const nextCustoms = new Map(latest.customs.map((c) => [c.code, c]));
+        applyProgramWithSaved(detail, {
+          terms: latest.terms,
+          customs: latest.customs,
+        });
+        persistPlan(detail.program_id, latest.terms, nextCustoms);
+      } catch {
+        if (active) showToast("Could not load saved degree plan");
+      } finally {
+        if (active) setLoadingProgram(false);
+      }
+    }
+
+    supabase.auth.getUser().then(({ data }) => {
+      if (!active) return;
+      void hydrateForUser(data.user ?? null);
+    });
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!active) return;
+      void hydrateForUser(session?.user ?? null);
+    });
+
+    return () => {
+      active = false;
+      subscription.unsubscribe();
+    };
+  }, [applyProgramWithSaved, loadProgramDetail, showToast, supabase]);
 
   // Close program dropdown on outside click
   useEffect(() => {
@@ -280,9 +419,23 @@ export function DegreePlannerClient({
     (nextTerms: PlannerTerm[], nextCustoms: Map<string, CustomCourse>) => {
       setTerms(nextTerms);
       setCustoms(nextCustoms);
-      if (program) persistPlan(program.program_id, nextTerms, nextCustoms);
+      if (!program) return;
+
+      persistPlan(program.program_id, nextTerms, nextCustoms);
+
+      if (user?.email) {
+        void upsertDegreePlan(supabase, {
+          userId: user.id,
+          userEmail: user.email,
+          programId: program.program_id,
+          terms: nextTerms,
+          customs: [...nextCustoms.values()],
+        }).catch(() => {
+          showToast("Could not save plan to your account");
+        });
+      }
     },
-    [program],
+    [program, showToast, supabase, user],
   );
 
   const placeCourse = useCallback(
@@ -589,6 +742,8 @@ export function DegreePlannerClient({
           >
             Reset to defaults
           </button>
+
+          <AuthButton />
         </div>
       </header>
 
