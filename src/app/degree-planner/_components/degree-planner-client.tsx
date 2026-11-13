@@ -29,8 +29,10 @@ import {
   DEFAULT_START_YEAR,
   firstFreeSlot,
   matchingBuckets,
+  MAX_SLOTS_PER_TERM,
   MAX_START_YEAR,
   MIN_START_YEAR,
+  normalizeTermSlots,
   placedCodes,
   placedTermIndex,
   prereqFlag,
@@ -218,7 +220,12 @@ export function DegreePlannerClient({
       setGapYears(nextGapYears);
 
       if (saved.terms && saved.terms.length > 0) {
-        setTerms(saved.terms);
+        setTerms(
+          saved.terms.map((t) => ({
+            ...t,
+            slots: normalizeTermSlots(t.slots),
+          })),
+        );
         setUnscheduled([]);
       } else {
         const built = buildDefaultPlan(
@@ -493,7 +500,11 @@ export function DegreePlannerClient({
       nextStartYear = startYear,
       nextGapYears = gapYears,
     ) => {
-      setTerms(nextTerms);
+      const normalizedTerms = nextTerms.map((t) => ({
+        ...t,
+        slots: normalizeTermSlots(t.slots),
+      }));
+      setTerms(normalizedTerms);
       setCustoms(nextCustoms);
       setStartYear(nextStartYear);
       setGapYears(nextGapYears);
@@ -501,7 +512,7 @@ export function DegreePlannerClient({
 
       persistPlan(
         program.program_id,
-        nextTerms,
+        normalizedTerms,
         nextCustoms,
         nextStartYear,
         nextGapYears,
@@ -514,7 +525,7 @@ export function DegreePlannerClient({
           degreeName: program.name,
           startYear: nextStartYear,
           programId: program.program_id,
-          terms: nextTerms,
+          terms: normalizedTerms,
           customs: [...nextCustoms.values()],
         }).catch(() => {
           showToast("Could not save plan to your account");
@@ -536,6 +547,12 @@ export function DegreePlannerClient({
       const targetTerm = nextTerms[termIndex];
       if (!targetTerm) return;
 
+      if (slotIndex >= MAX_SLOTS_PER_TERM) {
+        showToast(`Maximum of ${MAX_SLOTS_PER_TERM} courses per term`);
+        setPicker(null);
+        return;
+      }
+
       while (targetTerm.slots.length <= slotIndex) {
         targetTerm.slots.push(null);
       }
@@ -556,7 +573,7 @@ export function DegreePlannerClient({
       commitPlan(nextTerms, nextCustoms);
       setPicker(null);
     },
-    [terms, customs, commitPlan],
+    [terms, customs, commitPlan, showToast],
   );
 
   const clearSlot = useCallback(
@@ -783,6 +800,10 @@ export function DegreePlannerClient({
   const handleDropSlot = useCallback(
     (fromTerm: number, fromSlot: number, toTerm: number, toSlot: number) => {
       if (fromTerm === toTerm && fromSlot === toSlot) return;
+      if (toSlot >= MAX_SLOTS_PER_TERM) {
+        showToast(`Maximum of ${MAX_SLOTS_PER_TERM} courses per term`);
+        return;
+      }
       const nextTerms = terms.map((t) => ({ ...t, slots: t.slots.slice() }));
       const moving = nextTerms[fromTerm]?.slots[fromSlot] ?? null;
       const target = nextTerms[toTerm]?.slots[toSlot] ?? null;
@@ -793,7 +814,7 @@ export function DegreePlannerClient({
       nextTerms[fromTerm].slots[fromSlot] = target;
       commitPlan(nextTerms, customs);
     },
-    [terms, customs, commitPlan],
+    [terms, customs, commitPlan, showToast],
   );
 
   const academicYears = useMemo(() => {
@@ -1124,6 +1145,12 @@ export function DegreePlannerClient({
                             term.year,
                             term.season,
                           );
+                          const canAddCourse = term.slots.length < MAX_SLOTS_PER_TERM;
+                          const firstEmpty = term.slots.indexOf(null);
+                          const targetSlot =
+                            firstEmpty >= 0 ? firstEmpty : term.slots.length;
+                          const appendKey = `${termIndex}:${targetSlot}`;
+                          const isAppendDragOver = dragTargetKey === appendKey;
                           return (
                             <div
                               key={`${academicYear}-${term.season}-${termIndex}`}
@@ -1348,52 +1375,48 @@ export function DegreePlannerClient({
                                 );
                               })}
 
-                              {/* Extra slot button */}
-                              {(() => {
-                                const appendKey = `${termIndex}:${term.slots.length}`;
-                                const isDragOver = dragTargetKey === appendKey;
-                                return (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setPickerTransferMode(false);
-                                      setPicker({
-                                        termIndex,
-                                        slotIndex: term.slots.length,
-                                        bucketKey: null,
-                                      });
-                                    }}
-                                    onDragOver={(e) => {
-                                      e.preventDefault();
-                                      setDragTargetKey(appendKey);
-                                    }}
-                                    onDragLeave={() => setDragTargetKey(null)}
-                                    onDrop={(e) => {
-                                      e.preventDefault();
-                                      setDragTargetKey(null);
-                                      const raw =
-                                        e.dataTransfer.getData("text/plain");
-                                      if (!raw) return;
-                                      const [ft, fs] = raw
-                                        .split(":")
-                                        .map(Number);
-                                      handleDropSlot(
-                                        ft,
-                                        fs,
-                                        termIndex,
-                                        term.slots.length,
-                                      );
-                                    }}
-                                    className={`flex min-h-[38px] w-full items-center justify-center rounded-lg border border-dashed text-[12.5px] transition-colors ${
-                                      isDragOver
-                                        ? "border-blue-500 bg-blue-50 text-blue-600 dark:bg-blue-950/40"
-                                        : "border-zinc-200 text-zinc-400 hover:border-blue-500 hover:bg-blue-50/40 hover:text-blue-600 dark:border-zinc-700 dark:text-zinc-500 dark:hover:border-blue-500 dark:hover:bg-blue-950/20"
-                                    }`}
-                                  >
-                                    ＋ add course
-                                  </button>
-                                );
-                              })()}
+                              {/* Extra slot button (hidden once 8 slots exist; fills empty slots first) */}
+                              {canAddCourse && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setPickerTransferMode(false);
+                                    setPicker({
+                                      termIndex,
+                                      slotIndex: targetSlot,
+                                      bucketKey: null,
+                                    });
+                                  }}
+                                  onDragOver={(e) => {
+                                    e.preventDefault();
+                                    setDragTargetKey(appendKey);
+                                  }}
+                                  onDragLeave={() => setDragTargetKey(null)}
+                                  onDrop={(e) => {
+                                    e.preventDefault();
+                                    setDragTargetKey(null);
+                                    const raw =
+                                      e.dataTransfer.getData("text/plain");
+                                    if (!raw) return;
+                                    const [ft, fs] = raw
+                                      .split(":")
+                                      .map(Number);
+                                    handleDropSlot(
+                                      ft,
+                                      fs,
+                                      termIndex,
+                                      targetSlot,
+                                    );
+                                  }}
+                                  className={`flex min-h-[38px] w-full items-center justify-center rounded-lg border border-dashed text-[12.5px] transition-colors ${
+                                    isAppendDragOver
+                                      ? "border-blue-500 bg-blue-50 text-blue-600 dark:bg-blue-950/40"
+                                      : "border-zinc-200 text-zinc-400 hover:border-blue-500 hover:bg-blue-50/40 hover:text-blue-600 dark:border-zinc-700 dark:text-zinc-500 dark:hover:border-blue-500 dark:hover:bg-blue-950/20"
+                                  }`}
+                                >
+                                  ＋ add course
+                                </button>
+                              )}
                             </div>
                           </div>
                         );

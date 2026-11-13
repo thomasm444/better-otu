@@ -19,7 +19,25 @@ import type {
 
 export const STORE_PREFIX = "otu-plan-v3:";
 export const SLOTS_PER_TERM = 5;
+export const MAX_SLOTS_PER_TERM = 8;
 export const CREDIT_CAP = 15;
+
+/**
+ * Ensures a term has at least SLOTS_PER_TERM (5) slots and at most
+ * MAX_SLOTS_PER_TERM (8) slots, trimming trailing empty slots beyond 5.
+ */
+export function normalizeTermSlots(
+  slots: (string | null)[],
+): (string | null)[] {
+  const next = slots.slice(0, MAX_SLOTS_PER_TERM);
+  while (next.length > SLOTS_PER_TERM && next[next.length - 1] === null) {
+    next.pop();
+  }
+  while (next.length < SLOTS_PER_TERM) {
+    next.push(null);
+  }
+  return next;
+}
 export const DEFAULT_START_YEAR = 2026;
 export const MIN_START_YEAR = 2008;
 export const MAX_START_YEAR = 2027;
