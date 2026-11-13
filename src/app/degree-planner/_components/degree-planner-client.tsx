@@ -265,15 +265,22 @@ export function DegreePlannerClient({
           resolvedUser.email,
           prog.program_id,
         );
-        if (remote && (remote.terms.length > 0 || remote.customs.length > 0)) {
+        if (
+          remote &&
+          (remote.terms.length > 0 ||
+            remote.customs.length > 0 ||
+            remote.start_year != null)
+        ) {
           const nextCustoms = new Map(
             remote.customs.map((c) => [c.code, c]),
           );
+          const nextStartYear = remote.start_year ?? undefined;
           applyProgramWithSaved(prog, {
             terms: remote.terms,
             customs: remote.customs,
+            startYear: nextStartYear,
           });
-          persistPlan(prog.program_id, remote.terms, nextCustoms);
+          persistPlan(prog.program_id, remote.terms, nextCustoms, nextStartYear);
         }
       } catch {
         // Keep local state if remote fetch fails.
@@ -314,16 +321,25 @@ export function DegreePlannerClient({
           if (
             active &&
             remote &&
-            (remote.terms.length > 0 || remote.customs.length > 0)
+            (remote.terms.length > 0 ||
+              remote.customs.length > 0 ||
+              remote.start_year != null)
           ) {
             const nextCustoms = new Map(
               remote.customs.map((c) => [c.code, c]),
             );
+            const nextStartYear = remote.start_year ?? undefined;
             applyProgramWithSaved(currentProg, {
               terms: remote.terms,
               customs: remote.customs,
+              startYear: nextStartYear,
             });
-            persistPlan(currentProg.program_id, remote.terms, nextCustoms);
+            persistPlan(
+              currentProg.program_id,
+              remote.terms,
+              nextCustoms,
+              nextStartYear,
+            );
           }
           return;
         }
@@ -342,11 +358,18 @@ export function DegreePlannerClient({
         }
 
         const nextCustoms = new Map(latest.customs.map((c) => [c.code, c]));
+        const nextStartYear = latest.start_year ?? undefined;
         applyProgramWithSaved(detail, {
           terms: latest.terms,
           customs: latest.customs,
+          startYear: nextStartYear,
         });
-        persistPlan(detail.program_id, latest.terms, nextCustoms);
+        persistPlan(
+          detail.program_id,
+          latest.terms,
+          nextCustoms,
+          nextStartYear,
+        );
       } catch {
         if (active) showToast("Could not load saved degree plan");
       } finally {
@@ -488,6 +511,8 @@ export function DegreePlannerClient({
         void upsertDegreePlan(supabase, {
           userId: user.id,
           userEmail: user.email,
+          degreeName: program.name,
+          startYear: nextStartYear,
           programId: program.program_id,
           terms: nextTerms,
           customs: [...nextCustoms.values()],
@@ -982,8 +1007,10 @@ export function DegreePlannerClient({
       {/* Main Layout */}
       <main
         className={`mx-auto max-w-[1440px] p-4 ${
-          sidebarOpen && program && model
-            ? "grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_390px]"
+          program && model
+            ? sidebarOpen
+              ? "grid grid-cols-1 items-start gap-4 lg:grid-cols-[minmax(0,1fr)_390px]"
+              : "pr-12"
             : ""
         }`}
       >
@@ -1390,7 +1417,7 @@ export function DegreePlannerClient({
         {/* Right Column ("What you need") — Side-by-side when open, pull-tab when closed */}
         {program && model ? (
           sidebarOpen ? (
-            <div className="relative">
+            <div className="relative lg:sticky lg:top-[122px]">
               <div className="mb-2 flex justify-end">
                 <button
                   type="button"

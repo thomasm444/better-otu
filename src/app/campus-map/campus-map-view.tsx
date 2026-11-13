@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import type * as LeafletType from "leaflet";
+import { AuthButton } from "@/components/auth-button";
 import type { CampusMapData, CampusMapFeature } from "@/lib/queries";
 
 type ScheduleInterval = {
@@ -798,6 +799,8 @@ export function CampusMapView() {
           >
             25 Unmapped Spaces
           </button>
+
+          <AuthButton />
         </div>
       </header>
 

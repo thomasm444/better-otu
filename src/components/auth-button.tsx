@@ -1,12 +1,14 @@
 "use client";
 
 import type { User } from "@supabase/supabase-js";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { signInWithOntarioTechGoogle, signOut } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/client";
 
 export function AuthButton() {
+  const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -34,17 +36,22 @@ export function AuthButton() {
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
       if (!active) return;
       setUser(session?.user ?? null);
       setLoading(false);
+
+      if (event === "SIGNED_OUT" && window.location.pathname !== "/login") {
+        router.replace("/login");
+        router.refresh();
+      }
     });
 
     return () => {
       active = false;
       subscription.unsubscribe();
     };
-  }, []);
+  }, [router]);
 
   async function handleSignIn() {
     setErrorMessage(null);
@@ -64,11 +71,12 @@ export function AuthButton() {
     setSubmitting(true);
     try {
       await signOut();
+      router.replace("/login");
+      router.refresh();
     } catch (err) {
       setErrorMessage(
         err instanceof Error ? err.message : "Failed to sign out.",
       );
-    } finally {
       setSubmitting(false);
     }
   }
@@ -111,28 +119,6 @@ export function AuthButton() {
           disabled={submitting}
           className="inline-flex items-center gap-2 rounded-lg border border-zinc-300 bg-white px-3.5 py-2 text-sm font-medium text-zinc-900 shadow-xs transition-colors hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
         >
-          <svg
-            aria-hidden="true"
-            className="h-4 w-4"
-            viewBox="0 0 24 24"
-          >
-            <path
-              fill="#4285F4"
-              d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v4.51h6.6c-.29 1.52-1.14 2.82-2.4 3.68v3.05h3.88c2.27-2.09 3.665-5.17 3.665-9.17Z"
-            />
-            <path
-              fill="#34A853"
-              d="M12 24c3.3 0 6.08-1.09 8.1-2.96l-3.88-3.05c-1.09.73-2.48 1.16-4.22 1.16-3.24 0-5.99-2.19-6.97-5.13H1.04v3.14C3.05 21.14 7.21 24 12 24Z"
-            />
-            <path
-              fill="#FBBC05"
-              d="M5.03 14.02c-.25-.73-.39-1.51-.39-2.32s.14-1.59.39-2.32V6.24H1.04A11.98 11.98 0 0 0 0 11.7c0 1.93.46 3.76 1.04 5.46l3.99-3.14Z"
-            />
-            <path
-              fill="#EA4335"
-              d="M12 4.65c1.8 0 3.41.62 4.68 1.83l3.51-3.51C18.07 1.09 15.3 0 12 0 7.21 0 3.05 2.86 1.04 7.06l3.99 3.14c.98-2.94 3.73-5.13 6.97-5.13Z"
-            />
-          </svg>
           {submitting ? "Redirecting..." : "Sign in with @ontariotechu.net"}
         </button>
       )}
