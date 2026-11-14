@@ -1,16 +1,19 @@
 # Database
 
-Supabase (Postgres). Three tables, all in the `public` schema, all populated from a
-Banner course-schedule scrape.
+Supabase (Postgres), all in the `public` schema, populated from Banner course-schedule scrapes, Undergraduate Academic Calendar scrapes, campus map/booking feeds, and authenticated student data.
 
 The authoritative DDL lives in [`supabase/migrations/`](../supabase/migrations/) —
-three committed, idempotent migrations. Apply them oldest first:
+seven committed, idempotent migrations. Apply them oldest first:
 
 | migration | what it does |
 | --- | --- |
-| `20261028000000_baseline_courses_schema.sql` | creates the three courses tables, base indexes, grants and RLS policies |
+| `20261028000000_baseline_courses_schema.sql` | creates `courses`, `course_faculty`, `course_meetings`, base indexes, grants and RLS policies |
 | `20261028120000_search_optimizations.sql` | repairs HTML entities, adds the search indexes, refreshes planner statistics |
-| `20261112000000_campus_map_schema.sql` | creates campus map tables (`campus_spaces`, `campus_unmapped_spaces`, booking registry, library study rooms, reservations), spatial indexes, and `get_campus_map_data()` RPC |
+| `20261112000000_campus_map_schema.sql` | creates campus map tables (`campus_spaces`, `campus_unmapped_spaces`, `room_booking_details`, `library_study_rooms`, `room_detailed_reservations`, `campus_map_cache`) and `get_campus_map_data()` RPC |
+| `20261112120000_degree_planner_schema.sql` | creates degree planner tables (`degree_subjects`, `catalog_courses`, `degree_programs`, `program_sections`, `program_groups`, `program_items`, `program_item_courses`) and `course_offerings_summary` view |
+| `20261112180000_auth_and_student_courses.sql` | creates `@ontariotechu.net` `hook_before_user_created()` auth hook, `set_updated_at()`, `profiles` (with `handle_new_user()` trigger), and `student_courses` with user-scoped RLS |
+| `20261112200000_degree_plans.sql` | creates `degree_plans` for per-user saved degree plans with user-scoped RLS |
+| `20261113143000_degree_plans_columns.sql` | adds `degree_name` and `start_year` to `degree_plans` and orders `user_email`, `degree_name` first |
 
 ```bash
 # With the Supabase CLI
@@ -169,16 +172,17 @@ Indexes on `course_id`, `(building, room)`, `begin_time`.
 
 ## Ingest
 
-Source data is `courses.json` (Banner scrape, ~4,024 sections). The script and the
-scrape output are gitignored under `python_scripts/`; the schema itself lives in
-`supabase/migrations/`.
+Source data and ingest scripts live under `python_scripts/` (gitignored); the schema itself lives in `supabase/migrations/`.
+
+### Course sections (`courses`, `course_faculty`, `course_meetings`)
 
 ```bash
 cd python_scripts
-python ingest_temp.py
+python update_courses.py   # scrapes Banner into jsons/courses.json
+python ingest_main.py      # upserts into Supabase
 ```
 
-The script:
+`ingest_main.py`:
 
 1. drops json fields into typed rows, parsing `0910` → `09:10:00` and
    `09/08/2026` → `2026-09-08`
@@ -189,6 +193,17 @@ The script:
 
 Step 3 is what makes re-runs idempotent. If a section moves between terms, stale
 child rows for the old term will linger.
+
+### Degree planner (`degree_subjects`, `catalog_courses`, `degree_programs`, `program_*`)
+
+```bash
+cd python_scripts
+python ingest_degrees.py   # reads jsons/degrees.json + jsons/courses_parsed.json
+```
+
+### Campus map & bookings
+
+`python_scripts/map/` (`gen_lib_bookings.py`, `gen_other_bookings.py`, `generate_map_data.py`, `exam_schedule.py`) currently write local JSON/JS files under `python_scripts/map/jsons/` and `rooms_data.js`; direct Supabase upsert scripts for the campus map tables (and an exam schedule table/column) are not yet wired up.
 
 `schema.sql` is a **reset** script — it drops all three tables before recreating
 them. It mirrors the baseline migration plus a wipe; only ever run it against a
@@ -272,6 +287,37 @@ The scrape escapes HTML entities. `courses.course_title` contained 704 `&amp;`,
 `schedule_type_description` contained `Lecture &amp; Lab`. The ingest now runs
 `html.unescape()`, so re-ingesting produces clean text — do not re-introduce it
 in any other pipeline.
+
+## Campus Map tables
+
+Created by `20261112000000_campus_map_schema.sql`. All publicly readable (`SELECT` for `anon`, `authenticated`).
+
+- `campus_spaces` — map features (`id` PK, `geometry` jsonb, `building`, `floor`, `room_type`, `capacity`, `schedules`, `courses`, `all_courses`, `is_building_container`, `has_schedule`, `is_library_room`, etc.)
+- `campus_unmapped_spaces` — non-polygonal reservation spaces (`room_id` PK)
+- `room_booking_details` — room registry metadata (`room` PK, `campus`, `building`, `room_type`, `capacity`, `config_type`, `raw_data`)
+- `library_study_rooms` — library group study rooms & bookings (`room_id` PK, `min_capacity`, `max_capacity`, `bookings` jsonb)
+- `room_detailed_reservations` — calendar reservation occurrences (`id` identity PK, `room_id`, `day`, `start_time`, `duration`, `end_time`, `title`, `type`)
+- `campus_map_cache` — materialized GeoJSON `FeatureCollection` (`id` PK, `data` json)
+- `get_campus_map_data(p_floor, p_building)` — RPC returning the cached `FeatureCollection` when unfiltered, or building it on the fly from `campus_spaces` + `campus_unmapped_spaces`.
+
+## Degree Planner tables
+
+Created by `20261112120000_degree_planner_schema.sql`. All publicly readable (`SELECT` for `anon`, `authenticated`).
+
+- `degree_subjects` (`code` PK, `name`, `faculty`, `course_count`)
+- `catalog_courses` (`code` PK, `subject` FK → `degree_subjects.code`, `prerequisite_codes`, `prerequisite_ast`, `terms_offered`, etc.) — academic calendar definitions, distinct from `public.courses` (Banner sections)
+- `degree_programs` (`program_id` PK, `name`, `faculty`, `degree`, `total_credit_hours`, `required_course_codes`, etc.)
+- `program_sections` → `program_groups` → `program_items` → `program_item_courses` (cascade-deleted hierarchy of degree requirements)
+- `course_offerings_summary` — view over `public.courses` aggregating offered terms, section counts, and max credit hours per `subject_course`.
+
+## Auth & Student tables
+
+Created by `20261112180000_auth_and_student_courses.sql`, `20261112200000_degree_plans.sql`, and `20261113143000_degree_plans_columns.sql`.
+
+- `hook_before_user_created(event)` — Supabase Auth hook restricting sign-ups to `@ontariotechu.net`.
+- `profiles` (`id` PK → `auth.users.id`, `email`, `full_name`, `avatar_url`) — auto-populated on signup via `handle_new_user()`. RLS: users can `SELECT`/`UPDATE` their own row.
+- `student_courses` (`id` uuid PK, `user_id` → `auth.users.id`, `course_code`, `selected_crn`, `semester`, `status`, `grade`; unique `(user_id, course_code, semester)`). RLS: user-scoped CRUD.
+- `degree_plans` (`user_email`, `degree_name`, `start_year`, `program_id`, `terms` jsonb, `customs` jsonb, `user_id`, `id` uuid PK; unique `(user_email, program_id)`). RLS: user-scoped CRUD matching both `auth.uid()` and JWT `email`.
 
 ## Example queries
 
