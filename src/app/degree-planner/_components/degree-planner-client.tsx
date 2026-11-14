@@ -12,9 +12,11 @@ import React, {
 
 import { AuthButton } from "@/components/auth-button";
 import {
+  deleteDegreePlan,
+  fetchAllDegreePlans,
   fetchDegreePlanByProgram,
-  fetchLatestDegreePlan,
   upsertDegreePlan,
+  type DegreePlanRecord,
 } from "@/lib/degree-plan-storage";
 import { createClient } from "@/lib/supabase/client";
 
@@ -193,10 +195,17 @@ export function DegreePlannerClient({
 
   const supabase = useMemo(() => createClient(), []);
   const [user, setUser] = useState<User | null>(null);
+  const [savedPlans, setSavedPlans] = useState<DegreePlanRecord[]>([]);
+  const [plansMenuOpen, setPlansMenuOpen] = useState(false);
+  const [planToDelete, setPlanToDelete] = useState<DegreePlanRecord | null>(null);
+  const [deleteCountdown, setDeleteCountdown] = useState(0);
+  const [deletingPlan, setDeletingPlan] = useState(false);
+
   const userRef = useRef<User | null>(null);
   const programRef = useRef<DegreeProgramDetail | null>(initialProgram);
 
   const menuContainerRef = useRef<HTMLDivElement>(null);
+  const plansMenuContainerRef = useRef<HTMLDivElement>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -315,18 +324,22 @@ export function DegreePlannerClient({
     async function hydrateForUser(nextUser: User | null) {
       userRef.current = nextUser;
       setUser(nextUser);
-      if (!nextUser?.email) return;
+      if (!nextUser?.email) {
+        setSavedPlans([]);
+        return;
+      }
 
       const currentProg = programRef.current;
       try {
+        const allPlans = await fetchAllDegreePlans(supabase, nextUser.email);
+        if (!active) return;
+        setSavedPlans(allPlans);
+
         if (currentProg) {
-          const remote = await fetchDegreePlanByProgram(
-            supabase,
-            nextUser.email,
-            currentProg.program_id,
+          const remote = allPlans.find(
+            (p) => p.program_id === currentProg.program_id,
           );
           if (
-            active &&
             remote &&
             (remote.terms.length > 0 ||
               remote.customs.length > 0 ||
@@ -351,8 +364,8 @@ export function DegreePlannerClient({
           return;
         }
 
-        const latest = await fetchLatestDegreePlan(supabase, nextUser.email);
-        if (!active || !latest) return;
+        const latest = allPlans[0];
+        if (!latest) return;
 
         setLoadingProgram(true);
         const detail = await loadProgramDetail(latest.program_id);
@@ -402,19 +415,35 @@ export function DegreePlannerClient({
     };
   }, [applyProgramWithSaved, loadProgramDetail, showToast, supabase]);
 
-  // Close program dropdown on outside click
+  // Close program and plans dropdowns on outside click
   useEffect(() => {
     const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
       if (
         menuContainerRef.current &&
-        !menuContainerRef.current.contains(event.target as Node)
+        !menuContainerRef.current.contains(target)
       ) {
         setMenuOpen(false);
+      }
+      if (
+        plansMenuContainerRef.current &&
+        !plansMenuContainerRef.current.contains(target)
+      ) {
+        setPlansMenuOpen(false);
       }
     };
     document.addEventListener("mousedown", onPointerDown);
     return () => document.removeEventListener("mousedown", onPointerDown);
   }, []);
+
+  // 5-second safety countdown for deleting a saved plan
+  useEffect(() => {
+    if (!planToDelete || deleteCountdown <= 0) return;
+    const timer = window.setInterval(() => {
+      setDeleteCountdown((prev) => (prev > 1 ? prev - 1 : 0));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [planToDelete, deleteCountdown]);
 
   const filteredPrograms = useMemo(() => {
     const q = programQuery.trim().toLowerCase();
@@ -468,6 +497,102 @@ export function DegreePlannerClient({
     },
     [activateProgram, showToast],
   );
+
+  const selectSavedPlan = useCallback(
+    async (plan: DegreePlanRecord) => {
+      setPlansMenuOpen(false);
+      setMenuOpen(false);
+
+      if (plan.program_id !== programRef.current?.program_id) {
+        setPreviousPlan(null);
+        setResetConfirmOpen(false);
+      }
+
+      if (typeof window !== "undefined") {
+        const url = new URL(window.location.href);
+        url.searchParams.set("program", plan.program_id);
+        window.history.replaceState(null, "", url.toString());
+      }
+
+      setLoadingProgram(true);
+      try {
+        const detail = await loadProgramDetail(plan.program_id);
+        const nextCustoms = new Map(plan.customs.map((c) => [c.code, c]));
+        const nextStartYear = plan.start_year ?? undefined;
+        applyProgramWithSaved(detail, {
+          terms: plan.terms,
+          customs: plan.customs,
+          startYear: nextStartYear,
+        });
+        persistPlan(
+          detail.program_id,
+          plan.terms,
+          nextCustoms,
+          nextStartYear,
+        );
+      } catch {
+        showToast("Could not load saved plan");
+      } finally {
+        setLoadingProgram(false);
+      }
+    },
+    [applyProgramWithSaved, loadProgramDetail, showToast],
+  );
+
+  const handleConfirmDeletePlan = useCallback(async () => {
+    if (!planToDelete || !user?.email || deleteCountdown > 0 || deletingPlan) {
+      return;
+    }
+
+    setDeletingPlan(true);
+    try {
+      await deleteDegreePlan(supabase, user.email, planToDelete.program_id);
+
+      if (typeof window !== "undefined") {
+        window.localStorage.removeItem(STORE_PREFIX + planToDelete.program_id);
+      }
+
+      setSavedPlans((prev) =>
+        prev.filter((p) => p.program_id !== planToDelete.program_id),
+      );
+
+      if (previousPlan?.programId === planToDelete.program_id) {
+        setPreviousPlan(null);
+      }
+
+      if (programRef.current?.program_id === planToDelete.program_id) {
+        setProgram(null);
+        setProgramQuery("");
+        setTerms([]);
+        setCustoms(new Map());
+        setUnscheduled([]);
+        setResetConfirmOpen(false);
+        if (typeof window !== "undefined") {
+          const url = new URL(window.location.href);
+          url.searchParams.delete("program");
+          window.history.replaceState(null, "", url.toString());
+        }
+      }
+
+      showToast(
+        `Deleted plan: ${planToDelete.degree_name || planToDelete.program_id}`,
+      );
+      setPlanToDelete(null);
+      setDeleteCountdown(0);
+    } catch {
+      showToast("Could not delete saved plan");
+    } finally {
+      setDeletingPlan(false);
+    }
+  }, [
+    planToDelete,
+    user,
+    deleteCountdown,
+    deletingPlan,
+    supabase,
+    previousPlan,
+    showToast,
+  ]);
 
   const model = useMemo(
     () => (program ? buildModel(program) : null),
@@ -527,9 +652,16 @@ export function DegreePlannerClient({
           programId: program.program_id,
           terms: normalizedTerms,
           customs: [...nextCustoms.values()],
-        }).catch(() => {
-          showToast("Could not save plan to your account");
-        });
+        })
+          .then((savedRecord) => {
+            setSavedPlans((prev) => [
+              savedRecord,
+              ...prev.filter((p) => p.program_id !== savedRecord.program_id),
+            ]);
+          })
+          .catch(() => {
+            showToast("Could not save plan to your account");
+          });
       }
     },
     [program, showToast, supabase, user, startYear, gapYears],
@@ -858,131 +990,242 @@ export function DegreePlannerClient({
     ? Math.min(100, (totalPlacedCredits / totalTarget) * 100)
     : 0;
 
+  const { planStartCalYear, planEndCalYear } = useMemo(() => {
+    if (terms.length === 0) {
+      return { planStartCalYear: startYear, planEndCalYear: startYear + 1 };
+    }
+    let minYear = startYear;
+    let maxYear = startYear;
+    for (const t of terms) {
+      const calYear = termCalendarYear(startYear, t.year, t.season);
+      if (calYear < minYear) minYear = calYear;
+      if (calYear > maxYear) maxYear = calYear;
+    }
+    return { planStartCalYear: minYear, planEndCalYear: maxYear };
+  }, [terms, startYear]);
+
   return (
     <div className="min-h-screen bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
       {/* Sticky Top Header */}
       <header className="sticky top-0 z-40 border-b border-zinc-200 bg-white/95 px-4 py-2.5 backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/95">
-        <div className="mx-auto flex max-w-[1440px] flex-wrap items-center gap-3">
-          <Link
-            href="/"
-            className="rounded-lg border border-zinc-200 px-2.5 py-1 text-xs font-medium text-zinc-600 transition-colors hover:border-zinc-300 hover:text-zinc-900 dark:border-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-100"
-          >
-            &larr; Home
-          </Link>
+        <div className="mx-auto flex max-w-[1440px] flex-col gap-2.5 lg:flex-row lg:items-start lg:justify-between">
+          {/* Left Side: Home + Degree Planner title + Start–End year + Plans on top; Start + Degree search below */}
+          <div className="flex flex-col items-start gap-2">
+            <div className="flex w-full flex-wrap items-center gap-2.5">
+              <Link
+                href="/"
+                className="rounded-lg border border-zinc-200 px-2.5 py-1 text-xs font-medium text-zinc-600 transition-colors hover:border-zinc-300 hover:text-zinc-900 dark:border-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-100"
+              >
+                &larr; Home
+              </Link>
 
-          <div className="font-semibold tracking-tight">
-            Degree Planner{" "}
-            <small className="ml-1.5 text-xs font-normal text-zinc-500 dark:text-zinc-400">
-              Ontario Tech · {startYear}–{startYear + 1}+
-            </small>
-          </div>
+              <div className="font-semibold tracking-tight whitespace-nowrap">
+                Degree Planner{" "}
+                <small className="ml-1 text-xs font-normal text-zinc-500 dark:text-zinc-400">
+                  Ontario Tech · {planStartCalYear}–{planEndCalYear}
+                </small>
+              </div>
 
-          <label className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400">
-            <span>Start:</span>
-            <select
-              value={startYear}
-              onChange={(e) => handleChangeStartYear(Number(e.target.value))}
-              aria-label="Degree start year"
-              className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs font-medium text-zinc-900 focus:border-blue-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
-            >
-              {startYearOptions.map((y) => (
-                <option key={y} value={y}>
-                  {y} ({y}–{String(y + 1).slice(-2)})
-                </option>
-              ))}
-            </select>
-          </label>
+              {/* Saved Plans Dropdown */}
+              <div ref={plansMenuContainerRef} className="relative ml-auto">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    setPlansMenuOpen((open) => !open);
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 transition-colors hover:border-zinc-300 hover:bg-zinc-50 hover:text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                >
+                  <span>Plans</span>
+                  <span className="rounded-full bg-zinc-100 px-1.5 py-0.5 text-[10.5px] font-semibold tabular-nums text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+                    {savedPlans.length}
+                  </span>
+                </button>
 
-          {/* Searchable Program Dropdown */}
-          <div ref={menuContainerRef} className="relative">
-            <input
-              type="text"
-              value={programQuery}
-              onFocus={() => setMenuOpen(true)}
-              onChange={(e) => {
-                setProgramQuery(e.target.value);
-                setMenuOpen(true);
-              }}
-              placeholder="Search programs…"
-              autoComplete="off"
-              className="w-72 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-sm text-zinc-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none sm:w-80 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
-            />
-            {menuOpen && (
-              <div className="absolute top-10 left-0 z-50 max-h-[60vh] w-[min(430px,calc(100vw-2rem))] overflow-auto rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
-                {filteredPrograms.length === 0 ? (
-                  <div className="p-6 text-center text-sm text-zinc-500">
-                    No programs match.
+                {plansMenuOpen && (
+                  <div className="absolute top-10 right-0 z-50 max-h-[60vh] w-[min(360px,calc(100vw-2rem))] overflow-auto rounded-xl border border-zinc-200 bg-white shadow-xl sm:left-0 sm:right-auto dark:border-zinc-700 dark:bg-zinc-900">
+                    <div className="border-b border-zinc-100 px-3 py-2 text-[11px] font-semibold tracking-wider text-zinc-500 uppercase dark:border-zinc-800 dark:text-zinc-400">
+                      Saved Plans ({savedPlans.length})
+                    </div>
+
+                    {savedPlans.length === 0 ? (
+                      <div className="p-5 text-center text-xs text-zinc-500 dark:text-zinc-400">
+                        No saved plans yet. Pick a program and add courses to save one.
+                      </div>
+                    ) : (
+                      savedPlans.map((saved) => {
+                        const isActive = saved.program_id === program?.program_id;
+                        const courseCount = saved.terms.reduce(
+                          (sum, t) => sum + t.slots.filter(Boolean).length,
+                          0,
+                        );
+                        return (
+                          <div
+                            key={saved.program_id}
+                            className={`flex items-center gap-2 border-b border-zinc-100 px-3 py-2 transition-colors last:border-b-0 dark:border-zinc-800 ${
+                              isActive
+                                ? "bg-blue-50/70 dark:bg-blue-950/30"
+                                : "hover:bg-zinc-50 dark:hover:bg-zinc-800/60"
+                            }`}
+                          >
+                            <button
+                              type="button"
+                              onClick={() => void selectSavedPlan(saved)}
+                              className="min-w-0 flex-1 text-left"
+                            >
+                              <div className="flex items-center gap-1.5">
+                                <span className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                                  {saved.degree_name || saved.program_id}
+                                </span>
+                                {isActive && (
+                                  <span className="shrink-0 rounded bg-blue-100 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700 dark:bg-blue-900/60 dark:text-blue-300">
+                                    Active
+                                  </span>
+                                )}
+                              </div>
+                              <span className="mt-0.5 block text-[11px] text-zinc-500 dark:text-zinc-400">
+                                {saved.start_year
+                                  ? `Start ${saved.start_year}`
+                                  : "Default start"}{" "}
+                                · {courseCount} {courseCount === 1 ? "course" : "courses"}
+                              </span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setPlansMenuOpen(false);
+                                setPlanToDelete(saved);
+                                setDeleteCountdown(5);
+                              }}
+                              title="Delete saved plan"
+                              aria-label={`Delete ${saved.degree_name || saved.program_id}`}
+                              className="shrink-0 rounded-md px-1.5 py-1 text-sm leading-none text-zinc-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/50 dark:hover:text-red-400"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        );
+                      })
+                    )}
                   </div>
-                ) : (
-                  filteredPrograms.map((p) => (
-                    <button
-                      key={p.program_id}
-                      type="button"
-                      onClick={() => selectProgram(p)}
-                      className="block w-full border-b border-zinc-100 px-3 py-2 text-left transition-colors last:border-b-0 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800/60"
-                    >
-                      <span className="block text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                        {p.name}
-                      </span>
-                      <span className="text-[11.5px] text-zinc-500 dark:text-zinc-400">
-                        {[
-                          p.credential,
-                          p.degree_abbrev,
-                          p.total_credit_hours
-                            ? `${p.total_credit_hours} cr`
-                            : null,
-                        ]
-                          .filter(Boolean)
-                          .join(" · ")}
-                      </span>
-                    </button>
-                  ))
                 )}
               </div>
-            )}
-          </div>
+            </div>
 
-          <div className="flex-1" />
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400">
+                <span>Start:</span>
+                <select
+                  value={startYear}
+                  onChange={(e) => handleChangeStartYear(Number(e.target.value))}
+                  aria-label="Degree start year"
+                  className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs font-medium text-zinc-900 focus:border-blue-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+                >
+                  {startYearOptions.map((y) => (
+                    <option key={y} value={y}>
+                      {y} ({y}–{String(y + 1).slice(-2)})
+                    </option>
+                  ))}
+                </select>
+              </label>
 
-          {/* Credit Progress Hero */}
-          <div className="flex items-center gap-2.5">
-            <strong className="text-xl font-semibold tracking-tight tabular-nums text-emerald-600 dark:text-emerald-400">
-              {totalPlacedCredits}
-            </strong>
-            <span className="text-[13px] text-zinc-500 dark:text-zinc-400">
-              / {totalTarget} cr
-            </span>
-            <div
-              className="h-2.5 w-36 overflow-hidden rounded-full bg-red-500/85 sm:w-44 dark:bg-red-500/75"
-              title={`${totalPlacedCredits} completed · ${Math.max(0, totalTarget - totalPlacedCredits)} remaining`}
-            >
-              <div
-                className="h-full bg-emerald-500 transition-all duration-300"
-                style={{ width: `${heroPct}%` }}
-              />
+              {/* Searchable Program Dropdown */}
+              <div ref={menuContainerRef} className="relative">
+                <input
+                  type="text"
+                  value={programQuery}
+                  onFocus={() => setMenuOpen(true)}
+                  onChange={(e) => {
+                    setProgramQuery(e.target.value);
+                    setMenuOpen(true);
+                  }}
+                  placeholder="Search programs…"
+                  autoComplete="off"
+                  className="w-56 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-sm text-zinc-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none sm:w-72 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+                />
+                {menuOpen && (
+                  <div className="absolute top-10 left-0 z-50 max-h-[60vh] w-[min(430px,calc(100vw-2rem))] overflow-auto rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
+                    {filteredPrograms.length === 0 ? (
+                      <div className="p-6 text-center text-sm text-zinc-500">
+                        No programs match.
+                      </div>
+                    ) : (
+                      filteredPrograms.map((p) => (
+                        <button
+                          key={p.program_id}
+                          type="button"
+                          onClick={() => selectProgram(p)}
+                          className="block w-full border-b border-zinc-100 px-3 py-2 text-left transition-colors last:border-b-0 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800/60"
+                        >
+                          <span className="block text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                            {p.name}
+                          </span>
+                          <span className="text-[11.5px] text-zinc-500 dark:text-zinc-400">
+                            {[
+                              p.credential,
+                              p.degree_abbrev,
+                              p.total_credit_hours
+                                ? `${p.total_credit_hours} cr`
+                                : null,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
-          {previousPlan && (
-            <button
-              type="button"
-              onClick={handleRestorePrevious}
-              className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 dark:hover:bg-emerald-900/60"
-            >
-              Undo reset
-            </button>
-          )}
+          {/* Right Side: Credits + Reset controls on top; Signed-in badge directly below Credits */}
+          <div className="flex flex-col items-start gap-2 lg:items-end">
+            <div className="flex flex-wrap items-center gap-2.5 lg:justify-end">
+              {/* Credit Progress Hero */}
+              <div className="flex items-center gap-2">
+                <strong className="text-lg leading-none font-semibold tracking-tight tabular-nums text-emerald-600 dark:text-emerald-400">
+                  {totalPlacedCredits}
+                </strong>
+                <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                  / {totalTarget} cr
+                </span>
+                <div
+                  className="h-2.5 w-28 overflow-hidden rounded-full bg-red-500/85 sm:w-36 dark:bg-red-500/75"
+                  title={`${totalPlacedCredits} completed · ${Math.max(0, totalTarget - totalPlacedCredits)} remaining`}
+                >
+                  <div
+                    className="h-full bg-emerald-500 transition-all duration-300"
+                    style={{ width: `${heroPct}%` }}
+                  />
+                </div>
+              </div>
 
-          <button
-            type="button"
-            disabled={!program}
-            onClick={() => setResetConfirmOpen(true)}
-            className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-600 transition-colors hover:border-zinc-300 hover:text-zinc-900 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100"
-          >
-            Reset to defaults
-          </button>
+              {previousPlan && (
+                <button
+                  type="button"
+                  onClick={handleRestorePrevious}
+                  className="rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-1.5 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 dark:hover:bg-emerald-900/60"
+                >
+                  Undo reset
+                </button>
+              )}
 
-          <AuthButton />
+              <button
+                type="button"
+                disabled={!program}
+                onClick={() => setResetConfirmOpen(true)}
+                className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-600 transition-colors hover:border-zinc-300 hover:text-zinc-900 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100"
+              >
+                Reset to defaults
+              </button>
+            </div>
+
+            <AuthButton />
+          </div>
         </div>
       </header>
 
@@ -1019,6 +1262,60 @@ export function DegreePlannerClient({
                 className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-red-700"
               >
                 Yes, reset plan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Saved Plan Confirmation Modal (with 5-second safety delay) */}
+      {planToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-2xl border-2 border-red-500 bg-white p-6 shadow-2xl dark:bg-zinc-900">
+            <div className="mb-3 flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-600 dark:bg-red-950 dark:text-red-400">
+                <span className="text-lg font-bold">!</span>
+              </div>
+              <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+                Delete saved plan?
+              </h2>
+            </div>
+
+            <p className="mb-6 text-sm text-zinc-600 dark:text-zinc-400">
+              Are you sure you want to permanently delete your saved plan for{" "}
+              <strong className="text-zinc-900 dark:text-zinc-100">
+                {planToDelete.degree_name || planToDelete.program_id}
+              </strong>
+              ? This cannot be undone.
+            </p>
+
+            <div className="flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                disabled={deletingPlan}
+                onClick={() => {
+                  setPlanToDelete(null);
+                  setDeleteCountdown(0);
+                }}
+                className="rounded-lg border border-zinc-200 bg-white px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deleteCountdown > 0 || deletingPlan}
+                onClick={() => void handleConfirmDeletePlan()}
+                className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
+                  deleteCountdown > 0
+                    ? "cursor-not-allowed border border-amber-300 bg-amber-100 text-amber-800 dark:border-amber-800 dark:bg-amber-950/60 dark:text-amber-300"
+                    : "bg-red-600 text-white shadow-sm hover:bg-red-700 disabled:opacity-60"
+                }`}
+              >
+                {deleteCountdown > 0
+                  ? `Confirm delete (${deleteCountdown}s)`
+                  : deletingPlan
+                    ? "Deleting..."
+                    : "Yes, delete plan"}
               </button>
             </div>
           </div>

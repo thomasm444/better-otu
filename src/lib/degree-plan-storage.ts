@@ -19,6 +19,20 @@ function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
 }
 
+export async function fetchAllDegreePlans(
+  supabase: SupabaseClient,
+  userEmail: string,
+): Promise<DegreePlanRecord[]> {
+  const { data, error } = await supabase
+    .from("degree_plans")
+    .select("*")
+    .eq("user_email", normalizeEmail(userEmail))
+    .order("updated_at", { ascending: false });
+
+  if (error) throw error;
+  return (data ?? []) as DegreePlanRecord[];
+}
+
 export async function fetchLatestDegreePlan(
   supabase: SupabaseClient,
   userEmail: string,
@@ -82,4 +96,18 @@ export async function upsertDegreePlan(
 
   if (error) throw error;
   return data as DegreePlanRecord;
+}
+
+export async function deleteDegreePlan(
+  supabase: SupabaseClient,
+  userEmail: string,
+  programId: string,
+): Promise<void> {
+  const { error } = await supabase
+    .from("degree_plans")
+    .delete()
+    .eq("user_email", normalizeEmail(userEmail))
+    .eq("program_id", programId);
+
+  if (error) throw error;
 }
