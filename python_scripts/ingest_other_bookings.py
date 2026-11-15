@@ -400,6 +400,35 @@ def _epoch_to_date(epoch: Any) -> str | None:
         return None
 
 
+def _load_room_guids_from_supabase(supabase) -> tuple[list[str], dict[str, str]]:
+    """Fetch all (guid -> room) mappings from public.room_booking_details, paginating past 1,000."""
+    room_guids: list[str] = []
+    guid_to_room_id: dict[str, str] = {}
+    offset = 0
+    page_size = 1000
+
+    while True:
+        resp = (
+            supabase.table("room_booking_details")
+            .select("room, raw_data")
+            .range(offset, offset + page_size - 1)
+            .execute()
+        )
+        rows = resp.data or []
+        for row in rows:
+            raw = row.get("raw_data") or {}
+            guid = raw.get("rowId") if isinstance(raw, dict) else None
+            room_id = row.get("room")
+            if guid and room_id:
+                room_guids.append(guid)
+                guid_to_room_id[guid] = room_id
+        if len(rows) < page_size:
+            break
+        offset += page_size
+
+    return room_guids, guid_to_room_id
+
+
 def main(argv: list[str] | None = None) -> int:
     load_env()
     parser = argparse.ArgumentParser(
@@ -408,33 +437,49 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--local",
         action="store_true",
-        help="Authenticate via local .infosilem_session.json / Playwright to include all restricted rooms.",
+        help="Authenticate via local .infosilem_session.json / Playwright to refresh room_booking_details too.",
     )
     args = parser.parse_args(argv)
 
+    supabase = get_supabase()
+    now_iso = utc_now_iso()
     token: str | None = None
+    detail_rows: list[dict[str, Any]] = []
+
     if args.local:
         print("Authenticating with Infosilem Campus Portal (--local)...")
         token = get_portal_token()
+        print("Fetching room registry (searchRooms)...")
+        search_payload = _post_infosilem(SEARCH_ROOMS_URL, DEFAULT_SEARCH_PAYLOAD, token)
+        rooms = (search_payload.get("response") or {}).get("data") or []
+        if len(rooms) < MIN_AUTH_ROOM_COUNT:
+            print(
+                f"Warning: searchRooms returned only {len(rooms)} rooms "
+                f"(expected >= {MIN_AUTH_ROOM_COUNT} when authenticated)."
+            )
+
+        room_guids = [r["rowId"] for r in rooms if r.get("rowId")]
+        guid_to_room_id = {
+            r["rowId"]: r["listData"][2].strip()
+            for r in rooms
+            if r.get("rowId") and len(r.get("listData") or []) >= 3 and r["listData"][2]
+        }
+        detail_by_room: dict[str, dict[str, Any]] = {}
+        for r in rooms:
+            row = _to_room_detail_row(r, now_iso)
+            if row:
+                detail_by_room[row["room"]] = row
+        detail_rows = list(detail_by_room.values())
+        print(f"Retrieved {len(rooms)} rooms from Infosilem.")
     else:
-        print("Running unauthenticated Infosilem scrape (public rooms only)...")
-
-    print("Fetching room registry (searchRooms)...")
-    search_payload = _post_infosilem(SEARCH_ROOMS_URL, DEFAULT_SEARCH_PAYLOAD, token)
-    rooms = (search_payload.get("response") or {}).get("data") or []
-    if args.local and len(rooms) < MIN_AUTH_ROOM_COUNT:
-        print(
-            f"Warning: searchRooms returned only {len(rooms)} rooms "
-            f"(expected >= {MIN_AUTH_ROOM_COUNT} when authenticated)."
-        )
-
-    room_guids = [r["rowId"] for r in rooms if r.get("rowId")]
-    guid_to_room_id = {
-        r["rowId"]: r["listData"][2].strip()
-        for r in rooms
-        if r.get("rowId") and len(r.get("listData") or []) >= 3 and r["listData"][2]
-    }
-    print(f"Retrieved {len(rooms)} rooms.")
+        print("Loading room GUIDs from Supabase (room_booking_details)...")
+        room_guids, guid_to_room_id = _load_room_guids_from_supabase(supabase)
+        if not room_guids:
+            raise RuntimeError(
+                "No room GUIDs found in public.room_booking_details. "
+                "Run `python ingest_other_bookings.py --local` once to seed them."
+            )
+        print(f"Loaded {len(room_guids)} room GUIDs from Supabase.")
 
     start_date, end_date = DEFAULT_CALENDAR_RANGE
     print(f"Fetching room schedules (roomCalendar) for {len(room_guids)} rooms...")
@@ -448,14 +493,6 @@ def main(argv: list[str] | None = None) -> int:
         },
         token,
     )
-
-    now_iso = utc_now_iso()
-    detail_by_room: dict[str, dict[str, Any]] = {}
-    for r in rooms:
-        row = _to_room_detail_row(r, now_iso)
-        if row:
-            detail_by_room[row["room"]] = row
-    detail_rows = list(detail_by_room.values())
 
     reservations_by_guid = (cal_payload.get("response") or {}).get("detailedReservations") or {}
     reservation_rows: list[dict[str, Any]] = []
@@ -490,16 +527,13 @@ def main(argv: list[str] | None = None) -> int:
         f"{len(reservation_rows)} room_detailed_reservations."
     )
 
-    supabase = get_supabase()
+    if detail_rows:
+        upserted_details = 0
+        for batch in batches(detail_rows):
+            supabase.table("room_booking_details").upsert(batch, on_conflict="room").execute()
+            upserted_details += len(batch)
+        print(f"room_booking_details: {upserted_details} upserted.")
 
-    upserted_details = 0
-    for batch in batches(detail_rows):
-        supabase.table("room_booking_details").upsert(batch, on_conflict="room").execute()
-        upserted_details += len(batch)
-    print(f"room_booking_details: {upserted_details} upserted.")
-
-    # Only delete reservations for rooms returned by THIS scrape so unauthenticated
-    # runs never wipe out extra rooms populated by an earlier --local run.
     scraped_room_ids = sorted(
         {r["room"] for r in detail_rows} | {r["room_id"] for r in reservation_rows}
     )
@@ -514,7 +548,7 @@ def main(argv: list[str] | None = None) -> int:
         inserted_res += len(batch)
     print(
         f"room_detailed_reservations: {inserted_res} inserted across "
-        f"{len(scraped_room_ids)} scraped rooms."
+        f"{len(scraped_room_ids)} rooms."
     )
 
     return 0
