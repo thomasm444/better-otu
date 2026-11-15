@@ -1,0 +1,46 @@
+name: Map Bookings
+
+on:
+  schedule:
+    # Every 30 minutes during daytime (~7am-11pm EST / 8am-12am EDT)
+    - cron: "*/30 12-23,0-3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: map-bookings
+  cancel-in-progress: true
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: python_scripts/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r python_scripts/requirements.txt
+
+      - name: Ingest library study rooms
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python python_scripts/ingest_lib_bookings.py
+
+      - name: Ingest class/room bookings (hourly, unauthenticated)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          MINUTE=$(date -u +%M)
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "$((10#$MINUTE))" -lt 30 ]; then
+            python python_scripts/ingest_other_bookings.py
+          else
+            echo "Skipping ingest_other_bookings.py on :30 tick (runs hourly)."
+          fi

@@ -1,0 +1,74 @@
+name: Courses & Exam Schedule
+
+on:
+  schedule:
+    # Active cadence (uncomment the one matching the current registration phase):
+    # - Daily at ~6am EST / 7am EDT (normal / between reg):
+    - cron: "0 11 * * *"
+    # - Hourly 6am-12am EST (course reg preview):
+    # - cron: "0 11-23,0-4 * * *"
+    # - Every 30m 7am-11pm EST (peak reg week / week before classes):
+    # - cron: "*/30 12-23,0-3 * * *"
+    # - Weekly Mondays at ~6am EST (rest of semester):
+    # - cron: "0 11 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: courses-and-exams
+  cancel-in-progress: true
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: python_scripts/requirements.txt
+
+      - name: Install Python dependencies
+        run: pip install -r python_scripts/requirements.txt
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('python_scripts/requirements.txt') }}
+
+      - name: Install Playwright Chromium
+        run: |
+          if [ "${{ steps.playwright-cache.outputs.cache-hit }}" = "true" ]; then
+            playwright install-deps chromium
+          else
+            playwright install chromium --with-deps
+          fi
+
+      - name: Ingest course sections
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          UOIT_USERNAME: ${{ secrets.UOIT_USERNAME }}
+          UOIT_PASSWORD: ${{ secrets.UOIT_PASSWORD }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            python python_scripts/ingest_courses.py --force
+          else
+            python python_scripts/ingest_courses.py
+          fi
+
+      - name: Ingest exam schedule (weekly on Mondays)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "$(date -u +%u)" = "1" ]; then
+            python python_scripts/ingest_exam_schedule.py
+          else
+            echo "Skipping exam schedule (runs Mondays)."
+          fi

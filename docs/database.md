@@ -3,7 +3,7 @@
 Supabase (Postgres), all in the `public` schema, populated from Banner course-schedule scrapes, Undergraduate Academic Calendar scrapes, campus map/booking feeds, and authenticated student data.
 
 The authoritative DDL lives in [`supabase/migrations/`](../supabase/migrations/) —
-seven committed, idempotent migrations. Apply them oldest first:
+eight committed, idempotent migrations. Apply them oldest first:
 
 | migration | what it does |
 | --- | --- |
@@ -14,6 +14,7 @@ seven committed, idempotent migrations. Apply them oldest first:
 | `20261112180000_auth_and_student_courses.sql` | creates `@ontariotechu.net` `hook_before_user_created()` auth hook, `set_updated_at()`, `profiles` (with `handle_new_user()` trigger), and `student_courses` with user-scoped RLS |
 | `20261112200000_degree_plans.sql` | creates `degree_plans` for per-user saved degree plans with user-scoped RLS |
 | `20261113143000_degree_plans_columns.sql` | adds `degree_name` and `start_year` to `degree_plans` and orders `user_email`, `degree_name` first |
+| `20261115000000_exam_schedules.sql` | creates `exam_schedules` and adds `booking_date` to `room_detailed_reservations` |
 
 ```bash
 # With the Supabase CLI
@@ -201,9 +202,16 @@ cd python_scripts
 python ingest_degrees.py   # reads jsons/degrees.json + jsons/courses_parsed.json
 ```
 
-### Campus map & bookings
+### Campus map, bookings & exams
 
-`python_scripts/map/` (`gen_lib_bookings.py`, `gen_other_bookings.py`, `generate_map_data.py`, `exam_schedule.py`) currently write local JSON/JS files under `python_scripts/map/jsons/` and `rooms_data.js`; direct Supabase upsert scripts for the campus map tables (and an exam schedule table/column) are not yet wired up.
+Production-ready scripts that scrape and ingest directly into Supabase live under `python_scripts/`:
+
+- `ingest_courses.py` — scrapes Banner via `banner_auth.py` and upserts `courses`, `course_faculty`, and `course_meetings`
+- `ingest_lib_bookings.py` — scrapes library study rooms and upserts `library_study_rooms`
+- `ingest_other_bookings.py` — scrapes Infosilem room details & reservations into `room_booking_details` and `room_detailed_reservations`
+- `ingest_exam_schedule.py` — scrapes the exam schedule API into `exam_schedules`
+
+(Legacy/local-only scratch scripts and JSON dumps live under gitignored `local/`.)
 
 `schema.sql` is a **reset** script — it drops all three tables before recreating
 them. It mirrors the baseline migration plus a wipe; only ever run it against a
@@ -296,7 +304,8 @@ Created by `20261112000000_campus_map_schema.sql`. All publicly readable (`SELEC
 - `campus_unmapped_spaces` — non-polygonal reservation spaces (`room_id` PK)
 - `room_booking_details` — room registry metadata (`room` PK, `campus`, `building`, `room_type`, `capacity`, `config_type`, `raw_data`)
 - `library_study_rooms` — library group study rooms & bookings (`room_id` PK, `min_capacity`, `max_capacity`, `bookings` jsonb)
-- `room_detailed_reservations` — calendar reservation occurrences (`id` identity PK, `room_id`, `day`, `start_time`, `duration`, `end_time`, `title`, `type`)
+- `room_detailed_reservations` — calendar reservation occurrences (`id` identity PK, `room_id`, `day`, `start_time`, `duration`, `end_time`, `booking_date`, `title`, `type`)
+- `exam_schedules` — final exam schedules (`id` PK, `term_id`, `subject_code`, `course_code`, `crn`, `exam_date`, `exam_time`, `duration`, `room`, `location`, `surname`, etc.), created by `20261115000000_exam_schedules.sql`
 - `campus_map_cache` — materialized GeoJSON `FeatureCollection` (`id` PK, `data` json)
 - `get_campus_map_data(p_floor, p_building)` — RPC returning the cached `FeatureCollection` when unfiltered, or building it on the fly from `campus_spaces` + `campus_unmapped_spaces`.
 
