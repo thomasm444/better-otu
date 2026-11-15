@@ -4,13 +4,32 @@ import React, { useEffect, useRef, useState, useCallback, useMemo } from "react"
 import Link from "next/link";
 import type * as LeafletType from "leaflet";
 import { AuthButton } from "@/components/auth-button";
-import type { CampusMapData, CampusMapFeature } from "@/lib/queries";
+import {
+  addDaysIso,
+  buildWeekDays,
+  CAMPUS_MAP_MAX_DATE,
+  CAMPUS_MAP_MAX_WEEK_START,
+  CAMPUS_MAP_MIN_DATE,
+  CAMPUS_MAP_MIN_WEEK_START,
+  clampWeekStart,
+  DAY_NAMES,
+  DAY_SHORT,
+  formatShortIsoDate,
+  formatWeekRangeLabel,
+  getDefaultCampusMapState,
+  getWeekContextLabel,
+} from "@/lib/campus-map-dates";
+import type {
+  CampusMapData,
+  CampusMapFeature,
+  CampusMapWeekData,
+  ScheduleInterval,
+} from "@/lib/queries";
 
-type ScheduleInterval = {
-  start: number;
-  end: number;
-  title: string;
-  type: string;
+type PositionedEvent = ScheduleInterval & {
+  day: number;
+  lane: number;
+  totalLanes: number;
 };
 
 type RoomStatus =
@@ -37,6 +56,7 @@ type RoomStatus =
         currentBooking: string | null;
         bookingStart: number | null;
         bookingEnd: number | null;
+        bookingType: string | null;
         schedule: ScheduleInterval[];
       }>;
     }
@@ -47,28 +67,9 @@ type RoomStatus =
       currentBooking?: string;
       bookingStart?: number;
       bookingEnd?: number;
+      bookingType?: string;
       nextBooking?: ScheduleInterval | null;
     };
-
-const DAY_NAMES: Record<number, string> = {
-  1: "Monday",
-  2: "Tuesday",
-  3: "Wednesday",
-  4: "Thursday",
-  5: "Friday",
-  6: "Saturday",
-  7: "Sunday",
-};
-
-const DAY_SHORT: Record<number, string> = {
-  1: "Mon",
-  2: "Tue",
-  3: "Wed",
-  4: "Thu",
-  5: "Fri",
-  6: "Sat",
-  7: "Sun",
-};
 
 const FLOOR_COLORS: Record<string, string> = {
   "-10": "#9333ea", // purple
@@ -90,6 +91,60 @@ const FLOOR_LABELS: Record<string, string> = {
 function formatFloor(fl: string | null | undefined): string {
   const key = String(fl ?? "");
   return FLOOR_LABELS[key] || key || "—";
+}
+
+function escapeHtml(raw: string): string {
+  return raw
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function assignOverlapLanes(day: number, events: ScheduleInterval[]): PositionedEvent[] {
+  const filtered = events
+    .filter((ev) => Number.isFinite(ev.start) && Number.isFinite(ev.end) && ev.end > 480 && ev.start < 1320)
+    .sort((a, b) => a.start - b.start || a.end - b.end);
+
+  const clusters: Array<Array<ScheduleInterval & { lane: number }>> = [];
+  let currentCluster: Array<ScheduleInterval & { lane: number }> = [];
+  let clusterEnd = -1;
+  let laneEnds: number[] = [];
+
+  for (const ev of filtered) {
+    if (currentCluster.length > 0 && ev.start >= clusterEnd) {
+      clusters.push(currentCluster);
+      currentCluster = [];
+      laneEnds = [];
+      clusterEnd = -1;
+    }
+
+    let placed = -1;
+    for (let i = 0; i < laneEnds.length; i++) {
+      if (laneEnds[i] <= ev.start) {
+        placed = i;
+        laneEnds[i] = ev.end;
+        break;
+      }
+    }
+    if (placed === -1) {
+      placed = laneEnds.length;
+      laneEnds.push(ev.end);
+    }
+    currentCluster.push({ ...ev, lane: placed });
+    if (ev.end > clusterEnd) clusterEnd = ev.end;
+  }
+  if (currentCluster.length > 0) clusters.push(currentCluster);
+
+  const result: PositionedEvent[] = [];
+  for (const cluster of clusters) {
+    const totalLanes = Math.max(...cluster.map((e) => e.lane)) + 1;
+    for (const ev of cluster) {
+      result.push({ ...ev, day, lane: ev.lane, totalLanes });
+    }
+  }
+  return result;
 }
 
 const VENUES = {
@@ -138,14 +193,63 @@ function getContainerColor(ratio: number): string {
   return `rgb(${r}, ${g}, ${b})`;
 }
 
+/** Fullscreen modal backdrop with high z-index above Leaflet panes and Escape/backdrop dismiss. */
+function ModalBackdrop({
+  onClose,
+  children,
+}: {
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  const backdropMouseDownRef = useRef(false);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onCloseRef.current();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      onMouseDown={(e) => {
+        backdropMouseDownRef.current = e.target === e.currentTarget;
+      }}
+      onClick={(e) => {
+        if (backdropMouseDownRef.current && e.target === e.currentTarget) {
+          onClose();
+        }
+        backdropMouseDownRef.current = false;
+      }}
+      className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+    >
+      {children}
+    </div>
+  );
+}
+
+const WEEK_CACHE_TTL_MS = 90_000;
+
 export function CampusMapView() {
   const [data, setData] = useState<CampusMapData | null>(null);
+  const [weekData, setWeekData] = useState<CampusMapWeekData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [weekLoading, setWeekLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [weekError, setWeekError] = useState<string | null>(null);
+  const [weekReloadNonce, setWeekReloadNonce] = useState(0);
 
-  // Filters & State
+  // Filters & State (week initialized client-side in useEffect to avoid Next 16 prerender Date error)
   const [currentMode, setCurrentMode] = useState<"availability" | "floors">("availability");
-  const [currentTerm, setCurrentTerm] = useState<"202609" | "202701">("202609");
+  const [currentWeekStart, setCurrentWeekStart] = useState<string | null>(null);
   const [currentFloor, setCurrentFloor] = useState<string>("ALL");
   const [currentDay, setCurrentDay] = useState<number>(1);
   const [currentSlotStart, setCurrentSlotStart] = useState<number>(720); // 12:00 PM
@@ -160,42 +264,112 @@ export function CampusMapView() {
   // Modal State
   const [activeModalFeature, setActiveModalFeature] = useState<CampusMapFeature | null>(null);
   const [activeModalSubRoom, setActiveModalSubRoom] = useState<string | null>(null);
-  const [modalTerm, setModalTerm] = useState<"202609" | "202701">("202609");
   const [isUnmappedOpen, setIsUnmappedOpen] = useState<boolean>(false);
 
-  // Map references
+  // Map & Cache references
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<LeafletType.Map | null>(null);
   const geojsonLayerRef = useRef<LeafletType.GeoJSON | null>(null);
   const leafletRef = useRef<typeof LeafletType | null>(null);
+  const weekCacheRef = useRef<Map<string, { data: CampusMapWeekData; fetchedAt: number }>>(new Map());
 
-  // Fetch campus map data from API
+  // Initialize current Toronto week/day/time on mount and load static campus geometries
   useEffect(() => {
-    let isMounted = true;
-    async function loadData() {
+    let mounted = true;
+    queueMicrotask(() => {
+      if (!mounted) return;
+      const initial = getDefaultCampusMapState();
+      setCurrentWeekStart(initial.weekStart);
+      setCurrentDay(initial.dayIndex);
+      setCurrentSlotStart(initial.slotStart);
+    });
+
+    const controller = new AbortController();
+    async function loadBaseMap() {
       try {
-        setLoading(true);
-        const res = await fetch("/api/campus-map");
+        const res = await fetch("/api/campus-map", { signal: controller.signal });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json: CampusMapData = await res.json();
-        if (isMounted) {
+        if (!controller.signal.aborted) {
           setData(json);
           setLoading(false);
         }
       } catch (err: unknown) {
+        if (controller.signal.aborted) return;
         console.error("Failed to load map data:", err);
-        if (isMounted) {
-          const msg = err instanceof Error ? err.message : "Failed to load campus map data";
-          setError(msg);
-          setLoading(false);
-        }
+        const msg = err instanceof Error ? err.message : "Failed to load campus map data";
+        setError(msg);
+        setLoading(false);
       }
     }
-    loadData();
+    loadBaseMap();
     return () => {
-      isMounted = false;
+      mounted = false;
+      controller.abort();
     };
   }, []);
+
+  // Load week-by-week real schedule whenever currentWeekStart changes
+  useEffect(() => {
+    if (!currentWeekStart) return;
+    const weekStart = currentWeekStart;
+
+    const cached = weekCacheRef.current.get(weekStart);
+    if (cached && Date.now() - cached.fetchedAt < WEEK_CACHE_TTL_MS) {
+      setWeekError(null);
+      setWeekData(cached.data);
+      setWeekLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    async function loadWeek() {
+      try {
+        setWeekError(null);
+        setWeekLoading(true);
+        const res = await fetch(`/api/campus-map/week?weekStart=${encodeURIComponent(weekStart)}`, {
+          signal: controller.signal,
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const json: CampusMapWeekData = await res.json();
+        if (!controller.signal.aborted) {
+          weekCacheRef.current.set(weekStart, { data: json, fetchedAt: Date.now() });
+          setWeekData(json);
+          setWeekLoading(false);
+        }
+      } catch (err: unknown) {
+        if (controller.signal.aborted) return;
+        console.error("Failed to load weekly schedule:", err);
+        const msg = err instanceof Error ? err.message : "Failed to load weekly schedule";
+        setWeekError(msg);
+        setWeekData((prev) => (prev?.weekStart === weekStart ? prev : null));
+        setWeekLoading(false);
+      }
+    }
+    loadWeek();
+    return () => controller.abort();
+  }, [currentWeekStart, weekReloadNonce]);
+
+  // Switch week and keep selected day within 2026-09-01 .. 2027-04-30
+  const selectWeek = useCallback(
+    (targetWeekInput: string, preferredDayIndex?: number) => {
+      const clampedWeek = clampWeekStart(targetWeekInput);
+      setCurrentWeekStart(clampedWeek);
+      setCurrentDay((prevDay) => {
+        const candidate = preferredDayIndex ?? prevDay;
+        const candidateIso = addDaysIso(clampedWeek, candidate - 1);
+        if (candidateIso >= CAMPUS_MAP_MIN_DATE && candidateIso <= CAMPUS_MAP_MAX_DATE) {
+          return candidate;
+        }
+        // Clamp onto nearest valid day within [Sep 1, Apr 30]
+        if (candidateIso < CAMPUS_MAP_MIN_DATE) return 2; // Tue Sep 1, 2026
+        return 5; // Fri Apr 30, 2027
+      });
+    },
+    [],
+  );
+
+  // Ensure Leaflet loads cleanly once container mounts
 
   // Initialize Map
   useEffect(() => {
@@ -257,26 +431,36 @@ export function CampusMapView() {
     };
   }, []);
 
-  // Sync "Now" button
+  // Active week day metadata (always aligned to 2026-09-01 .. 2027-04-30)
+  const effectiveWeekStart = currentWeekStart ?? CAMPUS_MAP_MIN_WEEK_START;
+  const weekDays = useMemo(() => {
+    if (weekData && weekData.weekStart === effectiveWeekStart) {
+      return weekData.days;
+    }
+    return buildWeekDays(effectiveWeekStart);
+  }, [weekData, effectiveWeekStart]);
+
+  const selectedDayInfo = useMemo(() => {
+    return weekDays.find((d) => d.dayIndex === currentDay) ?? null;
+  }, [weekDays, currentDay]);
+
+  // Sync "Now" button to live Toronto date/week (clamped to 2026-09-01 .. 2027-04-30)
   const setTimeToNow = useCallback(() => {
-    const now = new Date();
-    let day = now.getDay(); // 0 is Sun, 1 is Mon
-    day = day === 0 ? 7 : day;
-    const minutes = now.getHours() * 60 + now.getMinutes();
-    const rounded = Math.floor(minutes / 30) * 30;
-    const clamped = Math.max(480, Math.min(rounded, 1290));
-    setCurrentDay(day);
-    setCurrentSlotStart(clamped);
+    const nowState = getDefaultCampusMapState();
+    setCurrentWeekStart(nowState.weekStart);
+    setCurrentDay(nowState.dayIndex);
+    setCurrentSlotStart(nowState.slotStart);
   }, []);
 
-  // Status check helper
+  // Status check helper powered by live per-week schedules
   const getRoomStatus = useCallback(
     (feature: CampusMapFeature, day: number, slotStart: number): RoomStatus => {
       const p = feature.properties;
-      if (!p || !p.hasSchedule) {
+      if (!p) {
         return { isScheduled: false, isAvailable: null, currentBooking: null };
       }
 
+      const dayKey = String(day);
       const slotEnd = slotStart + currentDuration;
 
       // Special handling for Building Containers (UP Building and U5 Building)
@@ -293,19 +477,24 @@ export function CampusMapView() {
           currentBooking: string | null;
           bookingStart: number | null;
           bookingEnd: number | null;
+          bookingType: string | null;
           schedule: ScheduleInterval[];
         }> = [];
 
         for (const rid of roomsList) {
-          const rData = roomsData[rid] || { roomId: rid, capacity: null, capacitySource: null, type: "Classroom" };
-          const schedules = rData.schedules || {};
-          const termSched = schedules[currentTerm] || {};
-          const dayIntervals: ScheduleInterval[] = termSched[day] || termSched[String(day)] || [];
+          const rData = roomsData[rid] || {
+            roomId: rid,
+            capacity: null,
+            capacitySource: null,
+            type: "Classroom",
+          };
+          const dayIntervals: ScheduleInterval[] = weekData?.subRoomSchedules?.[rid]?.[dayKey] || [];
 
           let isRoomAvail = true;
           let currentBooking: string | null = null;
           let bookingStart: number | null = null;
           let bookingEnd: number | null = null;
+          let bookingType: string | null = null;
 
           for (const item of dayIntervals) {
             if (item.start < slotEnd && item.end > slotStart) {
@@ -313,6 +502,7 @@ export function CampusMapView() {
               currentBooking = item.title;
               bookingStart = item.start;
               bookingEnd = item.end;
+              bookingType = item.type;
               break;
             }
           }
@@ -328,6 +518,7 @@ export function CampusMapView() {
             currentBooking,
             bookingStart,
             bookingEnd,
+            bookingType,
             schedule: dayIntervals,
           });
         }
@@ -346,10 +537,13 @@ export function CampusMapView() {
         };
       }
 
-      // Individual rooms
-      const schedules = p.schedules || {};
-      const termSched = schedules[currentTerm] || {};
-      const dayIntervals: ScheduleInterval[] = termSched[day] || termSched[String(day)] || [];
+      const eid = p.externalId;
+      const dayIntervals: ScheduleInterval[] = (eid && weekData?.schedules?.[eid]?.[dayKey]) || [];
+      const isRoomScheduled = Boolean(p.hasSchedule || (eid && weekData?.schedules?.[eid]));
+
+      if (!isRoomScheduled) {
+        return { isScheduled: false, isAvailable: null, currentBooking: null };
+      }
 
       for (const item of dayIntervals) {
         if (item.start < slotEnd && item.end > slotStart) {
@@ -359,6 +553,7 @@ export function CampusMapView() {
             currentBooking: item.title,
             bookingStart: item.start,
             bookingEnd: item.end,
+            bookingType: item.type,
           };
         }
       }
@@ -378,7 +573,7 @@ export function CampusMapView() {
         nextBooking,
       };
     },
-    [currentDuration, currentTerm]
+    [currentDuration, weekData]
   );
 
   // Jump to campus
@@ -393,8 +588,7 @@ export function CampusMapView() {
   const openWeeklySchedule = useCallback((feat: CampusMapFeature, subRoom?: string) => {
     setActiveModalFeature(feat);
     setActiveModalSubRoom(subRoom || (feat.properties.rooms ? feat.properties.rooms[0] : null));
-    setModalTerm(currentTerm);
-  }, [currentTerm]);
+  }, []);
 
   // Re-render GeoJSON layers on map
   useEffect(() => {
@@ -410,6 +604,10 @@ export function CampusMapView() {
     let avail = 0;
     let busy = 0;
     let gray = 0;
+
+    const selectedDate = selectedDayInfo?.date ?? addDaysIso(effectiveWeekStart, currentDay - 1);
+    const selectedDateDisplay = `${DAY_NAMES[currentDay]}, ${formatShortIsoDate(selectedDate)}`;
+    const dayNote = selectedDayInfo?.note;
 
     const layer = L.geoJSON(data as unknown as GeoJSON.GeoJsonObject, {
       filter: (geoFeature) => {
@@ -440,8 +638,11 @@ export function CampusMapView() {
           const eid = (props.externalId || "").toLowerCase();
           const bldg = (props.building || "").toLowerCase();
           const type = (props.type || "").toLowerCase();
-          const allCourses: string[] = props.allCourses || [];
-          const coursesMatch = allCourses.some((c) => c.toLowerCase().includes(q));
+          const weekCourses: string[] = (props.externalId && weekData?.courses?.[props.externalId]) || [];
+          const subRooms: string[] = props.rooms || [];
+          const coursesMatch =
+            weekCourses.some((c) => c.toLowerCase().includes(q)) ||
+            subRooms.some((sr) => sr.toLowerCase().includes(q));
 
           if (!name.includes(q) && !eid.includes(q) && !bldg.includes(q) && !type.includes(q) && !coursesMatch) {
             return false;
@@ -506,23 +707,29 @@ export function CampusMapView() {
         const feature = geoFeature as unknown as CampusMapFeature;
         const p = feature.properties || {};
         const roomLabel = p.externalId || p.name || "Room";
-        const title = p.name ? `${p.name}${p.externalId && p.externalId !== p.name ? ` (${p.externalId})` : ""}` : (p.externalId || "Room");
+        const titleText = p.name
+          ? `${p.name}${p.externalId && p.externalId !== p.name ? ` (${p.externalId})` : ""}`
+          : p.externalId || "Room";
+        const title = escapeHtml(titleText);
 
         let capHtml = "";
         if (p.isLibraryRoom && p.minCapacity && p.capacity) {
           capHtml = `Capacity: <strong>${p.minCapacity} – ${p.capacity} people</strong> &bull; `;
         } else if (p.capacity) {
-          const capSrc = p.capacitySource ? ` <span style="font-size:0.7rem; color:#94a3b8;">(${p.capacitySource})</span>` : "";
+          const capSrc = p.capacitySource
+            ? ` <span style="font-size:0.7rem; color:#94a3b8;">(${escapeHtml(p.capacitySource)})</span>`
+            : "";
           capHtml = `Capacity: <strong>${p.capacity}</strong>${capSrc} &bull; `;
         }
 
-        const bldg = p.building ? `Bldg: <strong>${p.building}</strong> &bull; ` : "";
-        const fl = `Floor: <strong>${formatFloor(p.floor)}</strong>`;
-        const type = p.type ? `<div style="margin-top:2px; font-weight:600; color:#0284c7;">${p.type}</div>` : "";
+        const bldg = p.building ? `Bldg: <strong>${escapeHtml(p.building)}</strong> &bull; ` : "";
+        const fl = `Floor: <strong>${escapeHtml(formatFloor(p.floor))}</strong>`;
+        const type = p.type ? `<div style="margin-top:2px; font-weight:600; color:#0284c7;">${escapeHtml(p.type)}</div>` : "";
+        const dayNoteHtml = dayNote
+          ? `<div style="margin-top:4px; font-size:0.7rem; color:#b45309; background:#fef3c7; border:1px solid #fcd34d; border-radius:4px; padding:2px 6px;">${escapeHtml(dayNote)}</div>`
+          : "";
 
-        // Status
         const status = getRoomStatus(feature, currentDay, currentSlotStart);
-        const termLabel = currentTerm === "202609" ? "Fall 2026" : "Winter 2027";
 
         const popupDiv = document.createElement("div");
         popupDiv.className = "p-1 text-xs text-slate-800";
@@ -530,15 +737,17 @@ export function CampusMapView() {
         if (status.isBuildingContainer) {
           const availTxt = `${status.availableCount} of ${status.totalRooms} Rooms Free`;
           popupDiv.innerHTML = `
-            <div style="font-weight:700; font-size:0.95rem; margin-bottom:2px;">${p.name}</div>
+            <div style="font-weight:700; font-size:0.95rem; margin-bottom:2px;">${escapeHtml(p.name || roomLabel)}</div>
             <div style="display:inline-block; font-size:0.72rem; font-weight:700; border-radius:9999px; padding:2px 8px; margin-bottom:6px; background:${status.color}22; color:${status.color}; border:1px solid ${status.color};">${availTxt}</div>
             <div style="font-size:0.75rem; color:#64748b; margin-bottom:6px;">
-              ${termLabel} &bull; ${DAY_NAMES[currentDay]} (${formatMinutesToTime(currentSlotStart)} – ${formatMinutesToTime(currentSlotStart + currentDuration)}) &bull; <strong>${formatDurationLong(currentDuration)}</strong>
+              ${escapeHtml(selectedDateDisplay)} (${formatMinutesToTime(currentSlotStart)} – ${formatMinutesToTime(currentSlotStart + currentDuration)}) &bull; <strong>${formatDurationLong(currentDuration)}</strong>
             </div>
-            <div style="margin-bottom:6px;">${capHtml}${bldg}${fl}${type}</div>
+            ${dayNoteHtml}
+            <div style="margin-top:4px; margin-bottom:6px;">${capHtml}${bldg}${fl}${type}</div>
           `;
 
           const btn = document.createElement("button");
+          btn.type = "button";
           btn.className = "mt-2 w-full rounded-md bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white shadow hover:bg-sky-700";
           btn.textContent = "View Weekly Schedule";
           btn.onclick = () => openWeeklySchedule(feature);
@@ -550,29 +759,48 @@ export function CampusMapView() {
               : "background:#fff1f2; color:#be123c; border:1px solid #f43f5e;"
             : "background:#f1f5f9; color:#64748b; border:1px solid #cbd5e1;";
           const badgeText = status.isScheduled ? (status.isAvailable ? "AVAILABLE" : "IN USE") : "NO SCHEDULE";
+
+          const nextText =
+            status.isScheduled && status.isAvailable && status.nextBooking
+              ? `<br/><span style="color:#64748b;">Next: ${escapeHtml(status.nextBooking.title)} (${formatMinutesToTime(status.nextBooking.start)})</span>`
+              : "";
+
           const statusDetail = status.isScheduled
             ? status.isAvailable
-              ? `Free for <strong>${formatDurationLong(currentDuration)}</strong>!`
-              : `Booked: <strong>${status.currentBooking || "Class"}</strong><br/>Time: ${formatMinutesToTime(status.bookingStart ?? 0)} – ${formatMinutesToTime(status.bookingEnd ?? 0)}`
+              ? `Free for <strong>${formatDurationLong(currentDuration)}</strong>!${nextText}`
+              : `Booked: <strong>${escapeHtml(status.currentBooking || "Scheduled")}</strong><br/>Time: ${formatMinutesToTime(status.bookingStart ?? 0)} – ${formatMinutesToTime(status.bookingEnd ?? 0)}`
             : "No scheduled classes or reservations for this space.";
 
+          const isOutsideLibWindow =
+            Boolean(p.isLibraryRoom) &&
+            weekData?.libraryWindowStart &&
+            weekData?.libraryWindowEnd &&
+            (selectedDate < weekData.libraryWindowStart || selectedDate > weekData.libraryWindowEnd);
+
+          const libWindowHtml = isOutsideLibWindow && weekData?.libraryWindowStart && weekData?.libraryWindowEnd
+            ? `<div style="margin-top:4px; font-size:0.7rem; color:#475569; background:#f1f5f9; border:1px solid #cbd5e1; border-radius:4px; padding:2px 6px;">Library bookings live only for ${escapeHtml(formatShortIsoDate(weekData.libraryWindowStart))} – ${escapeHtml(formatShortIsoDate(weekData.libraryWindowEnd))}.</div>`
+            : "";
+
           popupDiv.innerHTML = `
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; gap:6px;">
               <span style="font-weight:700; font-size:0.95rem;">${title}</span>
-              <span style="font-size:0.7rem; font-weight:700; border-radius:9999px; padding:2px 6px; ${badgeColor}">${badgeText}</span>
+              <span style="font-size:0.7rem; font-weight:700; border-radius:9999px; padding:2px 6px; white-space:nowrap; ${badgeColor}">${badgeText}</span>
             </div>
             <div style="font-size:0.72rem; color:#64748b; margin-bottom:4px;">
-              ${termLabel} &bull; ${DAY_NAMES[currentDay]} (${formatMinutesToTime(currentSlotStart)} – ${formatMinutesToTime(currentSlotStart + currentDuration)}) &bull; <strong>${formatDurationLong(currentDuration)}</strong>
+              ${escapeHtml(selectedDateDisplay)} (${formatMinutesToTime(currentSlotStart)} – ${formatMinutesToTime(currentSlotStart + currentDuration)}) &bull; <strong>${formatDurationLong(currentDuration)}</strong>
             </div>
-            <div style="font-size:0.75rem; margin-bottom:6px;">${statusDetail}</div>
+            ${dayNoteHtml}
+            ${libWindowHtml}
+            <div style="font-size:0.75rem; margin-top:4px; margin-bottom:6px;">${statusDetail}</div>
             <div style="margin-bottom:6px;">${capHtml}${bldg}${fl}${type}</div>
           `;
 
-          if (p.hasSchedule) {
+          if (status.isScheduled) {
             const btnRow = document.createElement("div");
             btnRow.className = "flex gap-2 mt-2";
 
             const btn = document.createElement("button");
+            btn.type = "button";
             btn.className = "flex-1 rounded-md bg-sky-600 px-2.5 py-1.5 text-xs font-semibold text-white shadow hover:bg-sky-700";
             btn.textContent = "View Schedule";
             btn.onclick = () => openWeeklySchedule(feature);
@@ -611,6 +839,9 @@ export function CampusMapView() {
     setStats({ totalVisible, availCount: avail, busyCount: busy, grayCount: gray });
   }, [
     data,
+    weekData,
+    effectiveWeekStart,
+    selectedDayInfo,
     currentFloor,
     currentMode,
     currentDay,
@@ -618,7 +849,6 @@ export function CampusMapView() {
     currentDuration,
     availFilter,
     searchQuery,
-    currentTerm,
     getRoomStatus,
     openWeeklySchedule,
   ]);
@@ -640,34 +870,64 @@ export function CampusMapView() {
     };
   }, [isPlaying]);
 
-  // Compute timetable events for Weekly Schedule Modal
+  // Compute timetable events with overlap lanes for Weekly Schedule Modal
   const modalCalendarEvents = useMemo(() => {
-    if (!activeModalFeature) return [];
+    if (!activeModalFeature || !weekData) return [];
     const p = activeModalFeature.properties;
-    let scheduleSource = p.schedules || {};
 
-    if (p.isBuildingContainer && activeModalSubRoom && p.roomsData && p.roomsData[activeModalSubRoom]) {
-      scheduleSource = p.roomsData[activeModalSubRoom].schedules || {};
-    }
-
-    const termSched = scheduleSource[modalTerm] || {};
-    const events: Array<{ day: number; start: number; end: number; title: string; type: string }> = [];
-
+    const events: PositionedEvent[] = [];
     for (let day = 1; day <= 7; day++) {
-      const dayList = termSched[day] || termSched[String(day)] || [];
-      for (const ev of dayList) {
-        if (ev.start !== undefined && ev.end !== undefined && ev.end > 480 && ev.start < 1320) {
-          events.push({ ...ev, day });
+      const dayKey = String(day);
+      let dayList: ScheduleInterval[] = [];
+      if (p.isBuildingContainer && activeModalSubRoom) {
+        dayList = weekData.subRoomSchedules?.[activeModalSubRoom]?.[dayKey] || [];
+      } else if (p.externalId) {
+        dayList = weekData.schedules?.[p.externalId]?.[dayKey] || [];
+      }
+      events.push(...assignOverlapLanes(day, dayList));
+    }
+    return events;
+  }, [activeModalFeature, activeModalSubRoom, weekData]);
+
+  // Merge fixed unmapped atrium/table spaces with any unmapped classrooms scheduled this week
+  const mergedUnmappedSpaces = useMemo(() => {
+    const known = data?.unmappedDetailedRes ?? [];
+    const knownMap = new Map(known.map((u) => [u.roomId, u]));
+    const rows = [...known];
+    if (weekData?.unmappedSchedules) {
+      for (const roomId of Object.keys(weekData.unmappedSchedules).sort()) {
+        if (!knownMap.has(roomId)) {
+          rows.push({
+            roomId,
+            building: roomId.replace(/[^A-Za-z].*$/, "") || "Campus",
+            roomType: "Unmapped Scheduled Room",
+            capacity: "",
+            description: "Active schedule in database; polygon not on floor plan.",
+          });
         }
       }
     }
-    return events;
-  }, [activeModalFeature, activeModalSubRoom, modalTerm]);
+    return rows;
+  }, [data, weekData]);
+
+  const showInitialOverlay = loading || (currentWeekStart !== null && !weekData && !error && !weekError);
+  const weekRangeText = formatWeekRangeLabel(effectiveWeekStart);
+  const weekContextLabel = getWeekContextLabel(effectiveWeekStart);
+  const selectedIsoDate = selectedDayInfo?.date ?? addDaysIso(effectiveWeekStart, currentDay - 1);
+  const canGoPrevWeek = effectiveWeekStart > CAMPUS_MAP_MIN_WEEK_START;
+  const canGoNextWeek = effectiveWeekStart < CAMPUS_MAP_MAX_WEEK_START;
+
+  const isModalLibraryOutsideWindow = Boolean(
+    activeModalFeature?.properties.isLibraryRoom &&
+      weekData?.libraryWindowStart &&
+      weekData?.libraryWindowEnd &&
+      (weekData.weekEnd < weekData.libraryWindowStart || weekData.weekStart > weekData.libraryWindowEnd),
+  );
 
   return (
     <div className="relative flex h-[calc(100vh-4rem)] w-full flex-col overflow-hidden bg-slate-100 font-sans text-slate-900">
       {/* Top Header */}
-      <header className="z-10 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-2.5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+      <header className="relative z-20 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-2.5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
         <div className="flex flex-wrap items-center gap-3">
           <Link
             href="/"
@@ -726,24 +986,11 @@ export function CampusMapView() {
             </button>
           </div>
 
-          {/* Term Selector */}
-          <div className="flex rounded-lg border border-slate-200 bg-slate-100 p-0.5 dark:border-zinc-700 dark:bg-zinc-800">
-            <button
-              onClick={() => setCurrentTerm("202609")}
-              className={`rounded-md px-2.5 py-1 font-semibold transition ${
-                currentTerm === "202609" ? "bg-sky-600 text-white shadow-sm" : "text-slate-600 hover:text-slate-900 dark:text-zinc-400"
-              }`}
-            >
-              Fall 2026
-            </button>
-            <button
-              onClick={() => setCurrentTerm("202701")}
-              className={`rounded-md px-2.5 py-1 font-semibold transition ${
-                currentTerm === "202701" ? "bg-sky-600 text-white shadow-sm" : "text-slate-600 hover:text-slate-900 dark:text-zinc-400"
-              }`}
-            >
-              Winter 2027
-            </button>
+          {/* Active Date & Week Quick Badge */}
+          <div className="hidden items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-700 dark:border-sky-900 dark:bg-sky-950/60 dark:text-sky-300 xl:flex">
+            <span>{weekRangeText}</span>
+            <span className="text-sky-400 dark:text-sky-600">&bull;</span>
+            <span>{weekContextLabel}</span>
           </div>
 
           {/* Filter: Scheduled / Available / All */}
@@ -797,7 +1044,7 @@ export function CampusMapView() {
             onClick={() => setIsUnmappedOpen(true)}
             className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
           >
-            25 Unmapped Spaces
+            {mergedUnmappedSpaces.length} Unmapped Spaces
           </button>
 
           <AuthButton />
@@ -805,25 +1052,33 @@ export function CampusMapView() {
       </header>
 
       {/* Main Map Canvas Area */}
-      <div className="relative flex-1 w-full h-full overflow-hidden">
+      <div className="relative z-0 flex-1 w-full h-full overflow-hidden">
         {/* Loading Overlay */}
-        {loading && (
-          <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-white/80 backdrop-blur-sm dark:bg-zinc-950/80">
+        {showInitialOverlay && (
+          <div className="absolute inset-0 z-[1100] flex flex-col items-center justify-center bg-white/80 backdrop-blur-sm dark:bg-zinc-950/80">
             <div className="h-10 w-10 animate-spin rounded-full border-4 border-sky-600 border-t-transparent" />
             <p className="mt-3 text-sm font-semibold text-slate-700 dark:text-zinc-300">
-              Loading 7,500+ campus rooms &amp; schedules from Supabase...
+              Loading campus rooms &amp; live weekly schedules from Supabase...
             </p>
           </div>
         )}
 
         {/* Error Overlay */}
-        {error && (
-          <div className="absolute inset-0 z-30 flex items-center justify-center bg-white p-6 dark:bg-zinc-900">
+        {(error || (!weekData && weekError)) && (
+          <div className="absolute inset-0 z-[1100] flex items-center justify-center bg-white p-6 dark:bg-zinc-900">
             <div className="max-w-md rounded-xl border border-red-200 bg-red-50 p-6 text-center text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300">
               <h2 className="text-lg font-bold">Failed to load map data</h2>
-              <p className="mt-1 text-xs">{error}</p>
+              <p className="mt-1 text-xs">{error ?? weekError}</p>
               <button
-                onClick={() => window.location.reload()}
+                type="button"
+                onClick={() => {
+                  if (error) {
+                    window.location.reload();
+                  } else {
+                    weekCacheRef.current.delete(effectiveWeekStart);
+                    setWeekReloadNonce((n) => n + 1);
+                  }
+                }}
                 className="mt-4 rounded-lg bg-red-600 px-4 py-1.5 text-xs font-semibold text-white shadow hover:bg-red-700"
               >
                 Retry
@@ -832,14 +1087,31 @@ export function CampusMapView() {
           </div>
         )}
 
+        {/* Transient Week Load Banner (if base map is ready) */}
+        {!error && weekData && weekError && (
+          <div className="absolute top-4 left-1/2 z-[1050] flex -translate-x-1/2 items-center gap-3 rounded-xl border border-red-200 bg-red-50/95 px-4 py-2 text-xs font-semibold text-red-700 shadow-lg backdrop-blur dark:border-red-900 dark:bg-red-950/95 dark:text-red-200">
+            <span>Could not load schedule for {formatWeekRangeLabel(effectiveWeekStart)}: {weekError}</span>
+            <button
+              type="button"
+              onClick={() => {
+                weekCacheRef.current.delete(effectiveWeekStart);
+                setWeekReloadNonce((n) => n + 1);
+              }}
+              className="rounded-md bg-red-600 px-2.5 py-1 text-[11px] font-bold text-white hover:bg-red-700"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
         {/* Leaflet Map Div */}
-        <div ref={mapContainerRef} className="h-full w-full" id="map-container" />
+        <div ref={mapContainerRef} className="relative z-0 isolate h-full w-full" id="map-container" />
 
         {/* Legend Overlay */}
         <div
           onMouseDown={(e) => e.stopPropagation()}
           onTouchStart={(e) => e.stopPropagation()}
-          className="absolute bottom-6 left-4 z-[1000] flex flex-col gap-1 rounded-xl border border-slate-200/90 bg-white/95 p-3 text-xs shadow-xl backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/95 dark:text-zinc-200"
+          className="absolute bottom-6 left-4 z-[1000] hidden flex-col gap-1 rounded-xl border border-slate-200/90 bg-white/95 p-3 text-xs shadow-xl backdrop-blur-md lg:flex dark:border-zinc-700 dark:bg-zinc-900/95 dark:text-zinc-200"
         >
           <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Status Legend</div>
           {currentMode === "availability" ? (
@@ -874,45 +1146,128 @@ export function CampusMapView() {
           <div
             onMouseDown={(e) => e.stopPropagation()}
             onTouchStart={(e) => e.stopPropagation()}
-            className="absolute bottom-6 left-1/2 z-[1000] w-[94%] max-w-2xl -translate-x-1/2 rounded-2xl border border-slate-200/95 bg-white/95 p-3.5 shadow-2xl backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/95 dark:text-zinc-100"
+            className="absolute bottom-6 left-1/2 z-[1000] w-[95%] max-w-2xl -translate-x-1/2 rounded-2xl border border-slate-200/95 bg-white/95 p-3.5 shadow-2xl backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/95 dark:text-zinc-100"
           >
+            {/* Row 1: Week Navigation & Academic Context */}
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2 dark:border-zinc-800">
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  disabled={!canGoPrevWeek}
+                  onClick={() => selectWeek(addDaysIso(effectiveWeekStart, -7))}
+                  aria-label="Previous week"
+                  className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                >
+                  &larr; Prev Wk
+                </button>
+                <div className="flex items-center gap-1.5 px-1">
+                  <span className="text-xs font-extrabold tracking-tight text-slate-900 sm:text-sm dark:text-zinc-100">
+                    {weekRangeText}
+                  </span>
+                  <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-bold text-sky-700 dark:bg-sky-950/70 dark:text-sky-300">
+                    {weekContextLabel}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  disabled={!canGoNextWeek}
+                  onClick={() => selectWeek(addDaysIso(effectiveWeekStart, 7))}
+                  aria-label="Next week"
+                  className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                >
+                  Next Wk &rarr;
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2">
+                {weekLoading && (
+                  <span className="flex items-center gap-1 text-[11px] font-semibold text-sky-600 dark:text-sky-400">
+                    <span className="h-3 w-3 animate-spin rounded-full border-2 border-sky-600 border-t-transparent" />
+                    Syncing…
+                  </span>
+                )}
+                <input
+                  type="date"
+                  aria-label="Jump to date (Sep 1, 2026 to Apr 30, 2027)"
+                  min={CAMPUS_MAP_MIN_DATE}
+                  max={CAMPUS_MAP_MAX_DATE}
+                  value={selectedIsoDate}
+                  onChange={(e) => {
+                    const picked = e.target.value;
+                    if (!picked) return;
+                    const clamped =
+                      picked < CAMPUS_MAP_MIN_DATE
+                        ? CAMPUS_MAP_MIN_DATE
+                        : picked > CAMPUS_MAP_MAX_DATE
+                        ? CAMPUS_MAP_MAX_DATE
+                        : picked;
+                    const dt = new Date(`${clamped}T00:00:00Z`);
+                    const jsDay = dt.getUTCDay();
+                    const dayIdx = jsDay === 0 ? 7 : jsDay;
+                    selectWeek(clamped, dayIdx);
+                  }}
+                  className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] font-semibold text-slate-700 outline-none focus:border-sky-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+                />
+              </div>
+            </div>
+
+            {/* Academic Note Banner for Selected Day (if holiday, reading week, exam period, makeup Friday) */}
+            {selectedDayInfo?.note && (
+              <div className="mt-1.5 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300">
+                {formatShortIsoDate(selectedDayInfo.date)}: {selectedDayInfo.note}
+              </div>
+            )}
+
+            {/* Row 2: Day Pills with Dates, Selected Time, Step Controls */}
+            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2 dark:border-zinc-800">
               {/* Day Pills */}
-              <div className="flex gap-1">
-                {[1, 2, 3, 4, 5, 6, 7].map((d) => (
-                  <button
-                    key={d}
-                    onClick={() => setCurrentDay(d)}
-                    className={`rounded-md px-2.5 py-1 text-xs font-semibold transition ${
-                      currentDay === d
-                        ? "bg-sky-600 text-white shadow-sm"
-                        : "text-slate-600 hover:bg-slate-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-                    }`}
-                  >
-                    {DAY_SHORT[d]}
-                  </button>
-                ))}
+              <div className="flex flex-wrap gap-1">
+                {weekDays.map((dayInfo) => {
+                  const dayNum = Number(dayInfo.date.slice(8, 10));
+                  const isActive = currentDay === dayInfo.dayIndex;
+                  return (
+                    <button
+                      key={dayInfo.date}
+                      type="button"
+                      disabled={!dayInfo.inBounds}
+                      title={dayInfo.note ? `${dayInfo.date} — ${dayInfo.note}` : dayInfo.date}
+                      onClick={() => setCurrentDay(dayInfo.dayIndex)}
+                      className={`rounded-md px-2 py-1 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-35 ${
+                        isActive
+                          ? "bg-sky-600 text-white shadow-sm"
+                          : "text-slate-600 hover:bg-slate-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                      }`}
+                    >
+                      {DAY_SHORT[dayInfo.dayIndex]}{" "}
+                      <span className={isActive ? "text-sky-100" : "text-slate-400 dark:text-zinc-500"}>
+                        {dayNum}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
 
               {/* Time Display */}
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-bold text-sky-600 dark:text-sky-400">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-bold text-sky-600 sm:text-sm dark:text-sky-400">
                   {formatMinutesToTime(currentSlotStart)} – {formatMinutesToTime(currentSlotStart + currentDuration)}
                 </span>
-                <span className="rounded bg-sky-50 px-2 py-0.5 text-xs font-semibold text-sky-700 dark:bg-sky-950/60 dark:text-sky-300">
-                  {DAY_NAMES[currentDay]}
+                <span className="rounded bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-700 dark:bg-sky-950/60 dark:text-sky-300">
+                  {DAY_SHORT[currentDay]}, {formatShortIsoDate(selectedIsoDate)}
                 </span>
               </div>
 
               {/* Step & Play Controls */}
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1">
                 <button
+                  type="button"
                   onClick={() => setCurrentSlotStart((p) => Math.max(480, p - 30))}
                   className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
                 >
                   -30m
                 </button>
                 <button
+                  type="button"
                   onClick={() => setIsPlaying((p) => !p)}
                   className={`rounded px-2.5 py-0.5 text-xs font-bold text-white transition ${
                     isPlaying ? "bg-amber-600 hover:bg-amber-700" : "bg-sky-600 hover:bg-sky-700"
@@ -921,12 +1276,14 @@ export function CampusMapView() {
                   {isPlaying ? "⏸ Pause" : "▶ Play"}
                 </button>
                 <button
+                  type="button"
                   onClick={() => setCurrentSlotStart((p) => Math.min(1290, p + 30))}
                   className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
                 >
                   +30m
                 </button>
                 <button
+                  type="button"
                   onClick={setTimeToNow}
                   className="rounded border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
                 >
@@ -936,13 +1293,14 @@ export function CampusMapView() {
             </div>
 
             {/* Duration Selector & Time Slider */}
-            <div className="mt-2.5 space-y-2">
-              <div className="flex items-center justify-between text-xs">
-                <div className="flex items-center gap-1.5">
+            <div className="mt-2 space-y-1.5">
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                <div className="flex flex-wrap items-center gap-1">
                   <span className="text-[11px] font-semibold text-slate-500">Slot Duration:</span>
                   {[10, 30, 60, 120, 180, 300].map((dur) => (
                     <button
                       key={dur}
+                      type="button"
                       onClick={() => setCurrentDuration(dur)}
                       className={`rounded px-2 py-0.5 text-[11px] font-semibold transition ${
                         currentDuration === dur
@@ -988,32 +1346,39 @@ export function CampusMapView() {
 
       {/* Google Calendar-Style Weekly Schedule Modal */}
       {activeModalFeature && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+        <ModalBackdrop onClose={() => setActiveModalFeature(null)}>
           <div className="flex h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900">
             {/* Modal Header */}
-            <div className="flex flex-wrap items-center justify-between border-b border-slate-200 px-6 py-4 dark:border-zinc-800">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-6 py-4 dark:border-zinc-800">
               <div>
                 <h2 className="text-lg font-bold text-slate-900 dark:text-zinc-100">
                   {activeModalSubRoom ? `${activeModalSubRoom} • ` : ""}
                   {activeModalFeature.properties.name}
                   <span className="ml-2 text-xs font-semibold text-sky-600 dark:text-sky-400">
-                    ({modalTerm === "202609" ? "Fall 2026" : "Winter 2027"})
+                    ({weekRangeText})
                   </span>
                 </h2>
                 <p className="mt-0.5 text-xs text-slate-500">
                   Building: <strong>{activeModalFeature.properties.building || "—"}</strong> &bull; Floor:{" "}
                   <strong>{formatFloor(activeModalFeature.properties.floor)}</strong> &bull; Capacity:{" "}
-                  <strong>{activeModalFeature.properties.capacity || "—"}</strong>
+                  <strong>
+                    {activeModalFeature.properties.isLibraryRoom && activeModalFeature.properties.minCapacity
+                      ? `${activeModalFeature.properties.minCapacity}–${activeModalFeature.properties.capacity}`
+                      : activeModalFeature.properties.capacity || "—"}
+                  </strong>
+                  {" "}&bull;{" "}
+                  <span className="font-semibold text-slate-600 dark:text-zinc-300">{weekContextLabel}</span>
                 </p>
               </div>
 
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 {/* Multi-Room Switcher for UP / U5 */}
                 {activeModalFeature.properties.isBuildingContainer && activeModalFeature.properties.rooms && (
-                  <div className="flex gap-1 rounded-lg border border-slate-200 bg-slate-100 p-0.5 dark:border-zinc-700 dark:bg-zinc-800">
+                  <div className="flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-slate-100 p-0.5 dark:border-zinc-700 dark:bg-zinc-800">
                     {activeModalFeature.properties.rooms.map((rm) => (
                       <button
                         key={rm}
+                        type="button"
                         onClick={() => setActiveModalSubRoom(rm)}
                         className={`rounded px-2.5 py-1 text-xs font-bold transition ${
                           activeModalSubRoom === rm ? "bg-sky-600 text-white shadow" : "text-slate-600 hover:text-slate-900 dark:text-zinc-400"
@@ -1025,28 +1390,32 @@ export function CampusMapView() {
                   </div>
                 )}
 
-                {/* Term switcher inside modal */}
-                <div className="flex rounded-lg border border-slate-200 bg-slate-100 p-0.5 dark:border-zinc-700 dark:bg-zinc-800">
+                {/* Week Switcher inside modal */}
+                <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-100 p-0.5 dark:border-zinc-700 dark:bg-zinc-800">
                   <button
-                    onClick={() => setModalTerm("202609")}
-                    className={`rounded px-2.5 py-1 text-xs font-semibold transition ${
-                      modalTerm === "202609" ? "bg-sky-600 text-white shadow" : "text-slate-600 hover:text-slate-900 dark:text-zinc-400"
-                    }`}
+                    type="button"
+                    disabled={!canGoPrevWeek}
+                    onClick={() => selectWeek(addDaysIso(effectiveWeekStart, -7))}
+                    className="rounded px-2 py-1 text-xs font-semibold text-slate-700 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-40 dark:text-zinc-200 dark:hover:bg-zinc-700"
                   >
-                    Fall 2026
+                    &larr; Prev Week
                   </button>
+                  <span className="px-2 text-xs font-bold text-slate-700 dark:text-zinc-200">
+                    {weekLoading ? "Loading…" : weekRangeText}
+                  </span>
                   <button
-                    onClick={() => setModalTerm("202701")}
-                    className={`rounded px-2.5 py-1 text-xs font-semibold transition ${
-                      modalTerm === "202701" ? "bg-sky-600 text-white shadow" : "text-slate-600 hover:text-slate-900 dark:text-zinc-400"
-                    }`}
+                    type="button"
+                    disabled={!canGoNextWeek}
+                    onClick={() => selectWeek(addDaysIso(effectiveWeekStart, 7))}
+                    className="rounded px-2 py-1 text-xs font-semibold text-slate-700 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-40 dark:text-zinc-200 dark:hover:bg-zinc-700"
                   >
-                    Winter 2027
+                    Next Week &rarr;
                   </button>
                 </div>
 
                 {/* Close Button */}
                 <button
+                  type="button"
                   onClick={() => setActiveModalFeature(null)}
                   className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-zinc-800"
                 >
@@ -1055,17 +1424,58 @@ export function CampusMapView() {
               </div>
             </div>
 
+            {/* Library rolling-window notice */}
+            {isModalLibraryOutsideWindow && weekData?.libraryWindowStart && weekData?.libraryWindowEnd && (
+              <div className="border-b border-amber-200 bg-amber-50 px-6 py-2 text-xs font-medium text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+                Library study room bookings are updated daily for the upcoming ~1-week window (
+                <strong>
+                  {formatShortIsoDate(weekData.libraryWindowStart)} – {formatShortIsoDate(weekData.libraryWindowEnd)}
+                </strong>
+                ). Historical and far-future weeks do not retain past library bookings.
+              </div>
+            )}
+
+            {/* Color Key */}
+            <div className="flex flex-wrap items-center gap-4 border-b border-slate-100 bg-slate-50/70 px-6 py-1.5 text-[11px] text-slate-600 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-400">
+              <span className="flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-sm bg-sky-500" /> Course / Lab / Tutorial
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-sm bg-amber-500" /> Final Exam
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-sm bg-emerald-500" /> Library Booking
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="h-2.5 w-2.5 rounded-sm bg-purple-500" /> Room Reservation
+              </span>
+            </div>
+
             {/* Modal Body: Timetable Grid */}
             <div className="flex flex-1 flex-col overflow-hidden">
               {/* Day Column Headers */}
               <div className="grid grid-cols-8 border-b border-slate-200 bg-slate-50 text-xs font-bold text-slate-600 dark:border-zinc-800 dark:bg-zinc-800/50 dark:text-zinc-300">
                 <div className="border-r border-slate-200 p-2 text-center text-slate-400 dark:border-zinc-700">Time</div>
-                {[1, 2, 3, 4, 5, 6, 7].map((d) => (
+                {weekDays.map((dayInfo) => (
                   <div
-                    key={d}
-                    className={`p-2 text-center ${d === currentDay ? "bg-sky-100/60 font-extrabold text-sky-800 dark:bg-sky-950/60 dark:text-sky-300" : ""}`}
+                    key={dayInfo.date}
+                    title={dayInfo.note || dayInfo.date}
+                    className={`p-2 text-center ${
+                      !dayInfo.inBounds
+                        ? "opacity-40"
+                        : dayInfo.dayIndex === currentDay
+                        ? "bg-sky-100/60 font-extrabold text-sky-800 dark:bg-sky-950/60 dark:text-sky-300"
+                        : ""
+                    }`}
                   >
-                    {DAY_NAMES[d]}
+                    <div>
+                      {DAY_SHORT[dayInfo.dayIndex]} {formatShortIsoDate(dayInfo.date)}
+                    </div>
+                    {dayInfo.note && (
+                      <div className="truncate text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+                        {dayInfo.note}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -1086,7 +1496,8 @@ export function CampusMapView() {
                   </div>
 
                   {/* 7 Day Columns with Events */}
-                  {[1, 2, 3, 4, 5, 6, 7].map((day) => {
+                  {weekDays.map((dayInfo) => {
+                    const day = dayInfo.dayIndex;
                     const dayEvents = modalCalendarEvents.filter((ev) => ev.day === day);
                     const isToday = day === currentDay;
 
@@ -1094,7 +1505,11 @@ export function CampusMapView() {
                       <div
                         key={day}
                         className={`relative border-r border-slate-200 dark:border-zinc-800 ${
-                          isToday ? "bg-sky-50/20 dark:bg-sky-950/10" : ""
+                          !dayInfo.inBounds
+                            ? "bg-slate-100/60 dark:bg-zinc-950/40"
+                            : isToday
+                            ? "bg-sky-50/20 dark:bg-sky-950/10"
+                            : ""
                         }`}
                       >
                         {/* Hour background guide lines */}
@@ -1109,15 +1524,24 @@ export function CampusMapView() {
                           const topPx = ((visibleStart - 480) / 840) * 728;
                           const heightPx = Math.max(24, ((visibleEnd - visibleStart) / 840) * 728);
                           const isActiveNow = isToday && currentSlotStart < ev.end && currentSlotStart + currentDuration > ev.start;
+                          const leftPct = (ev.lane / ev.totalLanes) * 100;
+                          const widthPct = (1 / ev.totalLanes) * 100;
 
                           return (
                             <div
                               key={idx}
-                              style={{ top: `${topPx}px`, height: `${heightPx}px` }}
-                              title={`${formatMinutesToTime(ev.start)} – ${formatMinutesToTime(ev.end)}\n${ev.title}`}
-                              className={`absolute inset-x-1 overflow-hidden rounded-md p-1.5 text-[11px] leading-tight shadow-sm transition hover:z-10 hover:shadow-md ${
+                              style={{
+                                top: `${topPx}px`,
+                                height: `${heightPx}px`,
+                                left: `calc(${leftPct}% + 2px)`,
+                                width: `calc(${widthPct}% - 4px)`,
+                              }}
+                              title={`${formatMinutesToTime(ev.start)} – ${formatMinutesToTime(ev.end)}\n${ev.title}${ev.meta ? `\n${ev.meta}` : ""}`}
+                              className={`absolute overflow-hidden rounded-md p-1 text-[11px] leading-tight shadow-sm transition hover:z-20 hover:shadow-md ${
                                 isActiveNow
                                   ? "bg-rose-600 text-white ring-2 ring-rose-400"
+                                  : ev.type === "exam"
+                                  ? "bg-amber-100 text-amber-950 border border-amber-300 dark:bg-amber-950/70 dark:text-amber-200"
                                   : ev.type === "reservation"
                                   ? "bg-purple-100 text-purple-900 border border-purple-300 dark:bg-purple-950/70 dark:text-purple-200"
                                   : ev.type === "library_booking"
@@ -1139,23 +1563,24 @@ export function CampusMapView() {
               </div>
             </div>
           </div>
-        </div>
+        </ModalBackdrop>
       )}
 
       {/* Unmapped Rooms Modal */}
       {isUnmappedOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+        <ModalBackdrop onClose={() => setIsUnmappedOpen(false)}>
           <div className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900">
             <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 dark:border-zinc-800">
               <div>
                 <h3 className="text-base font-bold text-slate-900 dark:text-zinc-100">
-                  Detailed Reservations (Table &amp; Atrium Spaces)
+                  Unmapped Spaces &amp; Atria ({weekRangeText})
                 </h3>
                 <p className="mt-0.5 text-xs text-slate-500">
-                  These locations represent open table spaces in atria and lounges without dedicated room polygon dividers.
+                  Open table spaces and off-plan rooms for {DAY_NAMES[currentDay]}, {formatShortIsoDate(selectedIsoDate)}.
                 </p>
               </div>
               <button
+                type="button"
                 onClick={() => setIsUnmappedOpen(false)}
                 className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-zinc-800"
               >
@@ -1165,29 +1590,61 @@ export function CampusMapView() {
 
             <div className="flex-1 overflow-y-auto p-4">
               <div className="space-y-2">
-                {data?.unmappedDetailedRes.map((u) => (
-                  <div
-                    key={u.roomId}
-                    className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs dark:border-zinc-800 dark:bg-zinc-800/40"
-                  >
-                    <div>
-                      <div className="font-bold text-sky-600 dark:text-sky-400">{u.roomId}</div>
-                      <div className="text-slate-500">
-                        {u.building ? `Building: ${u.building}` : "Campus Space"} &bull; {u.roomType || "Lounge Space"}
+                {mergedUnmappedSpaces.map((u) => {
+                  const dayKey = String(currentDay);
+                  const slots = weekData?.unmappedSchedules?.[u.roomId]?.[dayKey] ?? [];
+                  const slotEnd = currentSlotStart + currentDuration;
+                  const activeSlot = slots.find((s) => s.start < slotEnd && s.end > currentSlotStart);
+
+                  return (
+                    <div
+                      key={u.roomId}
+                      className="flex items-start justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs dark:border-zinc-800 dark:bg-zinc-800/40"
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-sky-600 dark:text-sky-400">{u.roomId}</span>
+                          {slots.length > 0 && (
+                            <span
+                              className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                                activeSlot
+                                  ? "bg-rose-100 text-rose-700 dark:bg-rose-950/70 dark:text-rose-300"
+                                  : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-300"
+                              }`}
+                            >
+                              {activeSlot ? `In Use (${activeSlot.title})` : `${slots.length} booked today`}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-slate-500">
+                          {u.building ? `Building: ${u.building}` : "Campus Space"} &bull; {u.roomType || "Lounge Space"}
+                        </div>
+                        {u.description && <div className="mt-1 text-[11px] text-slate-400">{u.description}</div>}
+                        {slots.length > 0 && (
+                          <div className="mt-1.5 flex flex-wrap gap-1">
+                            {slots.map((s, i) => (
+                              <span
+                                key={i}
+                                className="rounded bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 shadow-xs dark:bg-zinc-800 dark:text-zinc-300"
+                              >
+                                {formatMinutesToTime(s.start)}–{formatMinutesToTime(s.end)}: {s.title}
+                              </span>
+                            ))}
+                          </div>
+                        )}
                       </div>
-                      {u.description && <div className="mt-1 text-[11px] text-slate-400">{u.description}</div>}
+                      {u.capacity && (
+                        <span className="shrink-0 rounded-full bg-slate-200/80 px-2.5 py-0.5 text-[11px] font-semibold text-slate-700 dark:bg-zinc-700 dark:text-zinc-200">
+                          Cap: {u.capacity}
+                        </span>
+                      )}
                     </div>
-                    {u.capacity && (
-                      <span className="rounded-full bg-slate-200/80 px-2.5 py-0.5 text-[11px] font-semibold text-slate-700 dark:bg-zinc-700 dark:text-zinc-200">
-                        Cap: {u.capacity}
-                      </span>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
           </div>
-        </div>
+        </ModalBackdrop>
       )}
     </div>
   );
