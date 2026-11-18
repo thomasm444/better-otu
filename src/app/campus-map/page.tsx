@@ -1,7 +1,7 @@
 import { CampusMapView } from "./campus-map-view";
 
 export const metadata = {
-  title: "Campus Maap & Room Availability | Better OTU",
+  title: "Campus Map & Room Availability | Better OTU",
   description:
     "Interactive campus map and live room vacancy finder for Ontario Tech University.",
 };
