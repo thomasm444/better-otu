@@ -10,7 +10,6 @@ import React, {
   useState,
 } from "react";
 
-import { AuthButton } from "@/components/auth-button";
 import {
   deleteDegreePlan,
   fetchAllDegreePlans,
@@ -68,6 +67,7 @@ type SavedPlan = {
   customs?: CustomCourse[];
   startYear?: number;
   gapYears?: number[];
+  planName?: string;
 };
 
 function loadSavedPlan(programId: string): SavedPlan {
@@ -88,6 +88,7 @@ function persistPlan(
   customs: Map<string, CustomCourse>,
   startYear: number = DEFAULT_START_YEAR,
   gapYears: number[] = [],
+  planName?: string,
 ) {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(
@@ -97,6 +98,7 @@ function persistPlan(
       customs: [...customs.values()],
       startYear,
       gapYears,
+      ...(planName ? { planName } : {}),
     }),
   );
 }
@@ -157,10 +159,21 @@ export function DegreePlannerClient({
     initialProgram,
   );
   const [loadingProgram, setLoadingProgram] = useState(false);
-  const [programQuery, setProgramQuery] = useState(
-    initialProgram?.name ?? "",
-  );
+  const [programQuery, setProgramQuery] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [planName, setPlanName] = useState(initialProgram?.name ?? "");
+  const [editingPlanName, setEditingPlanName] = useState(false);
+  const [planNameDraft, setPlanNameDraft] = useState("");
+  const [addPlanModalOpen, setAddPlanModalOpen] = useState(false);
+  const [newPlanQuery, setNewPlanQuery] = useState("");
+  const [newPlanProgram, setNewPlanProgram] = useState<ProgramSummary | null>(
+    null,
+  );
+  const [newPlanName, setNewPlanName] = useState("");
+  const [newPlanStartYear, setNewPlanStartYear] = useState<number>(
+    DEFAULT_START_YEAR,
+  );
+  const [creatingPlan, setCreatingPlan] = useState(false);
 
   const [startYear, setStartYear] = useState<number>(DEFAULT_START_YEAR);
   const [gapYears, setGapYears] = useState<number[]>([]);
@@ -249,7 +262,9 @@ export function DegreePlannerClient({
       }
       setCustoms(nextCustoms);
       setProgram(prog);
-      setProgramQuery(prog.name);
+      setProgramQuery("");
+      setPlanName(saved.planName?.trim() || prog.name);
+      setEditingPlanName(false);
     },
     [catalogMap, offeringsMap, offeringContext, startYear],
   );
@@ -291,12 +306,21 @@ export function DegreePlannerClient({
             remote.customs.map((c) => [c.code, c]),
           );
           const nextStartYear = remote.start_year ?? undefined;
+          const nextPlanName = remote.degree_name?.trim() || prog.name;
           applyProgramWithSaved(prog, {
             terms: remote.terms,
             customs: remote.customs,
             startYear: nextStartYear,
+            planName: nextPlanName,
           });
-          persistPlan(prog.program_id, remote.terms, nextCustoms, nextStartYear);
+          persistPlan(
+            prog.program_id,
+            remote.terms,
+            nextCustoms,
+            nextStartYear,
+            [],
+            nextPlanName,
+          );
         }
       } catch {
         // Keep local state if remote fetch fails.
@@ -349,16 +373,20 @@ export function DegreePlannerClient({
               remote.customs.map((c) => [c.code, c]),
             );
             const nextStartYear = remote.start_year ?? undefined;
+            const nextPlanName = remote.degree_name?.trim() || currentProg.name;
             applyProgramWithSaved(currentProg, {
               terms: remote.terms,
               customs: remote.customs,
               startYear: nextStartYear,
+              planName: nextPlanName,
             });
             persistPlan(
               currentProg.program_id,
               remote.terms,
               nextCustoms,
               nextStartYear,
+              [],
+              nextPlanName,
             );
           }
           return;
@@ -379,16 +407,20 @@ export function DegreePlannerClient({
 
         const nextCustoms = new Map(latest.customs.map((c) => [c.code, c]));
         const nextStartYear = latest.start_year ?? undefined;
+        const nextPlanName = latest.degree_name?.trim() || detail.name;
         applyProgramWithSaved(detail, {
           terms: latest.terms,
           customs: latest.customs,
           startYear: nextStartYear,
+          planName: nextPlanName,
         });
         persistPlan(
           detail.program_id,
           latest.terms,
           nextCustoms,
           nextStartYear,
+          [],
+          nextPlanName,
         );
       } catch {
         if (active) showToast("Could not load saved degree plan");
@@ -461,7 +493,7 @@ export function DegreePlannerClient({
   const selectProgram = useCallback(
     async (summary: ProgramSummary) => {
       setMenuOpen(false);
-      setProgramQuery(summary.name);
+      setProgramQuery("");
 
       if (summary.program_id !== programRef.current?.program_id) {
         setPreviousPlan(null);
@@ -519,16 +551,20 @@ export function DegreePlannerClient({
         const detail = await loadProgramDetail(plan.program_id);
         const nextCustoms = new Map(plan.customs.map((c) => [c.code, c]));
         const nextStartYear = plan.start_year ?? undefined;
+        const nextPlanName = plan.degree_name?.trim() || detail.name;
         applyProgramWithSaved(detail, {
           terms: plan.terms,
           customs: plan.customs,
           startYear: nextStartYear,
+          planName: nextPlanName,
         });
         persistPlan(
           detail.program_id,
           plan.terms,
           nextCustoms,
           nextStartYear,
+          [],
+          nextPlanName,
         );
       } catch {
         showToast("Could not load saved plan");
@@ -624,6 +660,7 @@ export function DegreePlannerClient({
       nextCustoms: Map<string, CustomCourse>,
       nextStartYear = startYear,
       nextGapYears = gapYears,
+      nextPlanName = planName,
     ) => {
       const normalizedTerms = nextTerms.map((t) => ({
         ...t,
@@ -635,19 +672,21 @@ export function DegreePlannerClient({
       setGapYears(nextGapYears);
       if (!program) return;
 
+      const effectiveName = nextPlanName.trim() || program.name;
       persistPlan(
         program.program_id,
         normalizedTerms,
         nextCustoms,
         nextStartYear,
         nextGapYears,
+        effectiveName,
       );
 
       if (user?.email) {
         void upsertDegreePlan(supabase, {
           userId: user.id,
           userEmail: user.email,
-          degreeName: program.name,
+          degreeName: effectiveName,
           startYear: nextStartYear,
           programId: program.program_id,
           terms: normalizedTerms,
@@ -664,8 +703,145 @@ export function DegreePlannerClient({
           });
       }
     },
-    [program, showToast, supabase, user, startYear, gapYears],
+    [program, showToast, supabase, user, startYear, gapYears, planName],
   );
+
+  const handleRenamePlan = useCallback(
+    (rawName: string) => {
+      if (!program) {
+        setEditingPlanName(false);
+        return;
+      }
+      const nextName = rawName.trim() || program.name;
+      setPlanName(nextName);
+      setEditingPlanName(false);
+      commitPlan(terms, customs, startYear, gapYears, nextName);
+      showToast(`Renamed plan to "${nextName}"`);
+    },
+    [program, commitPlan, terms, customs, startYear, gapYears, showToast],
+  );
+
+  const openAddPlanModal = useCallback(() => {
+    setPlansMenuOpen(false);
+    setMenuOpen(false);
+    setNewPlanQuery("");
+    setNewPlanProgram(null);
+    setNewPlanName("");
+    setNewPlanStartYear(startYear);
+    setAddPlanModalOpen(true);
+  }, [startYear]);
+
+  const filteredNewPlanPrograms = useMemo(() => {
+    const q = newPlanQuery.trim().toLowerCase();
+    return bootstrap.programs
+      .filter(
+        (p) =>
+          !q ||
+          `${p.name} ${p.credential ?? ""} ${p.degree_abbrev ?? ""} ${p.faculty ?? ""}`
+            .toLowerCase()
+            .includes(q),
+      )
+      .slice(0, 60);
+  }, [bootstrap.programs, newPlanQuery]);
+
+  const handleCreateNewPlan = useCallback(async () => {
+    if (!newPlanProgram || creatingPlan) return;
+    setCreatingPlan(true);
+    try {
+      const detail = await loadProgramDetail(newPlanProgram.program_id);
+      const effectiveName = newPlanName.trim() || detail.name;
+      const existingSaved = savedPlans.find(
+        (p) => p.program_id === detail.program_id,
+      );
+      const nextCustoms = existingSaved
+        ? new Map(existingSaved.customs.map((c) => [c.code, c]))
+        : new Map<string, CustomCourse>();
+
+      let nextTerms: PlannerTerm[];
+      if (existingSaved && existingSaved.terms.length > 0) {
+        nextTerms = existingSaved.terms.map((t) => ({
+          ...t,
+          slots: normalizeTermSlots(t.slots),
+        }));
+      } else {
+        const built = buildDefaultPlan(
+          detail,
+          catalogMap,
+          offeringsMap,
+          nextCustoms,
+          { startYear: newPlanStartYear, gapYears: [], context: offeringContext },
+        );
+        nextTerms = built.terms;
+        setUnscheduled(built.unscheduled);
+      }
+
+      if (typeof window !== "undefined") {
+        const url = new URL(window.location.href);
+        url.searchParams.set("program", detail.program_id);
+        window.history.replaceState(null, "", url.toString());
+      }
+
+      setPreviousPlan(null);
+      setResetConfirmOpen(false);
+      setProgram(detail);
+      setProgramQuery("");
+      setPlanName(effectiveName);
+      setEditingPlanName(false);
+      setStartYear(newPlanStartYear);
+      setGapYears([]);
+      setCustoms(nextCustoms);
+      setTerms(nextTerms);
+
+      persistPlan(
+        detail.program_id,
+        nextTerms,
+        nextCustoms,
+        newPlanStartYear,
+        [],
+        effectiveName,
+      );
+
+      if (user?.email) {
+        try {
+          const savedRecord = await upsertDegreePlan(supabase, {
+            userId: user.id,
+            userEmail: user.email,
+            degreeName: effectiveName,
+            startYear: newPlanStartYear,
+            programId: detail.program_id,
+            terms: nextTerms,
+            customs: [...nextCustoms.values()],
+          });
+          setSavedPlans((prev) => [
+            savedRecord,
+            ...prev.filter((p) => p.program_id !== savedRecord.program_id),
+          ]);
+        } catch {
+          showToast("Could not save plan to your account");
+        }
+      }
+
+      setAddPlanModalOpen(false);
+      showToast(`Opened plan "${effectiveName}"`);
+    } catch {
+      showToast("Could not create plan");
+    } finally {
+      setCreatingPlan(false);
+    }
+  }, [
+    newPlanProgram,
+    creatingPlan,
+    loadProgramDetail,
+    newPlanName,
+    savedPlans,
+    catalogMap,
+    offeringsMap,
+    newPlanStartYear,
+    offeringContext,
+    user,
+    supabase,
+    showToast,
+  ]);
 
   const placeCourse = useCallback(
     (
@@ -1008,33 +1184,28 @@ export function DegreePlannerClient({
     <div className="min-h-screen bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
       {/* Sticky Top Header */}
       <header className="sticky top-0 z-40 border-b border-zinc-200 bg-white/95 px-4 py-2.5 backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/95">
-        <div className="mx-auto flex max-w-[1440px] flex-col gap-2.5 lg:flex-row lg:items-start lg:justify-between">
-          {/* Left Side: Home + Degree Planner title + Start–End year + Plans on top; Start + Degree search below */}
-          <div className="flex flex-col items-start gap-2">
-            <div className="flex w-full flex-wrap items-center gap-2.5">
-              <Link
-                href="/"
-                className="rounded-lg border border-zinc-200 px-2.5 py-1 text-xs font-medium text-zinc-600 transition-colors hover:border-zinc-300 hover:text-zinc-900 dark:border-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-100"
-              >
-                &larr; Home
-              </Link>
+        <div className="mx-auto flex max-w-[1440px] flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          {/* Left Side: Home on top; Plans + (+) below; Plan name; Start year */}
+          <div className="flex flex-col items-start gap-1.5">
+            <Link
+              href="/"
+              className="rounded-lg border border-zinc-200 px-2.5 py-1 text-xs font-medium text-zinc-600 transition-colors hover:border-zinc-300 hover:text-zinc-900 dark:border-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-100"
+            >
+              &larr; Home
+            </Link>
 
-              <div className="font-semibold tracking-tight whitespace-nowrap">
-                Degree Planner{" "}
-                <small className="ml-1 text-xs font-normal text-zinc-500 dark:text-zinc-400">
-                  Ontario Tech · {planStartCalYear}–{planEndCalYear}
-                </small>
-              </div>
-
-              {/* Saved Plans Dropdown */}
-              <div ref={plansMenuContainerRef} className="relative ml-auto">
+            {/* Saved Plans Dropdown + Add Plan (+) */}
+            <div
+              ref={plansMenuContainerRef}
+              className="relative flex items-center gap-1.5"
+            >
                 <button
                   type="button"
                   onClick={() => {
                     setMenuOpen(false);
                     setPlansMenuOpen((open) => !open);
                   }}
-                  className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 transition-colors hover:border-zinc-300 hover:bg-zinc-50 hover:text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 transition-colors hover:border-zinc-300 hover:bg-zinc-50 hover:text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
                 >
                   <span>Plans</span>
                   <span className="rounded-full bg-zinc-100 px-1.5 py-0.5 text-[10.5px] font-semibold tabular-nums text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
@@ -1042,10 +1213,29 @@ export function DegreePlannerClient({
                   </span>
                 </button>
 
+                <button
+                  type="button"
+                  onClick={openAddPlanModal}
+                  title="Add another degree plan"
+                  aria-label="Add another degree plan"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-zinc-200 bg-white text-sm font-semibold text-zinc-700 transition-colors hover:border-blue-400 hover:bg-blue-50 hover:text-blue-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:border-blue-500 dark:hover:bg-blue-950/40 dark:hover:text-blue-400"
+                >
+                  +
+                </button>
+
                 {plansMenuOpen && (
-                  <div className="absolute top-10 right-0 z-50 max-h-[60vh] w-[min(360px,calc(100vw-2rem))] overflow-auto rounded-xl border border-zinc-200 bg-white shadow-xl sm:left-0 sm:right-auto dark:border-zinc-700 dark:bg-zinc-900">
-                    <div className="border-b border-zinc-100 px-3 py-2 text-[11px] font-semibold tracking-wider text-zinc-500 uppercase dark:border-zinc-800 dark:text-zinc-400">
-                      Saved Plans ({savedPlans.length})
+                  <div className="absolute top-9 left-0 z-50 max-h-[60vh] w-[min(360px,calc(100vw-2rem))] overflow-auto rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
+                    <div className="flex items-center justify-between border-b border-zinc-100 px-3 py-2 dark:border-zinc-800">
+                      <span className="text-[11px] font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
+                        Saved Plans ({savedPlans.length})
+                      </span>
+                      <button
+                        type="button"
+                        onClick={openAddPlanModal}
+                        className="rounded-md bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-600 transition-colors hover:bg-blue-100 dark:bg-blue-950/60 dark:text-blue-400 dark:hover:bg-blue-900/60"
+                      >
+                        + New Plan
+                      </button>
                     </div>
 
                     {savedPlans.length === 0 ? (
@@ -1111,104 +1301,181 @@ export function DegreePlannerClient({
                     )}
                   </div>
                 )}
-              </div>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
-              <label className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400">
-                <span>Start:</span>
-                <select
-                  value={startYear}
-                  onChange={(e) => handleChangeStartYear(Number(e.target.value))}
-                  aria-label="Degree start year"
-                  className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs font-medium text-zinc-900 focus:border-blue-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
-                >
-                  {startYearOptions.map((y) => (
-                    <option key={y} value={y}>
-                      {y} ({y}–{String(y + 1).slice(-2)})
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              {/* Searchable Program Dropdown */}
-              <div ref={menuContainerRef} className="relative">
-                <input
-                  type="text"
-                  value={programQuery}
-                  onFocus={() => setMenuOpen(true)}
-                  onChange={(e) => {
-                    setProgramQuery(e.target.value);
-                    setMenuOpen(true);
-                  }}
-                  placeholder="Search programs…"
-                  autoComplete="off"
-                  className="w-56 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-sm text-zinc-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none sm:w-72 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
-                />
-                {menuOpen && (
-                  <div className="absolute top-10 left-0 z-50 max-h-[60vh] w-[min(430px,calc(100vw-2rem))] overflow-auto rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
-                    {filteredPrograms.length === 0 ? (
-                      <div className="p-6 text-center text-sm text-zinc-500">
-                        No programs match.
-                      </div>
-                    ) : (
-                      filteredPrograms.map((p) => (
-                        <button
-                          key={p.program_id}
-                          type="button"
-                          onClick={() => selectProgram(p)}
-                          className="block w-full border-b border-zinc-100 px-3 py-2 text-left transition-colors last:border-b-0 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800/60"
-                        >
-                          <span className="block text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                            {p.name}
-                          </span>
-                          <span className="text-[11.5px] text-zinc-500 dark:text-zinc-400">
-                            {[
-                              p.credential,
-                              p.degree_abbrev,
-                              p.total_credit_hours
-                                ? `${p.total_credit_hours} cr`
-                                : null,
-                            ]
-                              .filter(Boolean)
-                              .join(" · ")}
-                          </span>
-                        </button>
-                      ))
+            {/* Active Plan Name (visible + editable) */}
+            {program && (
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="text-[11px] font-semibold tracking-wider text-zinc-400 uppercase dark:text-zinc-500">
+                  Plan:
+                </span>
+                {editingPlanName ? (
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      handleRenamePlan(planNameDraft);
+                    }}
+                    className="flex items-center gap-1.5"
+                  >
+                    <input
+                      type="text"
+                      autoFocus
+                      value={planNameDraft}
+                      onChange={(e) => setPlanNameDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Escape") {
+                          setEditingPlanName(false);
+                        }
+                      }}
+                      placeholder={program.name}
+                      className="w-56 rounded-lg border border-blue-500 bg-white px-2.5 py-1 text-sm font-medium text-zinc-900 focus:ring-2 focus:ring-blue-500/20 focus:outline-none sm:w-72 dark:bg-zinc-950 dark:text-zinc-100"
+                    />
+                    <button
+                      type="submit"
+                      className="rounded-lg bg-blue-600 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-blue-700"
+                    >
+                      Save
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingPlanName(false)}
+                      className="rounded-lg border border-zinc-200 px-2 py-1 text-xs font-medium text-zinc-600 transition-colors hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                    >
+                      Cancel
+                    </button>
+                  </form>
+                ) : (
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPlanNameDraft(planName || program.name);
+                        setEditingPlanName(true);
+                      }}
+                      title="Click to rename plan"
+                      className="group inline-flex items-center gap-1.5 rounded-lg px-1.5 py-0.5 text-left transition-colors hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                    >
+                      <span className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                        {planName || program.name}
+                      </span>
+                      <span className="text-xs text-zinc-400 transition-colors group-hover:text-blue-600 dark:text-zinc-500 dark:group-hover:text-blue-400">
+                        ✎
+                      </span>
+                    </button>
+                    {planName && planName !== program.name && (
+                      <span className="text-xs text-zinc-400 dark:text-zinc-500">
+                        ({program.name})
+                      </span>
                     )}
                   </div>
                 )}
               </div>
+            )}
+
+            {/* Start Year directly below Plan name */}
+            <label className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400">
+              <span>Start:</span>
+              <select
+                value={startYear}
+                onChange={(e) => handleChangeStartYear(Number(e.target.value))}
+                aria-label="Degree start year"
+                className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs font-medium text-zinc-900 focus:border-blue-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+              >
+                {startYearOptions.map((y) => (
+                  <option key={y} value={y}>
+                    {y} ({y}–{String(y + 1).slice(-2)})
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          {/* Middle: Degree Planner Title above Search */}
+          <div className="flex w-full flex-col items-start gap-1.5 lg:flex-1 lg:items-center lg:px-4">
+            <div className="font-semibold tracking-tight whitespace-nowrap">
+              Degree Planner{" "}
+              <small className="ml-1 text-xs font-normal text-zinc-500 dark:text-zinc-400">
+                Ontario Tech · {planStartCalYear}–{planEndCalYear}
+              </small>
+            </div>
+
+            <div ref={menuContainerRef} className="relative w-full max-w-[280px]">
+              <input
+                type="text"
+                value={programQuery}
+                onFocus={() => setMenuOpen(true)}
+                onChange={(e) => {
+                  setProgramQuery(e.target.value);
+                  setMenuOpen(true);
+                }}
+                placeholder="Search"
+                aria-label="Search programs"
+                autoComplete="off"
+                className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-sm text-zinc-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+              />
+              {menuOpen && (
+                <div className="absolute top-10 left-0 z-50 max-h-[60vh] w-[min(430px,calc(100vw-2rem))] overflow-auto rounded-xl border border-zinc-200 bg-white shadow-xl lg:left-1/2 lg:-translate-x-1/2 dark:border-zinc-700 dark:bg-zinc-900">
+                  {filteredPrograms.length === 0 ? (
+                    <div className="p-6 text-center text-sm text-zinc-500">
+                      No programs match.
+                    </div>
+                  ) : (
+                    filteredPrograms.map((p) => (
+                      <button
+                        key={p.program_id}
+                        type="button"
+                        onClick={() => selectProgram(p)}
+                        className="block w-full border-b border-zinc-100 px-3 py-2 text-left transition-colors last:border-b-0 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-800/60"
+                      >
+                        <span className="block text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                          {p.name}
+                        </span>
+                        <span className="text-[11.5px] text-zinc-500 dark:text-zinc-400">
+                          {[
+                            p.credential,
+                            p.degree_abbrev,
+                            p.total_credit_hours
+                              ? `${p.total_credit_hours} cr`
+                              : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Right Side: Credits + Reset controls on top; Signed-in badge directly below Credits */}
+          {/* Right Side: Credits on top; Reset controls directly below */}
           <div className="flex flex-col items-start gap-2 lg:items-end">
-            <div className="flex flex-wrap items-center gap-2.5 lg:justify-end">
-              {/* Credit Progress Hero */}
-              <div className="flex items-center gap-2">
-                <strong className="text-lg leading-none font-semibold tracking-tight tabular-nums text-emerald-600 dark:text-emerald-400">
-                  {totalPlacedCredits}
-                </strong>
-                <span className="text-xs text-zinc-500 dark:text-zinc-400">
-                  / {totalTarget} cr
-                </span>
+            {/* Credit Progress Hero */}
+            <div className="flex items-center gap-2">
+              <strong className="text-lg leading-none font-semibold tracking-tight tabular-nums text-emerald-600 dark:text-emerald-400">
+                {totalPlacedCredits}
+              </strong>
+              <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                / {totalTarget} cr
+              </span>
+              <div
+                className="h-2.5 w-28 overflow-hidden rounded-full bg-red-500/85 sm:w-36 dark:bg-red-500/75"
+                title={`${totalPlacedCredits} completed · ${Math.max(0, totalTarget - totalPlacedCredits)} remaining`}
+              >
                 <div
-                  className="h-2.5 w-28 overflow-hidden rounded-full bg-red-500/85 sm:w-36 dark:bg-red-500/75"
-                  title={`${totalPlacedCredits} completed · ${Math.max(0, totalTarget - totalPlacedCredits)} remaining`}
-                >
-                  <div
-                    className="h-full bg-emerald-500 transition-all duration-300"
-                    style={{ width: `${heroPct}%` }}
-                  />
-                </div>
+                  className="h-full bg-emerald-500 transition-all duration-300"
+                  style={{ width: `${heroPct}%` }}
+                />
               </div>
+            </div>
 
+            <div className="flex flex-wrap items-center gap-2 lg:justify-end">
               {previousPlan && (
                 <button
                   type="button"
                   onClick={handleRestorePrevious}
-                  className="rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-1.5 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 dark:hover:bg-emerald-900/60"
+                  className="rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300 dark:hover:bg-emerald-900/60"
                 >
                   Undo reset
                 </button>
@@ -1218,13 +1485,11 @@ export function DegreePlannerClient({
                 type="button"
                 disabled={!program}
                 onClick={() => setResetConfirmOpen(true)}
-                className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-600 transition-colors hover:border-zinc-300 hover:text-zinc-900 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100"
+                className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-xs font-medium text-zinc-600 transition-colors hover:border-zinc-300 hover:text-zinc-900 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:text-zinc-100"
               >
                 Reset to defaults
               </button>
             </div>
-
-            <AuthButton />
           </div>
         </div>
       </header>
@@ -1316,6 +1581,156 @@ export function DegreePlannerClient({
                   : deletingPlan
                     ? "Deleting..."
                     : "Yes, delete plan"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add New Plan Modal */}
+      {addPlanModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+          onClick={() => !creatingPlan && setAddPlanModalOpen(false)}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border border-zinc-200 bg-white p-6 shadow-2xl dark:border-zinc-700 dark:bg-zinc-900"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+                Add degree plan
+              </h2>
+              <button
+                type="button"
+                disabled={creatingPlan}
+                onClick={() => setAddPlanModalOpen(false)}
+                className="rounded-lg px-2 py-1 text-sm text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                  1. Choose program
+                </label>
+                <input
+                  type="text"
+                  autoFocus
+                  value={newPlanQuery}
+                  onChange={(e) => {
+                    setNewPlanQuery(e.target.value);
+                    if (newPlanProgram && e.target.value !== newPlanProgram.name) {
+                      setNewPlanProgram(null);
+                    }
+                  }}
+                  placeholder="Search programs (e.g. Computer Science)…"
+                  className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+                />
+                <div className="mt-1.5 max-h-44 overflow-auto rounded-xl border border-zinc-200 bg-zinc-50/50 dark:border-zinc-800 dark:bg-zinc-950/50">
+                  {filteredNewPlanPrograms.length === 0 ? (
+                    <div className="p-4 text-center text-xs text-zinc-500">
+                      No programs match.
+                    </div>
+                  ) : (
+                    filteredNewPlanPrograms.map((p) => {
+                      const isSelected = newPlanProgram?.program_id === p.program_id;
+                      const alreadySaved = savedPlans.some(
+                        (s) => s.program_id === p.program_id,
+                      );
+                      return (
+                        <button
+                          key={p.program_id}
+                          type="button"
+                          onClick={() => {
+                            setNewPlanProgram(p);
+                            setNewPlanQuery(p.name);
+                            setNewPlanName((prev) =>
+                              !prev.trim() ||
+                              (newPlanProgram && prev === newPlanProgram.name)
+                                ? p.name
+                                : prev,
+                            );
+                          }}
+                          className={`flex w-full items-center justify-between gap-2 border-b border-zinc-100 px-3 py-2 text-left text-xs transition-colors last:border-b-0 dark:border-zinc-800 ${
+                            isSelected
+                              ? "bg-blue-50 text-blue-900 dark:bg-blue-950/50 dark:text-blue-100"
+                              : "hover:bg-white dark:hover:bg-zinc-800/60"
+                          }`}
+                        >
+                          <div className="min-w-0">
+                            <span className="block truncate font-medium">
+                              {p.name}
+                            </span>
+                            <span className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                              {[p.credential, p.degree_abbrev]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </span>
+                          </div>
+                          {alreadySaved && (
+                            <span className="shrink-0 rounded bg-zinc-200/80 px-1.5 py-0.5 text-[10px] font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
+                              Saved
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                  2. Plan name
+                </label>
+                <input
+                  type="text"
+                  value={newPlanName}
+                  onChange={(e) => setNewPlanName(e.target.value)}
+                  placeholder={
+                    newPlanProgram?.name || "e.g. My Computer Science Plan"
+                  }
+                  className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+                />
+              </div>
+
+              <div>
+                <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                  3. Start year
+                </label>
+                <select
+                  value={newPlanStartYear}
+                  onChange={(e) => setNewPlanStartYear(Number(e.target.value))}
+                  className="w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-blue-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+                >
+                  {startYearOptions.map((y) => (
+                    <option key={y} value={y}>
+                      {y} ({y}–{String(y + 1).slice(-2)})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="mt-6 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                disabled={creatingPlan}
+                onClick={() => setAddPlanModalOpen(false)}
+                className="rounded-lg border border-zinc-200 bg-white px-4 py-2 text-sm font-medium text-zinc-700 transition-colors hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!newPlanProgram || creatingPlan}
+                onClick={() => void handleCreateNewPlan()}
+                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {creatingPlan ? "Creating…" : "Create plan"}
               </button>
             </div>
           </div>
