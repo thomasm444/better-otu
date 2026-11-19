@@ -234,10 +234,13 @@ export function CampusMapView() {
       try {
         setWeekError(null);
         setWeekLoading(true);
-        const res = await fetch(
-          `/api/campus-map/week?weekStart=${encodeURIComponent(weekStart)}`,
-          { signal: controller.signal },
-        );
+        const url = `/api/campus-map/week?weekStart=${encodeURIComponent(weekStart)}`;
+        let res = await fetch(url, { signal: controller.signal });
+        if (res.status >= 500 && !controller.signal.aborted) {
+          await new Promise((resolve) => setTimeout(resolve, 400));
+          if (controller.signal.aborted) return;
+          res = await fetch(url, { signal: controller.signal });
+        }
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json: CampusMapWeekData = await res.json();
         if (!controller.signal.aborted) {
@@ -276,7 +279,7 @@ export function CampusMapView() {
     [],
   );
 
-  // Initialize Leaflet Map with clean CartoDB Positron base layer & custom floating Floor Control
+  // Initialize Leaflet Map with OpenStreetMap & Esri base layers + custom floating Floor Control
   useEffect(() => {
     if (!mapContainerRef.current || mapInstanceRef.current) return;
 
@@ -285,16 +288,6 @@ export function CampusMapView() {
       if (!isMounted || !mapContainerRef.current || mapInstanceRef.current) return;
       const L = (leafletModule.default || leafletModule) as typeof LeafletType;
       leafletRef.current = L;
-
-      const cartoPositron = L.tileLayer(
-        "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
-        {
-          subdomains: "abcd",
-          maxZoom: 20,
-          attribution:
-            '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
-        },
-      );
 
       const osm = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
         maxZoom: 19,
@@ -320,13 +313,12 @@ export function CampusMapView() {
       const map = L.map(mapContainerRef.current, {
         center: [VENUES.north.lat, VENUES.north.lng],
         zoom: VENUES.north.zoom,
-        layers: [cartoPositron],
+        layers: [osm],
         preferCanvas: true,
         zoomControl: false,
       });
 
       const baseMaps = {
-        "Clean Map (Positron)": cartoPositron,
         OpenStreetMap: osm,
         "Satellite (Esri)": esriSatellite,
         "Streets (Esri)": esriStreets,

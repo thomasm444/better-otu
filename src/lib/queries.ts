@@ -94,6 +94,10 @@ function sectionSelect(withInstructor: boolean) {
 `;
 }
 
+function isStatementTimeoutError(error: { message: string } | null): boolean {
+  return Boolean(error && /statement timeout/i.test(error.message));
+}
+
 /** Walks every 1,000-row page. Needed because of the response cap above. */
 export async function collectPages(
   fetchPage: (from: number, to: number) => PromiseLike<{
@@ -104,16 +108,52 @@ export async function collectPages(
   const rows: unknown[] = [];
 
   for (let from = 0; ; from += PAGE_SIZE) {
-    const { data, error } = await fetchPage(from, from + PAGE_SIZE - 1);
-
-    if (error) {
-      throw new Error(`Supabase pagination failed: ${error.message}`);
+    let result = await fetchPage(from, from + PAGE_SIZE - 1);
+    if (isStatementTimeoutError(result.error)) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      result = await fetchPage(from, from + PAGE_SIZE - 1);
     }
 
-    const page = (data ?? []) as unknown[];
+    if (result.error) {
+      throw new Error(`Supabase pagination failed: ${result.error.message}`);
+    }
+
+    const page = (result.data ?? []) as unknown[];
     rows.push(...page);
 
     if (page.length < PAGE_SIZE) return rows;
+  }
+}
+
+/**
+ * Keyset (cursor) pagination over rows ordered ascending by `id`.
+ * Avoids Postgres OFFSET scans that degrade on later pages and trigger cold-start timeouts.
+ */
+async function collectPagesById<IdType extends string | number>(
+  fetchPage: (lastId: IdType | null, limit: number) => PromiseLike<{
+    data: unknown;
+    error: { message: string } | null;
+  }>,
+): Promise<unknown[]> {
+  const rows: unknown[] = [];
+  let lastId: IdType | null = null;
+
+  for (;;) {
+    let result = await fetchPage(lastId, PAGE_SIZE);
+    if (isStatementTimeoutError(result.error)) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      result = await fetchPage(lastId, PAGE_SIZE);
+    }
+
+    if (result.error) {
+      throw new Error(`Supabase pagination failed: ${result.error.message}`);
+    }
+
+    const page = (result.data ?? []) as Array<{ id: IdType }>;
+    rows.push(...page);
+
+    if (page.length < PAGE_SIZE) return rows;
+    lastId = page[page.length - 1].id;
   }
 }
 
@@ -640,13 +680,16 @@ async function getCampusMapRoomLookup(): Promise<RoomLookupData> {
 
   const supabase = getPublicClient();
   const [spaceIdsRaw, rbdRes] = await Promise.all([
-    collectPages((from, to) =>
-      supabase
+    collectPagesById<string>((lastId, limit) => {
+      let query = supabase
         .from("campus_spaces")
         .select("id, external_id, is_building_container, sub_rooms")
+        .or("external_id.not.is.null,is_building_container.eq.true")
         .order("id", { ascending: true })
-        .range(from, to),
-    ),
+        .limit(limit);
+      if (lastId !== null) query = query.gt("id", lastId);
+      return query;
+    }),
     supabase.from("room_booking_details").select("room, building"),
   ]);
 
@@ -654,7 +697,9 @@ async function getCampusMapRoomLookup(): Promise<RoomLookupData> {
     throw new Error(`getCampusMapRoomLookup failed: ${rbdRes.error.message}`);
   }
 
-  const extSet = new Set<string>();
+  const extSet = new Set<string>(
+    Object.values(SPACE_PATCHES).map((patch) => patch.externalId),
+  );
   const subRoomSet = new Set<string>([...U5_EXTRA_SUB_ROOMS, ...UP_EXTRA_SUB_ROOMS]);
 
   for (const row of spaceIdsRaw as Array<{
@@ -700,14 +745,15 @@ export async function getCampusMapData(
   const supabase = getPublicClient();
 
   const [spacesRaw, rbdRes, unmappedRes, libRes] = await Promise.all([
-    collectPages((from, to) => {
+    collectPagesById<string>((lastId, limit) => {
       let query = supabase
         .from("campus_spaces")
         .select(
           "id, name, external_id, building, floor, floor_name, venue, room_type, capacity, min_capacity, capacity_source, config_type, is_building_container, has_schedule, is_library_room, geometry, sub_rooms",
         )
         .order("id", { ascending: true })
-        .range(from, to);
+        .limit(limit);
+      if (lastId !== null) query = query.gt("id", lastId);
       if (floor) query = query.eq("floor", floor);
       if (building) query = query.eq("building", building);
       return query;
@@ -912,11 +958,12 @@ export async function getCampusMapWeekSchedule(
   const [lookup, courseRowsRaw, reservationRowsRaw, examRowsRaw, libraryRes] = await Promise.all([
     getCampusMapRoomLookup(),
     terms.length > 0
-      ? collectPages((from, to) =>
-          supabase
+      ? collectPagesById<number>((lastId, limit) => {
+          let query = supabase
             .from("course_meetings")
             .select(
               `
+              id,
               term,
               begin_time,
               end_time,
@@ -941,27 +988,33 @@ export async function getCampusMapWeekSchedule(
             .not("begin_time", "is", null)
             .not("end_time", "is", null)
             .order("id", { ascending: true })
-            .range(from, to),
-        )
+            .limit(limit);
+          if (lastId !== null) query = query.gt("id", lastId);
+          return query;
+        })
       : Promise.resolve([]),
-    collectPages((from, to) =>
-      supabase
+    collectPagesById<number>((lastId, limit) => {
+      let query = supabase
         .from("room_detailed_reservations")
-        .select("room_id, booking_date, start_time, end_time, title, type")
+        .select("id, room_id, booking_date, start_time, end_time, title, type")
         .gte("booking_date", activeStart)
         .lte("booking_date", activeEnd)
         .order("id", { ascending: true })
-        .range(from, to),
-    ),
-    collectPages((from, to) =>
-      supabase
+        .limit(limit);
+      if (lastId !== null) query = query.gt("id", lastId);
+      return query;
+    }),
+    collectPagesById<number>((lastId, limit) => {
+      let query = supabase
         .from("exam_schedules")
-        .select("subject_code, course_code, exam_date, exam_time, duration, room, crn")
+        .select("id, subject_code, course_code, exam_date, exam_time, duration, room, crn")
         .gte("exam_date", activeStart)
         .lte("exam_date", activeEnd)
         .order("id", { ascending: true })
-        .range(from, to),
-    ),
+        .limit(limit);
+      if (lastId !== null) query = query.gt("id", lastId);
+      return query;
+    }),
     supabase.from("library_study_rooms").select("room_id, bookings"),
   ]);
 
