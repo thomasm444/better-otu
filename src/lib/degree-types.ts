@@ -22,7 +22,11 @@ export type CatalogCourse = {
   subject_name: string | null;
   title: string;
   short_title: string | null;
+  description?: string | null;
   credit_hours: number;
+  hours_lecture?: string | null;
+  hours_laboratory?: string | null;
+  hours_tutorial?: string | null;
   terms_offered: string[];
   sections_in_offerings: number;
   prerequisite_codes: string[];

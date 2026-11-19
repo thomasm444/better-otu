@@ -82,7 +82,7 @@ export async function getCatalogCourses(): Promise<CatalogCourse[]> {
     supabase
       .from("catalog_courses")
       .select(
-        "code, catalog_year, subject, number, subject_course, level, faculty, subject_name, title, short_title, credit_hours, terms_offered, sections_in_offerings, prerequisite_codes, prerequisite_text, prerequisite_ast, formerly_codes, calendar_url",
+        "code, catalog_year, subject, number, subject_course, level, faculty, subject_name, title, short_title, description, credit_hours, hours_lecture, hours_laboratory, hours_tutorial, terms_offered, sections_in_offerings, prerequisite_codes, prerequisite_text, prerequisite_ast, formerly_codes, calendar_url",
       )
       .order("code", { ascending: true })
       .range(from, to),
@@ -99,7 +99,11 @@ export async function getCatalogCourses(): Promise<CatalogCourse[]> {
     subject_name: (row.subject_name as string | null) ?? null,
     title: String(row.title),
     short_title: (row.short_title as string | null) ?? null,
+    description: (row.description as string | null) ?? null,
     credit_hours: Number(row.credit_hours ?? 3),
+    hours_lecture: (row.hours_lecture as string | null) ?? null,
+    hours_laboratory: (row.hours_laboratory as string | null) ?? null,
+    hours_tutorial: (row.hours_tutorial as string | null) ?? null,
     terms_offered: Array.isArray(row.terms_offered)
       ? (row.terms_offered as string[])
       : [],
