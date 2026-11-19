@@ -1,16 +1,17 @@
 "use client";
 
 import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
 import type * as LeafletType from "leaflet";
 import { AuthButton } from "@/components/auth-button";
 import {
   addDaysIso,
   buildWeekDays,
-  CAMPUS_MAP_MAX_DATE,
   CAMPUS_MAP_MAX_WEEK_START,
   CAMPUS_MAP_MIN_DATE,
   CAMPUS_MAP_MIN_WEEK_START,
+  CAMPUS_MAP_MAX_DATE,
   clampWeekStart,
   DAY_NAMES,
   DAY_SHORT,
@@ -25,173 +26,25 @@ import type {
   CampusMapWeekData,
   ScheduleInterval,
 } from "@/lib/queries";
-
-type PositionedEvent = ScheduleInterval & {
-  day: number;
-  lane: number;
-  totalLanes: number;
-};
-
-type RoomStatus =
-  | {
-      isScheduled: false;
-      isAvailable: null;
-      currentBooking: null;
-      isBuildingContainer?: false;
-    }
-  | {
-      isScheduled: true;
-      isBuildingContainer: true;
-      totalRooms: number;
-      availableCount: number;
-      busyCount: number;
-      ratio: number;
-      isAvailable: boolean;
-      color: string;
-      subStatuses: Array<{
-        roomId: string;
-        capacity: number | null;
-        capacitySource: string | null;
-        isAvailable: boolean;
-        currentBooking: string | null;
-        bookingStart: number | null;
-        bookingEnd: number | null;
-        bookingType: string | null;
-        schedule: ScheduleInterval[];
-      }>;
-    }
-  | {
-      isScheduled: true;
-      isBuildingContainer?: false;
-      isAvailable: boolean;
-      currentBooking?: string;
-      bookingStart?: number;
-      bookingEnd?: number;
-      bookingType?: string;
-      nextBooking?: ScheduleInterval | null;
-    };
-
-const FLOOR_COLORS: Record<string, string> = {
-  "-10": "#9333ea", // purple
-  "0": "#0284c7",   // blue
-  "20": "#0d9488",  // teal
-  "30": "#eab308",  // amber
-  "40": "#f43f5e",  // rose
-};
-
-const FLOOR_LABELS: Record<string, string> = {
-  ALL: "All",
-  "-10": "B",
-  "0": "1",
-  "20": "2",
-  "30": "3",
-  "40": "4",
-};
-
-function formatFloor(fl: string | null | undefined): string {
-  const key = String(fl ?? "");
-  return FLOOR_LABELS[key] || key || "—";
-}
-
-function escapeHtml(raw: string): string {
-  return raw
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
-}
-
-function assignOverlapLanes(day: number, events: ScheduleInterval[]): PositionedEvent[] {
-  const filtered = events
-    .filter((ev) => Number.isFinite(ev.start) && Number.isFinite(ev.end) && ev.end > 480 && ev.start < 1320)
-    .sort((a, b) => a.start - b.start || a.end - b.end);
-
-  const clusters: Array<Array<ScheduleInterval & { lane: number }>> = [];
-  let currentCluster: Array<ScheduleInterval & { lane: number }> = [];
-  let clusterEnd = -1;
-  let laneEnds: number[] = [];
-
-  for (const ev of filtered) {
-    if (currentCluster.length > 0 && ev.start >= clusterEnd) {
-      clusters.push(currentCluster);
-      currentCluster = [];
-      laneEnds = [];
-      clusterEnd = -1;
-    }
-
-    let placed = -1;
-    for (let i = 0; i < laneEnds.length; i++) {
-      if (laneEnds[i] <= ev.start) {
-        placed = i;
-        laneEnds[i] = ev.end;
-        break;
-      }
-    }
-    if (placed === -1) {
-      placed = laneEnds.length;
-      laneEnds.push(ev.end);
-    }
-    currentCluster.push({ ...ev, lane: placed });
-    if (ev.end > clusterEnd) clusterEnd = ev.end;
-  }
-  if (currentCluster.length > 0) clusters.push(currentCluster);
-
-  const result: PositionedEvent[] = [];
-  for (const cluster of clusters) {
-    const totalLanes = Math.max(...cluster.map((e) => e.lane)) + 1;
-    for (const ev of cluster) {
-      result.push({ ...ev, day, lane: ev.lane, totalLanes });
-    }
-  }
-  return result;
-}
-
-const VENUES = {
-  north: { lat: 43.9454, lng: -78.8968, zoom: 17 },
-  downtown: { lat: 43.8978, lng: -78.8608, zoom: 18 },
-  whitby: { lat: 43.8723, lng: -78.9016, zoom: 18 },
-};
-
-function formatDuration(mins: number): string {
-  if (mins < 60) return `${mins}m`;
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return m === 0 ? `${h}h` : `${h}h ${m}m`;
-}
-
-function formatDurationLong(mins: number): string {
-  if (mins < 60) return `${mins} minutes`;
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  if (m === 0) return h === 1 ? "1 hour" : `${h} hours`;
-  return `${h}h ${m}m`;
-}
-
-function formatMinutesToTime(min: number): string {
-  const h24 = Math.floor(min / 60);
-  const m = min % 60;
-  const ampm = h24 >= 12 ? "PM" : "AM";
-  let h12 = h24 % 12;
-  if (h12 === 0) h12 = 12;
-  return `${h12}:${m === 0 ? "00" : m < 10 ? "0" + m : m} ${ampm}`;
-}
-
-function getContainerColor(ratio: number): string {
-  let r: number, g: number, b: number;
-  if (ratio <= 0.5) {
-    const t = ratio / 0.5;
-    r = Math.round(244 + (234 - 244) * t);
-    g = Math.round(63 + (179 - 63) * t);
-    b = Math.round(94 + (8 - 94) * t);
-  } else {
-    const t = (ratio - 0.5) / 0.5;
-    r = Math.round(234 + (16 - 234) * t);
-    g = Math.round(179 + (185 - 179) * t);
-    b = Math.round(8 + (129 - 8) * t);
-  }
-  return `rgb(${r}, ${g}, ${b})`;
-}
+import { RoomDetailsDrawer } from "./_components/room-details-drawer";
+import { TimeScrubber } from "./_components/time-scrubber";
+import {
+  assignOverlapLanes,
+  escapeHtml,
+  FLOOR_COLORS,
+  FLOOR_LABELS,
+  formatFloor,
+  formatFloorLong,
+  formatMinutesToTime,
+  getContainerColor,
+  getRoomDisplayCode,
+  VENUES,
+  VERTICAL_FLOOR_KEYS,
+  type PositionedEvent,
+  type RoomStatus,
+  type SubRoomStatus,
+  type VenueKey,
+} from "./utils";
 
 /** Fullscreen modal backdrop with high z-index above Leaflet panes and Escape/backdrop dismiss. */
 function ModalBackdrop({
@@ -238,6 +91,13 @@ function ModalBackdrop({
 
 const WEEK_CACHE_TTL_MS = 90_000;
 
+const SELECTED_POLYGON_STYLE: LeafletType.PathOptions = {
+  weight: 4,
+  color: "#0369a1",
+  opacity: 1,
+  fillOpacity: 0.85,
+};
+
 export function CampusMapView() {
   const [data, setData] = useState<CampusMapData | null>(null);
   const [weekData, setWeekData] = useState<CampusMapWeekData | null>(null);
@@ -251,27 +111,74 @@ export function CampusMapView() {
   const [currentMode, setCurrentMode] = useState<"availability" | "floors">("availability");
   const [currentWeekStart, setCurrentWeekStart] = useState<string | null>(null);
   const [currentFloor, setCurrentFloor] = useState<string>("ALL");
+  const [activeVenue, setActiveVenue] = useState<VenueKey>("north");
   const [currentDay, setCurrentDay] = useState<number>(1);
   const [currentSlotStart, setCurrentSlotStart] = useState<number>(720); // 12:00 PM
   const [currentDuration, setCurrentDuration] = useState<number>(30); // 30m
-  const [availFilter, setAvailFilter] = useState<"ALL" | "SCHEDULED" | "AVAILABLE">("SCHEDULED");
+
+  // Interactive Legend Status Filters (Available + In Use on by default; Unscheduled hidden by default)
+  const [showAvailable, setShowAvailable] = useState<boolean>(true);
+  const [showInUse, setShowInUse] = useState<boolean>(true);
+  const [showUnscheduled, setShowUnscheduled] = useState<boolean>(false);
+
+  // Search & Autocomplete State
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [isSearchOpen, setIsSearchOpen] = useState<boolean>(false);
+  const searchBoxRef = useRef<HTMLDivElement | null>(null);
+
+  // Timeline Controls
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
+  const [isTimeCardCollapsed, setIsTimeCardCollapsed] = useState<boolean>(false);
 
   // Stats
-  const [stats, setStats] = useState({ totalVisible: 0, availCount: 0, busyCount: 0, grayCount: 0 });
+  const [stats, setStats] = useState({
+    totalVisible: 0,
+    availCount: 0,
+    busyCount: 0,
+    grayCount: 0,
+  });
 
-  // Modal State
+  // Slide-out Room Details Drawer & Modals
+  const [selectedFeature, setSelectedFeature] = useState<CampusMapFeature | null>(null);
   const [activeModalFeature, setActiveModalFeature] = useState<CampusMapFeature | null>(null);
   const [activeModalSubRoom, setActiveModalSubRoom] = useState<string | null>(null);
   const [isUnmappedOpen, setIsUnmappedOpen] = useState<boolean>(false);
+
+  // Leaflet Floating Floor Control Portal Container
+  const [floorControlEl, setFloorControlEl] = useState<HTMLDivElement | null>(null);
 
   // Map & Cache references
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapInstanceRef = useRef<LeafletType.Map | null>(null);
   const geojsonLayerRef = useRef<LeafletType.GeoJSON | null>(null);
   const leafletRef = useRef<typeof LeafletType | null>(null);
-  const weekCacheRef = useRef<Map<string, { data: CampusMapWeekData; fetchedAt: number }>>(new Map());
+  const featureLayerMapRef = useRef<Map<string, LeafletType.Path>>(new Map());
+  const selectedFeatureIdRef = useRef<string | null>(null);
+  const prevSelectedIdRef = useRef<string | null>(null);
+  const weekCacheRef = useRef<Map<string, { data: CampusMapWeekData; fetchedAt: number }>>(
+    new Map(),
+  );
+
+  // Close search dropdown on outside click
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent) => {
+      if (searchBoxRef.current && !searchBoxRef.current.contains(e.target as Node)) {
+        setIsSearchOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleOutsideClick);
+    return () => document.removeEventListener("mousedown", handleOutsideClick);
+  }, []);
+
+  // Close Room Details Drawer on Escape (only when no modal is open)
+  useEffect(() => {
+    if (!selectedFeature || activeModalFeature || isUnmappedOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setSelectedFeature(null);
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [selectedFeature, activeModalFeature, isUnmappedOpen]);
 
   // Initialize current Toronto week/day/time on mount and load static campus geometries
   useEffect(() => {
@@ -327,9 +234,10 @@ export function CampusMapView() {
       try {
         setWeekError(null);
         setWeekLoading(true);
-        const res = await fetch(`/api/campus-map/week?weekStart=${encodeURIComponent(weekStart)}`, {
-          signal: controller.signal,
-        });
+        const res = await fetch(
+          `/api/campus-map/week?weekStart=${encodeURIComponent(weekStart)}`,
+          { signal: controller.signal },
+        );
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json: CampusMapWeekData = await res.json();
         if (!controller.signal.aborted) {
@@ -361,7 +269,6 @@ export function CampusMapView() {
         if (candidateIso >= CAMPUS_MAP_MIN_DATE && candidateIso <= CAMPUS_MAP_MAX_DATE) {
           return candidate;
         }
-        // Clamp onto nearest valid day within [Sep 1, Apr 30]
         if (candidateIso < CAMPUS_MAP_MIN_DATE) return 2; // Tue Sep 1, 2026
         return 5; // Fri Apr 30, 2027
       });
@@ -369,9 +276,7 @@ export function CampusMapView() {
     [],
   );
 
-  // Ensure Leaflet loads cleanly once container mounts
-
-  // Initialize Map
+  // Initialize Leaflet Map with clean CartoDB Positron base layer & custom floating Floor Control
   useEffect(() => {
     if (!mapContainerRef.current || mapInstanceRef.current) return;
 
@@ -380,6 +285,16 @@ export function CampusMapView() {
       if (!isMounted || !mapContainerRef.current || mapInstanceRef.current) return;
       const L = (leafletModule.default || leafletModule) as typeof LeafletType;
       leafletRef.current = L;
+
+      const cartoPositron = L.tileLayer(
+        "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
+        {
+          subdomains: "abcd",
+          maxZoom: 20,
+          attribution:
+            '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+        },
+      );
 
       const osm = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
         maxZoom: 19,
@@ -391,7 +306,7 @@ export function CampusMapView() {
         {
           maxZoom: 19,
           attribution: "Tiles &copy; Esri",
-        }
+        },
       );
 
       const esriStreets = L.tileLayer(
@@ -399,19 +314,20 @@ export function CampusMapView() {
         {
           maxZoom: 19,
           attribution: "Tiles &copy; Esri",
-        }
+        },
       );
 
       const map = L.map(mapContainerRef.current, {
         center: [VENUES.north.lat, VENUES.north.lng],
         zoom: VENUES.north.zoom,
-        layers: [osm],
+        layers: [cartoPositron],
         preferCanvas: true,
         zoomControl: false,
       });
 
       const baseMaps = {
-        "OpenStreetMap": osm,
+        "Clean Map (Positron)": cartoPositron,
+        OpenStreetMap: osm,
         "Satellite (Esri)": esriSatellite,
         "Streets (Esri)": esriStreets,
       };
@@ -419,11 +335,28 @@ export function CampusMapView() {
       L.control.layers(baseMaps, undefined, { position: "topright" }).addTo(map);
       L.control.zoom({ position: "topright" }).addTo(map);
 
+      // Mount vertical floating Floor Selector directly beneath the +/- zoom controls
+      class FloorSelectorControl extends L.Control {
+        onAdd() {
+          const div = L.DomUtil.create("div", "leaflet-control");
+          L.DomEvent.disableClickPropagation(div);
+          L.DomEvent.disableScrollPropagation(div);
+          return div;
+        }
+      }
+      const floorControl = new FloorSelectorControl({ position: "topright" });
+      floorControl.addTo(map);
+      const container = floorControl.getContainer();
+      if (container instanceof HTMLDivElement) {
+        setFloorControlEl(container);
+      }
+
       mapInstanceRef.current = map;
     });
 
     return () => {
       isMounted = false;
+      setFloorControlEl(null);
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;
@@ -469,17 +402,7 @@ export function CampusMapView() {
         const roomsList = p.rooms || Object.keys(roomsData);
         let availCount = 0;
         let busyCount = 0;
-        const subStatuses: Array<{
-          roomId: string;
-          capacity: number | null;
-          capacitySource: string | null;
-          isAvailable: boolean;
-          currentBooking: string | null;
-          bookingStart: number | null;
-          bookingEnd: number | null;
-          bookingType: string | null;
-          schedule: ScheduleInterval[];
-        }> = [];
+        const subStatuses: SubRoomStatus[] = [];
 
         for (const rid of roomsList) {
           const rData = roomsData[rid] || {
@@ -488,7 +411,8 @@ export function CampusMapView() {
             capacitySource: null,
             type: "Classroom",
           };
-          const dayIntervals: ScheduleInterval[] = weekData?.subRoomSchedules?.[rid]?.[dayKey] || [];
+          const dayIntervals: ScheduleInterval[] =
+            weekData?.subRoomSchedules?.[rid]?.[dayKey] || [];
 
           let isRoomAvail = true;
           let currentBooking: string | null = null;
@@ -514,6 +438,7 @@ export function CampusMapView() {
             roomId: rid,
             capacity: rData.capacity,
             capacitySource: rData.capacitySource,
+            type: rData.type,
             isAvailable: isRoomAvail,
             currentBooking,
             bookingStart,
@@ -538,7 +463,8 @@ export function CampusMapView() {
       }
 
       const eid = p.externalId;
-      const dayIntervals: ScheduleInterval[] = (eid && weekData?.schedules?.[eid]?.[dayKey]) || [];
+      const dayIntervals: ScheduleInterval[] =
+        (eid && weekData?.schedules?.[eid]?.[dayKey]) || [];
       const isRoomScheduled = Boolean(p.hasSchedule || (eid && weekData?.schedules?.[eid]));
 
       if (!isRoomScheduled) {
@@ -573,22 +499,146 @@ export function CampusMapView() {
         nextBooking,
       };
     },
-    [currentDuration, weekData]
+    [currentDuration, weekData],
   );
 
   // Jump to campus
-  const jumpToVenue = useCallback((venueKey: keyof typeof VENUES) => {
+  const jumpToVenue = useCallback((venueKey: VenueKey) => {
+    setActiveVenue(venueKey);
     const v = VENUES[venueKey];
     if (mapInstanceRef.current && v) {
-      mapInstanceRef.current.flyTo([v.lat, v.lng], v.zoom, { duration: 1.2 });
+      mapInstanceRef.current.flyTo([v.lat, v.lng], v.zoom, { duration: 1.0 });
+    }
+  }, []);
+
+  // Fly map to a specific room feature
+  const focusRoomOnMap = useCallback((feature: CampusMapFeature) => {
+    const map = mapInstanceRef.current;
+    const L = leafletRef.current;
+    if (!map || !L || !feature.geometry) return;
+    try {
+      const tempLayer = L.geoJSON(feature as unknown as GeoJSON.GeoJsonObject);
+      const bounds = tempLayer.getBounds();
+      if (bounds.isValid()) {
+        map.flyToBounds(bounds, {
+          paddingTopLeft: [380, 70],
+          paddingBottomRight: [90, 140],
+          maxZoom: 19,
+          duration: 0.75,
+        });
+      }
+    } catch {
+      // Fallback: ignore invalid bounds
     }
   }, []);
 
   // Open Weekly Schedule modal
   const openWeeklySchedule = useCallback((feat: CampusMapFeature, subRoom?: string) => {
     setActiveModalFeature(feat);
-    setActiveModalSubRoom(subRoom || (feat.properties.rooms ? feat.properties.rooms[0] : null));
+    setActiveModalSubRoom(
+      subRoom || (feat.properties.rooms ? feat.properties.rooms[0] : null),
+    );
   }, []);
+
+  // Live search dropdown results
+  const searchSuggestions = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q || !data?.features) return [];
+
+    const matches: Array<{ feature: CampusMapFeature; score: number }> = [];
+    for (const feature of data.features) {
+      if (!feature.geometry || (feature.geometry.type as string) === "Point") continue;
+      const p = feature.properties || {};
+      const name = (p.name || "").toLowerCase();
+      const eid = (p.externalId || "").toLowerCase();
+      const bldg = (p.building || "").toLowerCase();
+      const type = (p.type || "").toLowerCase();
+      const weekCourses: string[] = (p.externalId && weekData?.courses?.[p.externalId]) || [];
+      const subRooms: string[] = p.rooms || [];
+
+      const exactCode = eid === q || name === q;
+      const prefixCode = eid.startsWith(q) || name.startsWith(q);
+      const containsCode = eid.includes(q) || name.includes(q);
+      const subRoomMatch = subRooms.some((sr) => sr.toLowerCase().includes(q));
+      const courseMatch = weekCourses.some((c) => c.toLowerCase().includes(q));
+      const metaMatch = bldg.includes(q) || type.includes(q);
+
+      if (!containsCode && !subRoomMatch && !courseMatch && !metaMatch) continue;
+
+      let score = 0;
+      if (exactCode) score += 100;
+      else if (prefixCode) score += 60;
+      else if (containsCode) score += 35;
+      if (subRoomMatch) score += 30;
+      if (courseMatch) score += 25;
+      if (metaMatch) score += 10;
+      if (p.hasSchedule || p.isBuildingContainer) score += 20;
+
+      matches.push({ feature, score });
+    }
+
+    matches.sort((a, b) => b.score - a.score);
+    return matches.slice(0, 8).map((m) => m.feature);
+  }, [searchQuery, data, weekData]);
+
+  // Selecting a room from the search bar opens the drawer, ensures visibility, and flies to it
+  const handleSelectSearchFeature = useCallback(
+    (feature: CampusMapFeature) => {
+      const fl = String(feature.properties.floor || "");
+      if (currentFloor !== "ALL" && fl && fl !== currentFloor) {
+        setCurrentFloor(fl);
+      }
+
+      if (currentMode === "availability") {
+        const status = getRoomStatus(feature, currentDay, currentSlotStart);
+        if (!status.isScheduled && !showUnscheduled) {
+          setShowUnscheduled(true);
+        } else if (status.isScheduled && status.isAvailable && !showAvailable) {
+          setShowAvailable(true);
+        } else if (status.isScheduled && !status.isAvailable && !showInUse) {
+          setShowInUse(true);
+        }
+      }
+
+      setSelectedFeature(feature);
+      setIsSearchOpen(false);
+      focusRoomOnMap(feature);
+    },
+    [
+      currentFloor,
+      currentMode,
+      currentDay,
+      currentSlotStart,
+      getRoomStatus,
+      showUnscheduled,
+      showAvailable,
+      showInUse,
+      focusRoomOnMap,
+    ],
+  );
+
+  // Highlight selected polygon smoothly without rebuilding the entire GeoJSON layer
+  useEffect(() => {
+    selectedFeatureIdRef.current = selectedFeature?.id ?? null;
+
+    const prevId = prevSelectedIdRef.current;
+    if (prevId && prevId !== selectedFeature?.id) {
+      const prevLayer = featureLayerMapRef.current.get(prevId);
+      if (prevLayer && geojsonLayerRef.current) {
+        geojsonLayerRef.current.resetStyle(prevLayer);
+      }
+    }
+
+    if (selectedFeature?.id) {
+      const nextLayer = featureLayerMapRef.current.get(selectedFeature.id);
+      if (nextLayer) {
+        nextLayer.setStyle(SELECTED_POLYGON_STYLE);
+        nextLayer.bringToFront();
+      }
+    }
+
+    prevSelectedIdRef.current = selectedFeature?.id ?? null;
+  }, [selectedFeature]);
 
   // Re-render GeoJSON layers on map
   useEffect(() => {
@@ -600,14 +650,12 @@ export function CampusMapView() {
       map.removeLayer(geojsonLayerRef.current);
     }
 
+    const layerMap = new Map<string, LeafletType.Path>();
+
     let totalVisible = 0;
     let avail = 0;
     let busy = 0;
     let gray = 0;
-
-    const selectedDate = selectedDayInfo?.date ?? addDaysIso(effectiveWeekStart, currentDay - 1);
-    const selectedDateDisplay = `${DAY_NAMES[currentDay]}, ${formatShortIsoDate(selectedDate)}`;
-    const dayNote = selectedDayInfo?.note;
 
     const layer = L.geoJSON(data as unknown as GeoJSON.GeoJsonObject, {
       filter: (geoFeature) => {
@@ -623,12 +671,13 @@ export function CampusMapView() {
           const status = getRoomStatus(feature, currentDay, currentSlotStart);
           if (!status.isScheduled) {
             gray++;
-            if (availFilter === "SCHEDULED" || availFilter === "AVAILABLE") return false;
+            if (!showUnscheduled) return false;
           } else if (status.isAvailable) {
             avail++;
+            if (!showAvailable) return false;
           } else {
             busy++;
-            if (availFilter === "AVAILABLE") return false;
+            if (!showInUse) return false;
           }
         }
 
@@ -638,13 +687,20 @@ export function CampusMapView() {
           const eid = (props.externalId || "").toLowerCase();
           const bldg = (props.building || "").toLowerCase();
           const type = (props.type || "").toLowerCase();
-          const weekCourses: string[] = (props.externalId && weekData?.courses?.[props.externalId]) || [];
+          const weekCourses: string[] =
+            (props.externalId && weekData?.courses?.[props.externalId]) || [];
           const subRooms: string[] = props.rooms || [];
           const coursesMatch =
             weekCourses.some((c) => c.toLowerCase().includes(q)) ||
             subRooms.some((sr) => sr.toLowerCase().includes(q));
 
-          if (!name.includes(q) && !eid.includes(q) && !bldg.includes(q) && !type.includes(q) && !coursesMatch) {
+          if (
+            !name.includes(q) &&
+            !eid.includes(q) &&
+            !bldg.includes(q) &&
+            !type.includes(q) &&
+            !coursesMatch
+          ) {
             return false;
           }
         }
@@ -690,7 +746,7 @@ export function CampusMapView() {
               color: "#059669",
               weight: 2,
               opacity: 0.95,
-              fillOpacity: 0.65,
+              fillOpacity: 0.68,
             };
           } else {
             return {
@@ -698,159 +754,92 @@ export function CampusMapView() {
               color: "#be123c",
               weight: 2,
               opacity: 0.95,
-              fillOpacity: 0.65,
+              fillOpacity: 0.68,
             };
           }
         }
       },
       onEachFeature: (geoFeature, featureLayer) => {
         const feature = geoFeature as unknown as CampusMapFeature;
-        const p = feature.properties || {};
-        const roomLabel = p.externalId || p.name || "Room";
-        const titleText = p.name
-          ? `${p.name}${p.externalId && p.externalId !== p.name ? ` (${p.externalId})` : ""}`
-          : p.externalId || "Room";
-        const title = escapeHtml(titleText);
+        const pathLayer = featureLayer as LeafletType.Path;
+        layerMap.set(feature.id, pathLayer);
 
-        let capHtml = "";
-        if (p.isLibraryRoom && p.minCapacity && p.capacity) {
-          capHtml = `Capacity: <strong>${p.minCapacity} – ${p.capacity} people</strong> &bull; `;
-        } else if (p.capacity) {
-          const capSrc = p.capacitySource
-            ? ` <span style="font-size:0.7rem; color:#94a3b8;">(${escapeHtml(p.capacitySource)})</span>`
-            : "";
-          capHtml = `Capacity: <strong>${p.capacity}</strong>${capSrc} &bull; `;
-        }
-
-        const bldg = p.building ? `Bldg: <strong>${escapeHtml(p.building)}</strong> &bull; ` : "";
-        const fl = `Floor: <strong>${escapeHtml(formatFloor(p.floor))}</strong>`;
-        const type = p.type ? `<div style="margin-top:2px; font-weight:600; color:#0284c7;">${escapeHtml(p.type)}</div>` : "";
-        const dayNoteHtml = dayNote
-          ? `<div style="margin-top:4px; font-size:0.7rem; color:#b45309; background:#fef3c7; border:1px solid #fcd34d; border-radius:4px; padding:2px 6px;">${escapeHtml(dayNote)}</div>`
-          : "";
-
+        const roomLabel = getRoomDisplayCode(feature);
         const status = getRoomStatus(feature, currentDay, currentSlotStart);
 
-        const popupDiv = document.createElement("div");
-        popupDiv.className = "p-1 text-xs text-slate-800";
+        const tooltipStatus = !status.isScheduled
+          ? "Unscheduled"
+          : status.isBuildingContainer
+            ? `${status.availableCount}/${status.totalRooms} free`
+            : status.isAvailable
+              ? "Available"
+              : "In Use";
 
-        if (status.isBuildingContainer) {
-          const availTxt = `${status.availableCount} of ${status.totalRooms} Rooms Free`;
-          popupDiv.innerHTML = `
-            <div style="font-weight:700; font-size:0.95rem; margin-bottom:2px;">${escapeHtml(p.name || roomLabel)}</div>
-            <div style="display:inline-block; font-size:0.72rem; font-weight:700; border-radius:9999px; padding:2px 8px; margin-bottom:6px; background:${status.color}22; color:${status.color}; border:1px solid ${status.color};">${availTxt}</div>
-            <div style="font-size:0.75rem; color:#64748b; margin-bottom:6px;">
-              ${escapeHtml(selectedDateDisplay)} (${formatMinutesToTime(currentSlotStart)} – ${formatMinutesToTime(currentSlotStart + currentDuration)}) &bull; <strong>${formatDurationLong(currentDuration)}</strong>
-            </div>
-            ${dayNoteHtml}
-            <div style="margin-top:4px; margin-bottom:6px;">${capHtml}${bldg}${fl}${type}</div>
-          `;
+        const tooltipDot = !status.isScheduled
+          ? "#94a3b8"
+          : status.isBuildingContainer
+            ? status.color
+            : status.isAvailable
+              ? "#10b981"
+              : "#f43f5e";
 
-          const btn = document.createElement("button");
-          btn.type = "button";
-          btn.className = "mt-2 w-full rounded-md bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white shadow hover:bg-sky-700";
-          btn.textContent = "View Weekly Schedule";
-          btn.onclick = () => openWeeklySchedule(feature);
-          popupDiv.appendChild(btn);
-        } else {
-          const badgeColor = status.isScheduled
-            ? status.isAvailable
-              ? "background:#ecfdf5; color:#059669; border:1px solid #10b981;"
-              : "background:#fff1f2; color:#be123c; border:1px solid #f43f5e;"
-            : "background:#f1f5f9; color:#64748b; border:1px solid #cbd5e1;";
-          const badgeText = status.isScheduled ? (status.isAvailable ? "AVAILABLE" : "IN USE") : "NO SCHEDULE";
-
-          const nextText =
-            status.isScheduled && status.isAvailable && status.nextBooking
-              ? `<br/><span style="color:#64748b;">Next: ${escapeHtml(status.nextBooking.title)} (${formatMinutesToTime(status.nextBooking.start)})</span>`
-              : "";
-
-          const statusDetail = status.isScheduled
-            ? status.isAvailable
-              ? `Free for <strong>${formatDurationLong(currentDuration)}</strong>!${nextText}`
-              : `Booked: <strong>${escapeHtml(status.currentBooking || "Scheduled")}</strong><br/>Time: ${formatMinutesToTime(status.bookingStart ?? 0)} – ${formatMinutesToTime(status.bookingEnd ?? 0)}`
-            : "No scheduled classes or reservations for this space.";
-
-          const isOutsideLibWindow =
-            Boolean(p.isLibraryRoom) &&
-            weekData?.libraryWindowStart &&
-            weekData?.libraryWindowEnd &&
-            (selectedDate < weekData.libraryWindowStart || selectedDate > weekData.libraryWindowEnd);
-
-          const libWindowHtml = isOutsideLibWindow && weekData?.libraryWindowStart && weekData?.libraryWindowEnd
-            ? `<div style="margin-top:4px; font-size:0.7rem; color:#475569; background:#f1f5f9; border:1px solid #cbd5e1; border-radius:4px; padding:2px 6px;">Library bookings live only for ${escapeHtml(formatShortIsoDate(weekData.libraryWindowStart))} – ${escapeHtml(formatShortIsoDate(weekData.libraryWindowEnd))}.</div>`
-            : "";
-
-          popupDiv.innerHTML = `
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px; gap:6px;">
-              <span style="font-weight:700; font-size:0.95rem;">${title}</span>
-              <span style="font-size:0.7rem; font-weight:700; border-radius:9999px; padding:2px 6px; white-space:nowrap; ${badgeColor}">${badgeText}</span>
-            </div>
-            <div style="font-size:0.72rem; color:#64748b; margin-bottom:4px;">
-              ${escapeHtml(selectedDateDisplay)} (${formatMinutesToTime(currentSlotStart)} – ${formatMinutesToTime(currentSlotStart + currentDuration)}) &bull; <strong>${formatDurationLong(currentDuration)}</strong>
-            </div>
-            ${dayNoteHtml}
-            ${libWindowHtml}
-            <div style="font-size:0.75rem; margin-top:4px; margin-bottom:6px;">${statusDetail}</div>
-            <div style="margin-bottom:6px;">${capHtml}${bldg}${fl}${type}</div>
-          `;
-
-          if (status.isScheduled) {
-            const btnRow = document.createElement("div");
-            btnRow.className = "flex gap-2 mt-2";
-
-            const btn = document.createElement("button");
-            btn.type = "button";
-            btn.className = "flex-1 rounded-md bg-sky-600 px-2.5 py-1.5 text-xs font-semibold text-white shadow hover:bg-sky-700";
-            btn.textContent = "View Schedule";
-            btn.onclick = () => openWeeklySchedule(feature);
-            btnRow.appendChild(btn);
-
-            if (p.isLibraryRoom) {
-              const bookTime = formatMinutesToTime(currentSlotStart);
-              const bookUrl = `https://apps.library.dc-ot.ca/OTrooms/temp.aspx?starttime=${encodeURIComponent(bookTime)}&room=${encodeURIComponent(p.externalId || roomLabel)}&next=book.aspx`;
-              const bookLink = document.createElement("a");
-              bookLink.href = bookUrl;
-              bookLink.target = "_blank";
-              bookLink.rel = "noopener noreferrer";
-              bookLink.className = "rounded-md bg-emerald-600 px-2.5 py-1.5 text-xs font-semibold text-white shadow hover:bg-emerald-700 text-center";
-              bookLink.textContent = "Book Room";
-              btnRow.appendChild(bookLink);
-            }
-            popupDiv.appendChild(btnRow);
-          }
-        }
-
-        featureLayer.bindPopup(popupDiv, { maxWidth: 320 });
+        featureLayer.bindTooltip(
+          `<div style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;">
+            <span style="width:8px;height:8px;border-radius:9999px;background:${tooltipDot};display:inline-block;"></span>
+            <span>${escapeHtml(roomLabel)}</span>
+            <span style="font-weight:500;color:#475569;">&bull; ${escapeHtml(tooltipStatus)}</span>
+          </div>`,
+          { direction: "top", sticky: true, opacity: 0.96 },
+        );
 
         featureLayer.on({
+          click: (e) => {
+            L.DomEvent.stopPropagation(e);
+            setSelectedFeature(feature);
+          },
           mouseover: (e) => {
             const l = e.target as LeafletType.Path;
-            if (l.setStyle) l.setStyle({ weight: 3.5, fillOpacity: 0.8 });
+            if (l.setStyle) {
+              l.setStyle({ weight: 3.5, fillOpacity: 0.84 });
+            }
           },
           mouseout: (e) => {
-            geojsonLayerRef.current?.resetStyle(e.target as LeafletType.Path);
+            const l = e.target as LeafletType.Path;
+            if (selectedFeatureIdRef.current === feature.id) {
+              l.setStyle(SELECTED_POLYGON_STYLE);
+            } else {
+              geojsonLayerRef.current?.resetStyle(l);
+            }
           },
         });
       },
     }).addTo(map);
 
     geojsonLayerRef.current = layer;
+    featureLayerMapRef.current = layerMap;
+
+    // Re-apply selection highlight if selected room is in the rendered layer
+    if (selectedFeatureIdRef.current) {
+      const activeLayer = layerMap.get(selectedFeatureIdRef.current);
+      if (activeLayer) {
+        activeLayer.setStyle(SELECTED_POLYGON_STYLE);
+        activeLayer.bringToFront();
+      }
+    }
+
     setStats({ totalVisible, availCount: avail, busyCount: busy, grayCount: gray });
   }, [
     data,
     weekData,
-    effectiveWeekStart,
-    selectedDayInfo,
     currentFloor,
     currentMode,
     currentDay,
     currentSlotStart,
-    currentDuration,
-    availFilter,
+    showAvailable,
+    showInUse,
+    showUnscheduled,
     searchQuery,
     getRoomStatus,
-    openWeeklySchedule,
   ]);
 
   // Auto-play timeline animation
@@ -869,6 +858,12 @@ export function CampusMapView() {
       if (interval) clearInterval(interval);
     };
   }, [isPlaying]);
+
+  // Compute live status for currently selected drawer room
+  const selectedFeatureStatus = useMemo(() => {
+    if (!selectedFeature) return null;
+    return getRoomStatus(selectedFeature, currentDay, currentSlotStart);
+  }, [selectedFeature, currentDay, currentSlotStart, getRoomStatus]);
 
   // Compute timetable events with overlap lanes for Weekly Schedule Modal
   const modalCalendarEvents = useMemo(() => {
@@ -910,10 +905,12 @@ export function CampusMapView() {
     return rows;
   }, [data, weekData]);
 
-  const showInitialOverlay = loading || (currentWeekStart !== null && !weekData && !error && !weekError);
+  const showInitialOverlay =
+    loading || (currentWeekStart !== null && !weekData && !error && !weekError);
   const weekRangeText = formatWeekRangeLabel(effectiveWeekStart);
   const weekContextLabel = getWeekContextLabel(effectiveWeekStart);
-  const selectedIsoDate = selectedDayInfo?.date ?? addDaysIso(effectiveWeekStart, currentDay - 1);
+  const selectedIsoDate =
+    selectedDayInfo?.date ?? addDaysIso(effectiveWeekStart, currentDay - 1);
   const canGoPrevWeek = effectiveWeekStart > CAMPUS_MAP_MIN_WEEK_START;
   const canGoNextWeek = effectiveWeekStart < CAMPUS_MAP_MAX_WEEK_START;
 
@@ -921,138 +918,186 @@ export function CampusMapView() {
     activeModalFeature?.properties.isLibraryRoom &&
       weekData?.libraryWindowStart &&
       weekData?.libraryWindowEnd &&
-      (weekData.weekEnd < weekData.libraryWindowStart || weekData.weekStart > weekData.libraryWindowEnd),
+      (weekData.weekEnd < weekData.libraryWindowStart ||
+        weekData.weekStart > weekData.libraryWindowEnd),
   );
 
   return (
-    <div className="relative flex h-[calc(100vh-4rem)] w-full flex-col overflow-hidden bg-slate-100 font-sans text-slate-900">
-      {/* Top Header */}
-      <header className="relative z-20 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-2.5 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-        <div className="flex flex-wrap items-center gap-3">
+    <div className="relative flex h-screen w-full flex-col overflow-hidden bg-slate-100 font-sans text-slate-900 dark:bg-zinc-950 dark:text-zinc-100">
+      {/* Consolidated Single Top Navigation Bar */}
+      <header className="relative z-30 flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-slate-200 bg-white px-3 py-2 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+        {/* Left: Home + Title */}
+        <div className="flex items-center gap-2.5">
           <Link
             href="/"
-            className="flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+            className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 hover:text-slate-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
           >
             &larr; Home
           </Link>
-          <div className="flex items-center gap-2">
-            <h1 className="text-base font-bold tracking-tight text-sky-600 dark:text-sky-400">
-              Campus Rooms &amp; Availability
-            </h1>
-            <span className="hidden rounded-full border border-slate-200 bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600 sm:inline-block dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
-              {stats.availCount} Free &bull; {stats.busyCount} In Use &bull; {stats.grayCount} Other
-            </span>
-          </div>
+          <h1 className="whitespace-nowrap text-sm font-bold tracking-tight text-sky-700 sm:text-base dark:text-sky-400">
+            Campus Rooms &amp; Availability
+          </h1>
         </div>
 
-        {/* Header Controls */}
-        <div className="flex flex-wrap items-center gap-2 text-xs">
-          {/* Search Input */}
-          <div className="relative">
+        {/* Center Controls: Search, View Mode, Campus Switcher, Unmapped Spaces */}
+        <div className="flex flex-1 flex-wrap items-center gap-2 text-xs">
+          {/* Search Input with Live Dropdown */}
+          <div ref={searchBoxRef} className="relative">
             <input
               type="text"
               placeholder="Search room, building, course..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-48 rounded-lg border border-slate-300 bg-slate-50 px-2.5 py-1 text-xs text-slate-800 outline-none transition focus:border-sky-500 focus:bg-white dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 sm:w-60"
+              onFocus={() => setIsSearchOpen(true)}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setIsSearchOpen(true);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && searchSuggestions.length > 0) {
+                  e.preventDefault();
+                  handleSelectSearchFeature(searchSuggestions[0]);
+                } else if (e.key === "Escape") {
+                  setIsSearchOpen(false);
+                }
+              }}
+              className="w-44 rounded-lg border border-slate-300 bg-slate-50 py-1.5 pl-2.5 pr-7 text-xs text-slate-900 placeholder:text-slate-500 outline-none transition focus:border-sky-500 focus:bg-white sm:w-52 xl:w-56 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder:text-zinc-400"
             />
             {searchQuery && (
               <button
-                onClick={() => setSearchQuery("")}
-                className="absolute right-2 top-1 text-xs text-slate-400 hover:text-slate-600"
+                type="button"
+                aria-label="Clear search"
+                onClick={() => {
+                  setSearchQuery("");
+                  setIsSearchOpen(false);
+                }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-sm text-slate-500 hover:text-slate-800 dark:text-zinc-400 dark:hover:text-zinc-200"
               >
                 &times;
               </button>
             )}
+
+            {/* Autocomplete Dropdown */}
+            {isSearchOpen && searchQuery.trim().length > 0 && (
+              <div className="absolute left-0 top-full z-50 mt-1.5 w-72 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
+                {searchSuggestions.length === 0 ? (
+                  <div className="px-3 py-2.5 text-xs text-slate-600 dark:text-zinc-400">
+                    No matching rooms on the map.
+                  </div>
+                ) : (
+                  <ul className="max-h-72 divide-y divide-slate-100 overflow-y-auto dark:divide-zinc-800">
+                    {searchSuggestions.map((feat) => {
+                      const st = getRoomStatus(feat, currentDay, currentSlotStart);
+                      const code = getRoomDisplayCode(feat);
+                      const dotClass = !st.isScheduled
+                        ? "bg-slate-400"
+                        : st.isAvailable
+                          ? "bg-emerald-500"
+                          : "bg-rose-500";
+                      const statusLabel = !st.isScheduled
+                        ? "Unscheduled"
+                        : st.isBuildingContainer
+                          ? `${st.availableCount}/${st.totalRooms} Free`
+                          : st.isAvailable
+                            ? "Available"
+                            : "In Use";
+
+                      return (
+                        <li key={feat.id}>
+                          <button
+                            type="button"
+                            onClick={() => handleSelectSearchFeature(feat)}
+                            className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left transition hover:bg-sky-50/70 dark:hover:bg-zinc-800"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5">
+                                <span className={`h-2 w-2 shrink-0 rounded-full ${dotClass}`} />
+                                <span className="truncate font-semibold text-slate-900 dark:text-zinc-100">
+                                  {code}
+                                </span>
+                                <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 dark:bg-zinc-800 dark:text-zinc-300">
+                                  Fl {formatFloor(feat.properties.floor)}
+                                </span>
+                              </div>
+                              <p className="mt-0.5 truncate text-[11px] text-slate-600 dark:text-zinc-400">
+                                {feat.properties.building || "Campus"}
+                                {feat.properties.type ? ` • ${feat.properties.type}` : ""}
+                              </p>
+                            </div>
+                            <span className="shrink-0 text-[10px] font-bold text-slate-700 dark:text-zinc-300">
+                              {statusLabel}
+                            </span>
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            )}
           </div>
 
-          {/* Mode Switcher */}
+          {/* Mode Switcher: Live Availability / Floor Colors */}
           <div className="flex rounded-lg border border-slate-200 bg-slate-100 p-0.5 dark:border-zinc-700 dark:bg-zinc-800">
             <button
+              type="button"
               onClick={() => setCurrentMode("availability")}
-              className={`rounded-md px-2.5 py-1 font-semibold transition ${
-                currentMode === "availability" ? "bg-sky-600 text-white shadow-sm" : "text-slate-600 hover:text-slate-900 dark:text-zinc-400"
+              className={`rounded-md px-2.5 py-1 text-[11px] font-semibold transition ${
+                currentMode === "availability"
+                  ? "bg-sky-600 text-white shadow-xs"
+                  : "text-slate-700 hover:text-slate-950 dark:text-zinc-200 dark:hover:text-white"
               }`}
             >
               Live Availability
             </button>
             <button
+              type="button"
               onClick={() => setCurrentMode("floors")}
-              className={`rounded-md px-2.5 py-1 font-semibold transition ${
-                currentMode === "floors" ? "bg-sky-600 text-white shadow-sm" : "text-slate-600 hover:text-slate-900 dark:text-zinc-400"
+              className={`rounded-md px-2.5 py-1 text-[11px] font-semibold transition ${
+                currentMode === "floors"
+                  ? "bg-sky-600 text-white shadow-xs"
+                  : "text-slate-700 hover:text-slate-950 dark:text-zinc-200 dark:hover:text-white"
               }`}
             >
               Floor Colors
             </button>
           </div>
 
-          {/* Active Date & Week Quick Badge */}
-          <div className="hidden items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-700 dark:border-sky-900 dark:bg-sky-950/60 dark:text-sky-300 xl:flex">
-            <span>{weekRangeText}</span>
-            <span className="text-sky-400 dark:text-sky-600">&bull;</span>
-            <span>{weekContextLabel}</span>
-          </div>
-
-          {/* Filter: Scheduled / Available / All */}
-          {currentMode === "availability" && (
-            <div className="flex rounded-lg border border-slate-200 bg-slate-100 p-0.5 dark:border-zinc-700 dark:bg-zinc-800">
-              {(["SCHEDULED", "AVAILABLE", "ALL"] as const).map((filter) => (
-                <button
-                  key={filter}
-                  onClick={() => setAvailFilter(filter)}
-                  className={`rounded px-2.5 py-1 font-semibold transition ${
-                    availFilter === filter ? "bg-sky-600 text-white shadow-sm" : "text-slate-600 hover:text-slate-900 dark:text-zinc-400"
-                  }`}
-                >
-                  {filter === "SCHEDULED" ? "Scheduled" : filter === "AVAILABLE" ? "Available" : "All"}
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Floor Selector */}
-          <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-100 p-0.5 dark:border-zinc-700 dark:bg-zinc-800">
-            <span className="px-1 text-[10px] font-bold uppercase text-slate-400">Floor</span>
-            {["ALL", "-10", "0", "20", "30", "40"].map((fl) => (
+          {/* Campus Switcher */}
+          <div className="flex rounded-lg border border-slate-200 bg-slate-100 p-0.5 dark:border-zinc-700 dark:bg-zinc-800">
+            {(Object.keys(VENUES) as VenueKey[]).map((key) => (
               <button
-                key={fl}
-                onClick={() => setCurrentFloor(fl)}
-                className={`rounded px-2 py-0.5 font-semibold transition ${
-                  currentFloor === fl ? "bg-sky-600 text-white shadow-sm" : "text-slate-600 hover:text-slate-900 dark:text-zinc-400"
+                key={key}
+                type="button"
+                onClick={() => jumpToVenue(key)}
+                className={`rounded-md px-2 py-1 text-[11px] font-semibold transition ${
+                  activeVenue === key
+                    ? "bg-white text-sky-700 shadow-xs dark:bg-zinc-700 dark:text-sky-300"
+                    : "text-slate-700 hover:text-sky-700 dark:text-zinc-200 dark:hover:text-sky-300"
                 }`}
               >
-                {FLOOR_LABELS[fl]}
+                {VENUES[key].label}
               </button>
             ))}
           </div>
 
-          {/* Campus Jumps */}
-          <div className="hidden rounded-lg border border-slate-200 bg-slate-100 p-0.5 dark:border-zinc-700 dark:bg-zinc-800 md:flex">
-            <button onClick={() => jumpToVenue("north")} className="rounded px-2 py-0.5 font-semibold hover:text-sky-600">
-              North
-            </button>
-            <button onClick={() => jumpToVenue("downtown")} className="rounded px-2 py-0.5 font-semibold hover:text-sky-600">
-              Downtown
-            </button>
-            <button onClick={() => jumpToVenue("whitby")} className="rounded px-2 py-0.5 font-semibold hover:text-sky-600">
-              Whitby
-            </button>
-          </div>
-
-          {/* Unmapped Rooms Button */}
+          {/* Unmapped Spaces Button */}
           <button
+            type="button"
             onClick={() => setIsUnmappedOpen(true)}
-            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+            className="whitespace-nowrap rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 shadow-2xs transition hover:bg-slate-50 hover:text-slate-950 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
           >
             {mergedUnmappedSpaces.length} Unmapped Spaces
           </button>
+        </div>
 
+        {/* Far Top-Right: User Profile / Auth */}
+        <div className="ml-auto shrink-0">
           <AuthButton />
         </div>
       </header>
 
       {/* Main Map Canvas Area */}
-      <div className="relative z-0 flex-1 w-full h-full overflow-hidden">
+      <div className="relative z-0 h-full w-full flex-1 overflow-hidden">
         {/* Loading Overlay */}
         {showInitialOverlay && (
           <div className="absolute inset-0 z-[1100] flex flex-col items-center justify-center bg-white/80 backdrop-blur-sm dark:bg-zinc-950/80">
@@ -1089,8 +1134,11 @@ export function CampusMapView() {
 
         {/* Transient Week Load Banner (if base map is ready) */}
         {!error && weekData && weekError && (
-          <div className="absolute top-4 left-1/2 z-[1050] flex -translate-x-1/2 items-center gap-3 rounded-xl border border-red-200 bg-red-50/95 px-4 py-2 text-xs font-semibold text-red-700 shadow-lg backdrop-blur dark:border-red-900 dark:bg-red-950/95 dark:text-red-200">
-            <span>Could not load schedule for {formatWeekRangeLabel(effectiveWeekStart)}: {weekError}</span>
+          <div className="absolute left-1/2 top-4 z-[1060] flex -translate-x-1/2 items-center gap-3 rounded-xl border border-red-200 bg-red-50/95 px-4 py-2 text-xs font-semibold text-red-700 shadow-lg backdrop-blur dark:border-red-900 dark:bg-red-950/95 dark:text-red-200">
+            <span>
+              Could not load schedule for {formatWeekRangeLabel(effectiveWeekStart)}:{" "}
+              {weekError}
+            </span>
             <button
               type="button"
               onClick={() => {
@@ -1105,242 +1153,222 @@ export function CampusMapView() {
         )}
 
         {/* Leaflet Map Div */}
-        <div ref={mapContainerRef} className="relative z-0 isolate h-full w-full" id="map-container" />
+        <div
+          ref={mapContainerRef}
+          className="relative z-0 isolate h-full w-full"
+          id="map-container"
+        />
 
-        {/* Legend Overlay */}
+        {/* Floating Vertical Floor Selector Portal (directly beneath Leaflet +/- zoom controls) */}
+        {floorControlEl &&
+          createPortal(
+            <div
+              role="group"
+              aria-label="Floor selector"
+              className="mt-1 flex flex-col items-center gap-0.5 rounded-xl border border-slate-200/95 bg-white/95 p-1 shadow-lg backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/95"
+            >
+              <span className="px-1 pb-0.5 text-[9px] font-bold uppercase tracking-wider text-slate-600 dark:text-zinc-300">
+                Floor
+              </span>
+              {VERTICAL_FLOOR_KEYS.map((fl) => {
+                const isSelected = currentFloor === fl;
+                const floorColor = FLOOR_COLORS[fl];
+                return (
+                  <button
+                    key={fl}
+                    type="button"
+                    onClick={() => setCurrentFloor(fl)}
+                    aria-pressed={isSelected}
+                    title={formatFloorLong(fl)}
+                    className={`relative flex h-7 w-8 items-center justify-center rounded-lg text-xs font-bold transition ${
+                      isSelected
+                        ? "bg-sky-600 text-white shadow-xs"
+                        : "text-slate-700 hover:bg-slate-100 hover:text-slate-950 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                    }`}
+                  >
+                    {currentMode === "floors" && floorColor && (
+                      <span
+                        className="absolute left-1 h-1.5 w-1.5 rounded-full"
+                        style={{
+                          backgroundColor: isSelected ? "#ffffff" : floorColor,
+                        }}
+                      />
+                    )}
+                    <span>{FLOOR_LABELS[fl]}</span>
+                  </button>
+                );
+              })}
+            </div>,
+            floorControlEl,
+          )}
+
+        {/* Slide-Out Room Details Drawer */}
+        <RoomDetailsDrawer
+          feature={selectedFeature}
+          status={selectedFeatureStatus}
+          weekData={weekData}
+          currentDay={currentDay}
+          selectedIsoDate={selectedIsoDate}
+          selectedDayInfo={selectedDayInfo}
+          currentSlotStart={currentSlotStart}
+          currentDuration={currentDuration}
+          onClose={() => setSelectedFeature(null)}
+          onOpenWeeklySchedule={openWeeklySchedule}
+          onFocusRoom={focusRoomOnMap}
+        />
+
+        {/* Interactive Bottom-Left Status Legend & Filter */}
         <div
           onMouseDown={(e) => e.stopPropagation()}
           onTouchStart={(e) => e.stopPropagation()}
-          className="absolute bottom-6 left-4 z-[1000] hidden flex-col gap-1 rounded-xl border border-slate-200/90 bg-white/95 p-3 text-xs shadow-xl backdrop-blur-md lg:flex dark:border-zinc-700 dark:bg-zinc-900/95 dark:text-zinc-200"
+          onWheel={(e) => e.stopPropagation()}
+          className="absolute left-3 top-3 z-[1000] flex w-[214px] flex-col gap-1 rounded-xl border border-slate-200/95 bg-white/95 p-2.5 text-xs shadow-xl backdrop-blur-md lg:bottom-4 lg:left-4 lg:top-auto dark:border-zinc-700 dark:bg-zinc-900/95 dark:text-zinc-100"
         >
-          <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Status Legend</div>
+          <div className="flex items-center justify-between px-1 pb-0.5">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-zinc-300">
+              {currentMode === "availability" ? "Status Legend" : "Floor Legend"}
+            </span>
+            {currentMode === "availability" && (
+              <span className="text-[10px] font-medium text-slate-500 dark:text-zinc-400">
+                Click to filter
+              </span>
+            )}
+          </div>
+
           {currentMode === "availability" ? (
-            <>
-              <div className="flex items-center gap-2">
-                <span className="h-3 w-3 rounded-full bg-emerald-500 shadow-sm" />
-                <span>Available ({stats.availCount})</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="h-3 w-3 rounded-full bg-rose-500 shadow-sm" />
-                <span>In Use ({stats.busyCount})</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="h-3 w-3 rounded-full bg-slate-400 shadow-sm" />
-                <span>No Schedule / Other ({stats.grayCount})</span>
-              </div>
-            </>
+            <div className="flex flex-col gap-1">
+              <button
+                type="button"
+                aria-pressed={showAvailable}
+                onClick={() => setShowAvailable((prev) => !prev)}
+                className={`flex items-center justify-between gap-2 rounded-lg border px-2 py-1 text-left transition ${
+                  showAvailable
+                    ? "border-emerald-200/90 bg-emerald-50/70 text-slate-900 hover:bg-emerald-100/70 dark:border-emerald-900/70 dark:bg-emerald-950/35 dark:text-zinc-100"
+                    : "border-transparent bg-slate-100/70 text-slate-500 line-through opacity-75 hover:bg-slate-200/70 dark:bg-zinc-800/60 dark:text-zinc-400"
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  <span
+                    className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+                      showAvailable ? "bg-emerald-500 shadow-xs" : "bg-slate-400"
+                    }`}
+                  />
+                  <span className="font-semibold">Available</span>
+                </span>
+                <span className="tabular-nums text-[11px] font-bold text-emerald-800 dark:text-emerald-300">
+                  {stats.availCount}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                aria-pressed={showInUse}
+                onClick={() => setShowInUse((prev) => !prev)}
+                className={`flex items-center justify-between gap-2 rounded-lg border px-2 py-1 text-left transition ${
+                  showInUse
+                    ? "border-rose-200/90 bg-rose-50/70 text-slate-900 hover:bg-rose-100/70 dark:border-rose-900/70 dark:bg-rose-950/35 dark:text-zinc-100"
+                    : "border-transparent bg-slate-100/70 text-slate-500 line-through opacity-75 hover:bg-slate-200/70 dark:bg-zinc-800/60 dark:text-zinc-400"
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  <span
+                    className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+                      showInUse ? "bg-rose-500 shadow-xs" : "bg-slate-400"
+                    }`}
+                  />
+                  <span className="font-semibold">In Use</span>
+                </span>
+                <span className="tabular-nums text-[11px] font-bold text-rose-800 dark:text-rose-300">
+                  {stats.busyCount}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                aria-pressed={showUnscheduled}
+                onClick={() => setShowUnscheduled((prev) => !prev)}
+                title={
+                  showUnscheduled
+                    ? "Hide unscheduled & utility spaces"
+                    : `Show ${stats.grayCount.toLocaleString()} unscheduled & utility spaces`
+                }
+                className={`flex items-center justify-between gap-1.5 rounded-lg border px-2 py-1 text-left transition ${
+                  showUnscheduled
+                    ? "border-slate-300 bg-slate-100 text-slate-900 hover:bg-slate-200/80 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                    : "border-transparent bg-slate-50 text-slate-600 hover:bg-slate-100 dark:bg-zinc-800/40 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                }`}
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  <span
+                    className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+                      showUnscheduled
+                        ? "bg-slate-500"
+                        : "border border-slate-400 bg-transparent"
+                    }`}
+                  />
+                  <span className="truncate text-[11px] font-semibold">
+                    Unscheduled / Non-Bookable
+                  </span>
+                </span>
+                <span className="shrink-0 tabular-nums text-[10px] font-semibold text-slate-600 dark:text-zinc-400">
+                  {showUnscheduled ? stats.grayCount.toLocaleString() : "Hidden"}
+                </span>
+              </button>
+            </div>
           ) : (
-            <div className="grid grid-cols-2 gap-1.5 pt-1">
-              {Object.entries(FLOOR_COLORS).map(([fl, col]) => (
-                <div key={fl} className="flex items-center gap-1.5">
-                  <span className="h-3 w-3 rounded" style={{ backgroundColor: col }} />
-                  <span>Floor {FLOOR_LABELS[fl]}</span>
-                </div>
-              ))}
+            <div className="grid grid-cols-2 gap-1 pt-0.5">
+              {Object.entries(FLOOR_COLORS).map(([fl, col]) => {
+                const isSelected = currentFloor === fl;
+                return (
+                  <button
+                    key={fl}
+                    type="button"
+                    onClick={() =>
+                      setCurrentFloor((prev) => (prev === fl ? "ALL" : fl))
+                    }
+                    className={`flex items-center gap-1.5 rounded-md px-1.5 py-1 text-left font-semibold transition ${
+                      isSelected
+                        ? "bg-sky-100 text-sky-900 dark:bg-sky-950/70 dark:text-sky-200"
+                        : "text-slate-700 hover:bg-slate-100 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                    }`}
+                  >
+                    <span
+                      className="h-2.5 w-2.5 shrink-0 rounded-sm"
+                      style={{ backgroundColor: col }}
+                    />
+                    <span className="text-[11px]">Floor {FLOOR_LABELS[fl]}</span>
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
 
-        {/* Floating Timeline Control Bar */}
+        {/* Compact & Collapsible Bottom Time-Scrubber Widget */}
         {currentMode === "availability" && (
-          <div
-            onMouseDown={(e) => e.stopPropagation()}
-            onTouchStart={(e) => e.stopPropagation()}
-            className="absolute bottom-6 left-1/2 z-[1000] w-[95%] max-w-2xl -translate-x-1/2 rounded-2xl border border-slate-200/95 bg-white/95 p-3.5 shadow-2xl backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/95 dark:text-zinc-100"
-          >
-            {/* Row 1: Week Navigation & Academic Context */}
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2 dark:border-zinc-800">
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  disabled={!canGoPrevWeek}
-                  onClick={() => selectWeek(addDaysIso(effectiveWeekStart, -7))}
-                  aria-label="Previous week"
-                  className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
-                >
-                  &larr; Prev Wk
-                </button>
-                <div className="flex items-center gap-1.5 px-1">
-                  <span className="text-xs font-extrabold tracking-tight text-slate-900 sm:text-sm dark:text-zinc-100">
-                    {weekRangeText}
-                  </span>
-                  <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-bold text-sky-700 dark:bg-sky-950/70 dark:text-sky-300">
-                    {weekContextLabel}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  disabled={!canGoNextWeek}
-                  onClick={() => selectWeek(addDaysIso(effectiveWeekStart, 7))}
-                  aria-label="Next week"
-                  className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
-                >
-                  Next Wk &rarr;
-                </button>
-              </div>
-
-              <div className="flex items-center gap-2">
-                {weekLoading && (
-                  <span className="flex items-center gap-1 text-[11px] font-semibold text-sky-600 dark:text-sky-400">
-                    <span className="h-3 w-3 animate-spin rounded-full border-2 border-sky-600 border-t-transparent" />
-                    Syncing…
-                  </span>
-                )}
-                <input
-                  type="date"
-                  aria-label="Jump to date (Sep 1, 2026 to Apr 30, 2027)"
-                  min={CAMPUS_MAP_MIN_DATE}
-                  max={CAMPUS_MAP_MAX_DATE}
-                  value={selectedIsoDate}
-                  onChange={(e) => {
-                    const picked = e.target.value;
-                    if (!picked) return;
-                    const clamped =
-                      picked < CAMPUS_MAP_MIN_DATE
-                        ? CAMPUS_MAP_MIN_DATE
-                        : picked > CAMPUS_MAP_MAX_DATE
-                        ? CAMPUS_MAP_MAX_DATE
-                        : picked;
-                    const dt = new Date(`${clamped}T00:00:00Z`);
-                    const jsDay = dt.getUTCDay();
-                    const dayIdx = jsDay === 0 ? 7 : jsDay;
-                    selectWeek(clamped, dayIdx);
-                  }}
-                  className="rounded-md border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] font-semibold text-slate-700 outline-none focus:border-sky-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
-                />
-              </div>
-            </div>
-
-            {/* Academic Note Banner for Selected Day (if holiday, reading week, exam period, makeup Friday) */}
-            {selectedDayInfo?.note && (
-              <div className="mt-1.5 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300">
-                {formatShortIsoDate(selectedDayInfo.date)}: {selectedDayInfo.note}
-              </div>
-            )}
-
-            {/* Row 2: Day Pills with Dates, Selected Time, Step Controls */}
-            <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2 dark:border-zinc-800">
-              {/* Day Pills */}
-              <div className="flex flex-wrap gap-1">
-                {weekDays.map((dayInfo) => {
-                  const dayNum = Number(dayInfo.date.slice(8, 10));
-                  const isActive = currentDay === dayInfo.dayIndex;
-                  return (
-                    <button
-                      key={dayInfo.date}
-                      type="button"
-                      disabled={!dayInfo.inBounds}
-                      title={dayInfo.note ? `${dayInfo.date} — ${dayInfo.note}` : dayInfo.date}
-                      onClick={() => setCurrentDay(dayInfo.dayIndex)}
-                      className={`rounded-md px-2 py-1 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-35 ${
-                        isActive
-                          ? "bg-sky-600 text-white shadow-sm"
-                          : "text-slate-600 hover:bg-slate-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-                      }`}
-                    >
-                      {DAY_SHORT[dayInfo.dayIndex]}{" "}
-                      <span className={isActive ? "text-sky-100" : "text-slate-400 dark:text-zinc-500"}>
-                        {dayNum}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Time Display */}
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs font-bold text-sky-600 sm:text-sm dark:text-sky-400">
-                  {formatMinutesToTime(currentSlotStart)} – {formatMinutesToTime(currentSlotStart + currentDuration)}
-                </span>
-                <span className="rounded bg-sky-50 px-2 py-0.5 text-[11px] font-semibold text-sky-700 dark:bg-sky-950/60 dark:text-sky-300">
-                  {DAY_SHORT[currentDay]}, {formatShortIsoDate(selectedIsoDate)}
-                </span>
-              </div>
-
-              {/* Step & Play Controls */}
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => setCurrentSlotStart((p) => Math.max(480, p - 30))}
-                  className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
-                >
-                  -30m
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsPlaying((p) => !p)}
-                  className={`rounded px-2.5 py-0.5 text-xs font-bold text-white transition ${
-                    isPlaying ? "bg-amber-600 hover:bg-amber-700" : "bg-sky-600 hover:bg-sky-700"
-                  }`}
-                >
-                  {isPlaying ? "⏸ Pause" : "▶ Play"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setCurrentSlotStart((p) => Math.min(1290, p + 30))}
-                  className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
-                >
-                  +30m
-                </button>
-                <button
-                  type="button"
-                  onClick={setTimeToNow}
-                  className="rounded border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-xs font-bold text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"
-                >
-                  Now
-                </button>
-              </div>
-            </div>
-
-            {/* Duration Selector & Time Slider */}
-            <div className="mt-2 space-y-1.5">
-              <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                <div className="flex flex-wrap items-center gap-1">
-                  <span className="text-[11px] font-semibold text-slate-500">Slot Duration:</span>
-                  {[10, 30, 60, 120, 180, 300].map((dur) => (
-                    <button
-                      key={dur}
-                      type="button"
-                      onClick={() => setCurrentDuration(dur)}
-                      className={`rounded px-2 py-0.5 text-[11px] font-semibold transition ${
-                        currentDuration === dur
-                          ? "bg-sky-600 text-white shadow-sm"
-                          : "text-slate-600 hover:bg-slate-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-                      }`}
-                    >
-                      {formatDuration(dur)}
-                    </button>
-                  ))}
-                </div>
-                <span className="text-[11px] font-semibold text-slate-500">
-                  Seeking <strong className="text-sky-600 dark:text-sky-400">{formatDurationLong(currentDuration)}</strong> free block
-                </span>
-              </div>
-
-              {/* Slider */}
-              <div className="relative pt-1">
-                <input
-                  type="range"
-                  min="480"
-                  max="1290"
-                  step="30"
-                  value={currentSlotStart}
-                  onChange={(e) => setCurrentSlotStart(Number(e.target.value))}
-                  className="w-full accent-sky-600 cursor-pointer"
-                />
-                <div className="flex justify-between text-[10px] text-slate-400">
-                  <span>8:00 AM</span>
-                  <span>10:00 AM</span>
-                  <span>12:00 PM</span>
-                  <span>2:00 PM</span>
-                  <span>4:00 PM</span>
-                  <span>6:00 PM</span>
-                  <span>8:00 PM</span>
-                  <span>10:00 PM</span>
-                </div>
-              </div>
-            </div>
-          </div>
+          <TimeScrubber
+            effectiveWeekStart={effectiveWeekStart}
+            weekRangeText={weekRangeText}
+            weekContextLabel={weekContextLabel}
+            weekDays={weekDays}
+            selectedDayInfo={selectedDayInfo}
+            selectedIsoDate={selectedIsoDate}
+            currentDay={currentDay}
+            currentSlotStart={currentSlotStart}
+            currentDuration={currentDuration}
+            isPlaying={isPlaying}
+            weekLoading={weekLoading}
+            canGoPrevWeek={canGoPrevWeek}
+            canGoNextWeek={canGoNextWeek}
+            isCollapsed={isTimeCardCollapsed}
+            onToggleCollapse={() => setIsTimeCardCollapsed((prev) => !prev)}
+            onSelectWeek={selectWeek}
+            onSelectDay={setCurrentDay}
+            onChangeSlotStart={setCurrentSlotStart}
+            onChangeDuration={setCurrentDuration}
+            onTogglePlay={() => setIsPlaying((p) => !p)}
+            onSetNow={setTimeToNow}
+          />
         )}
       </div>
 
@@ -1354,41 +1382,49 @@ export function CampusMapView() {
                 <h2 className="text-lg font-bold text-slate-900 dark:text-zinc-100">
                   {activeModalSubRoom ? `${activeModalSubRoom} • ` : ""}
                   {activeModalFeature.properties.name}
-                  <span className="ml-2 text-xs font-semibold text-sky-600 dark:text-sky-400">
+                  <span className="ml-2 text-xs font-semibold text-sky-700 dark:text-sky-400">
                     ({weekRangeText})
                   </span>
                 </h2>
-                <p className="mt-0.5 text-xs text-slate-500">
-                  Building: <strong>{activeModalFeature.properties.building || "—"}</strong> &bull; Floor:{" "}
-                  <strong>{formatFloor(activeModalFeature.properties.floor)}</strong> &bull; Capacity:{" "}
+                <p className="mt-0.5 text-xs text-slate-600 dark:text-zinc-300">
+                  Building: <strong>{activeModalFeature.properties.building || "—"}</strong>{" "}
+                  &bull; Floor:{" "}
+                  <strong>{formatFloor(activeModalFeature.properties.floor)}</strong> &bull;
+                  Capacity:{" "}
                   <strong>
-                    {activeModalFeature.properties.isLibraryRoom && activeModalFeature.properties.minCapacity
+                    {activeModalFeature.properties.isLibraryRoom &&
+                    activeModalFeature.properties.minCapacity
                       ? `${activeModalFeature.properties.minCapacity}–${activeModalFeature.properties.capacity}`
                       : activeModalFeature.properties.capacity || "—"}
-                  </strong>
-                  {" "}&bull;{" "}
-                  <span className="font-semibold text-slate-600 dark:text-zinc-300">{weekContextLabel}</span>
+                  </strong>{" "}
+                  &bull;{" "}
+                  <span className="font-semibold text-slate-800 dark:text-zinc-200">
+                    {weekContextLabel}
+                  </span>
                 </p>
               </div>
 
               <div className="flex flex-wrap items-center gap-3">
                 {/* Multi-Room Switcher for UP / U5 */}
-                {activeModalFeature.properties.isBuildingContainer && activeModalFeature.properties.rooms && (
-                  <div className="flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-slate-100 p-0.5 dark:border-zinc-700 dark:bg-zinc-800">
-                    {activeModalFeature.properties.rooms.map((rm) => (
-                      <button
-                        key={rm}
-                        type="button"
-                        onClick={() => setActiveModalSubRoom(rm)}
-                        className={`rounded px-2.5 py-1 text-xs font-bold transition ${
-                          activeModalSubRoom === rm ? "bg-sky-600 text-white shadow" : "text-slate-600 hover:text-slate-900 dark:text-zinc-400"
-                        }`}
-                      >
-                        {rm}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                {activeModalFeature.properties.isBuildingContainer &&
+                  activeModalFeature.properties.rooms && (
+                    <div className="flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-slate-100 p-0.5 dark:border-zinc-700 dark:bg-zinc-800">
+                      {activeModalFeature.properties.rooms.map((rm) => (
+                        <button
+                          key={rm}
+                          type="button"
+                          onClick={() => setActiveModalSubRoom(rm)}
+                          className={`rounded px-2.5 py-1 text-xs font-bold transition ${
+                            activeModalSubRoom === rm
+                              ? "bg-sky-600 text-white shadow"
+                              : "text-slate-700 hover:text-slate-950 dark:text-zinc-300"
+                          }`}
+                        >
+                          {rm}
+                        </button>
+                      ))}
+                    </div>
+                  )}
 
                 {/* Week Switcher inside modal */}
                 <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-100 p-0.5 dark:border-zinc-700 dark:bg-zinc-800">
@@ -1400,7 +1436,7 @@ export function CampusMapView() {
                   >
                     &larr; Prev Week
                   </button>
-                  <span className="px-2 text-xs font-bold text-slate-700 dark:text-zinc-200">
+                  <span className="px-2 text-xs font-bold text-slate-800 dark:text-zinc-100">
                     {weekLoading ? "Loading…" : weekRangeText}
                   </span>
                   <button
@@ -1417,7 +1453,7 @@ export function CampusMapView() {
                 <button
                   type="button"
                   onClick={() => setActiveModalFeature(null)}
-                  className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-zinc-800"
+                  className="rounded-full p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-zinc-400 dark:hover:bg-zinc-800"
                 >
                   ✕
                 </button>
@@ -1425,20 +1461,25 @@ export function CampusMapView() {
             </div>
 
             {/* Library rolling-window notice */}
-            {isModalLibraryOutsideWindow && weekData?.libraryWindowStart && weekData?.libraryWindowEnd && (
-              <div className="border-b border-amber-200 bg-amber-50 px-6 py-2 text-xs font-medium text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
-                Library study room bookings are updated daily for the upcoming ~1-week window (
-                <strong>
-                  {formatShortIsoDate(weekData.libraryWindowStart)} – {formatShortIsoDate(weekData.libraryWindowEnd)}
-                </strong>
-                ). Historical and far-future weeks do not retain past library bookings.
-              </div>
-            )}
+            {isModalLibraryOutsideWindow &&
+              weekData?.libraryWindowStart &&
+              weekData?.libraryWindowEnd && (
+                <div className="border-b border-amber-200 bg-amber-50 px-6 py-2 text-xs font-medium text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+                  Library study room bookings are updated daily for the upcoming ~1-week
+                  window (
+                  <strong>
+                    {formatShortIsoDate(weekData.libraryWindowStart)} –{" "}
+                    {formatShortIsoDate(weekData.libraryWindowEnd)}
+                  </strong>
+                  ). Historical and far-future weeks do not retain past library bookings.
+                </div>
+              )}
 
             {/* Color Key */}
-            <div className="flex flex-wrap items-center gap-4 border-b border-slate-100 bg-slate-50/70 px-6 py-1.5 text-[11px] text-slate-600 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-400">
+            <div className="flex flex-wrap items-center gap-4 border-b border-slate-100 bg-slate-50/80 px-6 py-1.5 text-[11px] font-medium text-slate-700 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-300">
               <span className="flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-sm bg-sky-500" /> Course / Lab / Tutorial
+                <span className="h-2.5 w-2.5 rounded-sm bg-sky-500" /> Course / Lab /
+                Tutorial
               </span>
               <span className="flex items-center gap-1.5">
                 <span className="h-2.5 w-2.5 rounded-sm bg-amber-500" /> Final Exam
@@ -1454,8 +1495,10 @@ export function CampusMapView() {
             {/* Modal Body: Timetable Grid */}
             <div className="flex flex-1 flex-col overflow-hidden">
               {/* Day Column Headers */}
-              <div className="grid grid-cols-8 border-b border-slate-200 bg-slate-50 text-xs font-bold text-slate-600 dark:border-zinc-800 dark:bg-zinc-800/50 dark:text-zinc-300">
-                <div className="border-r border-slate-200 p-2 text-center text-slate-400 dark:border-zinc-700">Time</div>
+              <div className="grid grid-cols-8 border-b border-slate-200 bg-slate-50 text-xs font-bold text-slate-700 dark:border-zinc-800 dark:bg-zinc-800/50 dark:text-zinc-200">
+                <div className="border-r border-slate-200 p-2 text-center text-slate-600 dark:border-zinc-700 dark:text-zinc-400">
+                  Time
+                </div>
                 {weekDays.map((dayInfo) => (
                   <div
                     key={dayInfo.date}
@@ -1464,15 +1507,15 @@ export function CampusMapView() {
                       !dayInfo.inBounds
                         ? "opacity-40"
                         : dayInfo.dayIndex === currentDay
-                        ? "bg-sky-100/60 font-extrabold text-sky-800 dark:bg-sky-950/60 dark:text-sky-300"
-                        : ""
+                          ? "bg-sky-100/70 font-extrabold text-sky-900 dark:bg-sky-950/60 dark:text-sky-200"
+                          : ""
                     }`}
                   >
                     <div>
                       {DAY_SHORT[dayInfo.dayIndex]} {formatShortIsoDate(dayInfo.date)}
                     </div>
                     {dayInfo.note && (
-                      <div className="truncate text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+                      <div className="truncate text-[10px] font-semibold text-amber-700 dark:text-amber-300">
                         {dayInfo.note}
                       </div>
                     )}
@@ -1482,13 +1525,16 @@ export function CampusMapView() {
 
               {/* Scrollable Calendar Body */}
               <div className="relative flex-1 overflow-y-auto">
-                <div className="relative grid grid-cols-8 h-[728px]">
+                <div className="relative grid h-[728px] grid-cols-8">
                   {/* Time Labels Column */}
                   <div className="border-r border-slate-200 dark:border-zinc-800">
                     {Array.from({ length: 14 }).map((_, i) => {
                       const hourMin = 480 + i * 60;
                       return (
-                        <div key={i} className="h-[52px] border-b border-slate-100 pr-2 text-right text-[11px] text-slate-400 dark:border-zinc-800/80">
+                        <div
+                          key={i}
+                          className="h-[52px] border-b border-slate-100 pr-2 text-right text-[11px] font-medium text-slate-600 dark:border-zinc-800/80 dark:text-zinc-400"
+                        >
                           {formatMinutesToTime(hourMin)}
                         </div>
                       );
@@ -1508,13 +1554,16 @@ export function CampusMapView() {
                           !dayInfo.inBounds
                             ? "bg-slate-100/60 dark:bg-zinc-950/40"
                             : isToday
-                            ? "bg-sky-50/20 dark:bg-sky-950/10"
-                            : ""
+                              ? "bg-sky-50/25 dark:bg-sky-950/10"
+                              : ""
                         }`}
                       >
                         {/* Hour background guide lines */}
                         {Array.from({ length: 14 }).map((_, i) => (
-                          <div key={i} className="h-[52px] border-b border-slate-100 dark:border-zinc-800/60" />
+                          <div
+                            key={i}
+                            className="h-[52px] border-b border-slate-100 dark:border-zinc-800/60"
+                          />
                         ))}
 
                         {/* Event blocks */}
@@ -1522,8 +1571,14 @@ export function CampusMapView() {
                           const visibleStart = Math.max(480, ev.start);
                           const visibleEnd = Math.min(1320, ev.end);
                           const topPx = ((visibleStart - 480) / 840) * 728;
-                          const heightPx = Math.max(24, ((visibleEnd - visibleStart) / 840) * 728);
-                          const isActiveNow = isToday && currentSlotStart < ev.end && currentSlotStart + currentDuration > ev.start;
+                          const heightPx = Math.max(
+                            24,
+                            ((visibleEnd - visibleStart) / 840) * 728,
+                          );
+                          const isActiveNow =
+                            isToday &&
+                            currentSlotStart < ev.end &&
+                            currentSlotStart + currentDuration > ev.start;
                           const leftPct = (ev.lane / ev.totalLanes) * 100;
                           const widthPct = (1 / ev.totalLanes) * 100;
 
@@ -1541,16 +1596,17 @@ export function CampusMapView() {
                                 isActiveNow
                                   ? "bg-rose-600 text-white ring-2 ring-rose-400"
                                   : ev.type === "exam"
-                                  ? "bg-amber-100 text-amber-950 border border-amber-300 dark:bg-amber-950/70 dark:text-amber-200"
-                                  : ev.type === "reservation"
-                                  ? "bg-purple-100 text-purple-900 border border-purple-300 dark:bg-purple-950/70 dark:text-purple-200"
-                                  : ev.type === "library_booking"
-                                  ? "bg-emerald-100 text-emerald-900 border border-emerald-300 dark:bg-emerald-950/70 dark:text-emerald-200"
-                                  : "bg-sky-100 text-sky-900 border border-sky-300 dark:bg-sky-950/70 dark:text-sky-200"
+                                    ? "border border-amber-300 bg-amber-100 text-amber-950 dark:bg-amber-950/70 dark:text-amber-200"
+                                    : ev.type === "reservation"
+                                      ? "border border-purple-300 bg-purple-100 text-purple-900 dark:bg-purple-950/70 dark:text-purple-200"
+                                      : ev.type === "library_booking"
+                                        ? "border border-emerald-300 bg-emerald-100 text-emerald-900 dark:bg-emerald-950/70 dark:text-emerald-200"
+                                        : "border border-sky-300 bg-sky-100 text-sky-900 dark:bg-sky-950/70 dark:text-sky-200"
                               }`}
                             >
-                              <div className="font-bold opacity-80">
-                                {formatMinutesToTime(ev.start)} – {formatMinutesToTime(ev.end)}
+                              <div className="font-bold opacity-85">
+                                {formatMinutesToTime(ev.start)} –{" "}
+                                {formatMinutesToTime(ev.end)}
                               </div>
                               <div className="line-clamp-2 font-semibold">{ev.title}</div>
                             </div>
@@ -1575,14 +1631,15 @@ export function CampusMapView() {
                 <h3 className="text-base font-bold text-slate-900 dark:text-zinc-100">
                   Unmapped Spaces &amp; Atria ({weekRangeText})
                 </h3>
-                <p className="mt-0.5 text-xs text-slate-500">
-                  Open table spaces and off-plan rooms for {DAY_NAMES[currentDay]}, {formatShortIsoDate(selectedIsoDate)}.
+                <p className="mt-0.5 text-xs text-slate-600 dark:text-zinc-400">
+                  Open table spaces and off-plan rooms for {DAY_NAMES[currentDay]},{" "}
+                  {formatShortIsoDate(selectedIsoDate)}.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setIsUnmappedOpen(false)}
-                className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-zinc-800"
+                className="rounded-full p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-zinc-400 dark:hover:bg-zinc-800"
               >
                 ✕
               </button>
@@ -1594,7 +1651,9 @@ export function CampusMapView() {
                   const dayKey = String(currentDay);
                   const slots = weekData?.unmappedSchedules?.[u.roomId]?.[dayKey] ?? [];
                   const slotEnd = currentSlotStart + currentDuration;
-                  const activeSlot = slots.find((s) => s.start < slotEnd && s.end > currentSlotStart);
+                  const activeSlot = slots.find(
+                    (s) => s.start < slotEnd && s.end > currentSlotStart,
+                  );
 
                   return (
                     <div
@@ -1603,38 +1662,48 @@ export function CampusMapView() {
                     >
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2">
-                          <span className="font-bold text-sky-600 dark:text-sky-400">{u.roomId}</span>
+                          <span className="font-bold text-sky-700 dark:text-sky-400">
+                            {u.roomId}
+                          </span>
                           {slots.length > 0 && (
                             <span
                               className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
                                 activeSlot
-                                  ? "bg-rose-100 text-rose-700 dark:bg-rose-950/70 dark:text-rose-300"
-                                  : "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-300"
+                                  ? "bg-rose-100 text-rose-800 dark:bg-rose-950/70 dark:text-rose-200"
+                                  : "bg-emerald-100 text-emerald-800 dark:bg-emerald-950/70 dark:text-emerald-200"
                               }`}
                             >
-                              {activeSlot ? `In Use (${activeSlot.title})` : `${slots.length} booked today`}
+                              {activeSlot
+                                ? `In Use (${activeSlot.title})`
+                                : `${slots.length} booked today`}
                             </span>
                           )}
                         </div>
-                        <div className="text-slate-500">
-                          {u.building ? `Building: ${u.building}` : "Campus Space"} &bull; {u.roomType || "Lounge Space"}
+                        <div className="text-slate-600 dark:text-zinc-300">
+                          {u.building ? `Building: ${u.building}` : "Campus Space"} &bull;{" "}
+                          {u.roomType || "Lounge Space"}
                         </div>
-                        {u.description && <div className="mt-1 text-[11px] text-slate-400">{u.description}</div>}
+                        {u.description && (
+                          <div className="mt-1 text-[11px] text-slate-600 dark:text-zinc-400">
+                            {u.description}
+                          </div>
+                        )}
                         {slots.length > 0 && (
                           <div className="mt-1.5 flex flex-wrap gap-1">
                             {slots.map((s, i) => (
                               <span
                                 key={i}
-                                className="rounded bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-600 shadow-xs dark:bg-zinc-800 dark:text-zinc-300"
+                                className="rounded bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 shadow-xs dark:bg-zinc-800 dark:text-zinc-200"
                               >
-                                {formatMinutesToTime(s.start)}–{formatMinutesToTime(s.end)}: {s.title}
+                                {formatMinutesToTime(s.start)}–
+                                {formatMinutesToTime(s.end)}: {s.title}
                               </span>
                             ))}
                           </div>
                         )}
                       </div>
                       {u.capacity && (
-                        <span className="shrink-0 rounded-full bg-slate-200/80 px-2.5 py-0.5 text-[11px] font-semibold text-slate-700 dark:bg-zinc-700 dark:text-zinc-200">
+                        <span className="shrink-0 rounded-full bg-slate-200/80 px-2.5 py-0.5 text-[11px] font-semibold text-slate-800 dark:bg-zinc-700 dark:text-zinc-100">
                           Cap: {u.capacity}
                         </span>
                       )}
