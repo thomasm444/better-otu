@@ -48,8 +48,9 @@ export async function getProgramSummaries(): Promise<ProgramSummary[]> {
     supabase
       .from("degree_programs")
       .select(
-        "program_id, name, credential, degree, degree_abbrev, faculty, total_credit_hours, honours",
+        "program_id, catalog_year, name, credential, degree, degree_abbrev, faculty, total_credit_hours, honours",
       )
+      .order("catalog_year", { ascending: false })
       .order("name", { ascending: true })
       .order("program_id", { ascending: true })
       .range(from, to),
@@ -57,6 +58,7 @@ export async function getProgramSummaries(): Promise<ProgramSummary[]> {
 
   return (rows as Record<string, unknown>[]).map((row) => ({
     program_id: String(row.program_id),
+    catalog_year: String(row.catalog_year ?? "2026-27"),
     name: String(row.name),
     credential: (row.credential as string | null) ?? null,
     degree: (row.degree as string | null) ?? null,
@@ -80,7 +82,7 @@ export async function getCatalogCourses(): Promise<CatalogCourse[]> {
     supabase
       .from("catalog_courses")
       .select(
-        "code, subject, number, subject_course, level, faculty, subject_name, title, short_title, credit_hours, terms_offered, sections_in_offerings, prerequisite_codes, prerequisite_text, prerequisite_ast, calendar_url",
+        "code, catalog_year, subject, number, subject_course, level, faculty, subject_name, title, short_title, description, credit_hours, hours_lecture, hours_laboratory, hours_tutorial, terms_offered, sections_in_offerings, prerequisite_codes, prerequisite_text, prerequisite_ast, formerly_codes, calendar_url",
       )
       .order("code", { ascending: true })
       .range(from, to),
@@ -88,6 +90,7 @@ export async function getCatalogCourses(): Promise<CatalogCourse[]> {
 
   return (rows as Record<string, unknown>[]).map((row) => ({
     code: String(row.code),
+    catalog_year: row.catalog_year ? String(row.catalog_year) : undefined,
     subject: String(row.subject),
     number: String(row.number),
     subject_course: String(row.subject_course),
@@ -96,7 +99,11 @@ export async function getCatalogCourses(): Promise<CatalogCourse[]> {
     subject_name: (row.subject_name as string | null) ?? null,
     title: String(row.title),
     short_title: (row.short_title as string | null) ?? null,
+    description: (row.description as string | null) ?? null,
     credit_hours: Number(row.credit_hours ?? 3),
+    hours_lecture: (row.hours_lecture as string | null) ?? null,
+    hours_laboratory: (row.hours_laboratory as string | null) ?? null,
+    hours_tutorial: (row.hours_tutorial as string | null) ?? null,
     terms_offered: Array.isArray(row.terms_offered)
       ? (row.terms_offered as string[])
       : [],
@@ -106,6 +113,9 @@ export async function getCatalogCourses(): Promise<CatalogCourse[]> {
       : [],
     prerequisite_text: (row.prerequisite_text as string | null) ?? null,
     prerequisite_ast: (row.prerequisite_ast as PrereqAstNode | null) ?? null,
+    formerly_codes: Array.isArray(row.formerly_codes)
+      ? (row.formerly_codes as string[])
+      : [],
     calendar_url: (row.calendar_url as string | null) ?? null,
   }));
 }
@@ -181,7 +191,11 @@ export async function getDegreeBootstrap(): Promise<DegreeBootstrapData> {
     });
   }
 
-  return { subjects, programs, courses, offerings };
+  const catalogYears = [...new Set(programs.map((p) => p.catalog_year))].sort(
+    (a, b) => b.localeCompare(a),
+  );
+
+  return { subjects, programs, catalogYears, courses, offerings };
 }
 
 type RawSectionRow = {
@@ -284,7 +298,7 @@ export async function getProgramDetail(
   const { data: progRow, error: progError } = await supabase
     .from("degree_programs")
     .select(
-      "program_id, name, url, catalog, description, faculty, degree, degree_abbrev, credential, honours, total_credit_hours, required_course_codes, footnotes",
+      "program_id, catalog_year, name, url, catalog, description, faculty, degree, degree_abbrev, credential, honours, total_credit_hours, required_course_codes, footnotes",
     )
     .eq("program_id", programId)
     .maybeSingle();
@@ -295,6 +309,7 @@ export async function getProgramDetail(
   if (!progRow) return null;
   const p = progRow as unknown as {
     program_id: string | number;
+    catalog_year?: string | null;
     name: string;
     url?: string | null;
     catalog?: string | null;
@@ -386,6 +401,7 @@ export async function getProgramDetail(
 
   return {
     program_id: String(p.program_id),
+    catalog_year: String(p.catalog_year ?? "2026-27"),
     name: String(p.name),
     url: p.url ?? null,
     catalog: p.catalog ?? null,

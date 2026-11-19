@@ -13,6 +13,7 @@ export type PrereqAstNode =
 
 export type CatalogCourse = {
   code: string;
+  catalog_year?: string;
   subject: string;
   number: string;
   subject_course: string;
@@ -21,12 +22,17 @@ export type CatalogCourse = {
   subject_name: string | null;
   title: string;
   short_title: string | null;
+  description?: string | null;
   credit_hours: number;
+  hours_lecture?: string | null;
+  hours_laboratory?: string | null;
+  hours_tutorial?: string | null;
   terms_offered: string[];
   sections_in_offerings: number;
   prerequisite_codes: string[];
   prerequisite_text: string | null;
   prerequisite_ast: PrereqAstNode | null;
+  formerly_codes?: string[];
   calendar_url: string | null;
 };
 
@@ -54,6 +60,7 @@ export type OfferingContext = {
 
 export type ProgramSummary = {
   program_id: string;
+  catalog_year: string;
   name: string;
   credential: string | null;
   degree: string | null;
@@ -229,6 +236,7 @@ export type PickerState = {
 export type DegreeBootstrapData = {
   subjects: DegreeSubject[];
   programs: ProgramSummary[];
+  catalogYears: string[];
   courses: CatalogCourse[];
   offerings: CourseOffering[];
 };

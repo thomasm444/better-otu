@@ -34,6 +34,7 @@ type CoursePickerModalProps = {
   catalogMap: Map<string, CatalogCourse>;
   offeringsMap: Map<string, OfferingEntry>;
   offeringContext: OfferingContext;
+  equivMap?: Map<string, Set<string>>;
   startYear: number;
   customs: Map<string, CustomCourse>;
   subjects: string[];
@@ -56,6 +57,7 @@ export function CoursePickerModal({
   catalogMap,
   offeringsMap,
   offeringContext,
+  equivMap,
   startYear,
   customs,
   subjects,
@@ -206,8 +208,8 @@ export function CoursePickerModal({
 
   const placed = useMemo(() => placedCodes(terms), [terms]);
   const completed = useMemo(
-    () => completedBefore(terms, picker.termIndex),
-    [terms, picker],
+    () => completedBefore(terms, picker.termIndex, equivMap),
+    [terms, picker, equivMap],
   );
 
   const filteredRows = useMemo(() => {

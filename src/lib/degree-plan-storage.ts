@@ -8,6 +8,7 @@ export interface DegreePlanRecord {
   user_email: string;
   degree_name: string | null;
   start_year: number | null;
+  catalog_year: string | null;
   program_id: string;
   terms: PlannerTerm[];
   customs: CustomCourse[];
@@ -72,6 +73,7 @@ export async function upsertDegreePlan(
     userEmail: string;
     degreeName: string;
     startYear: number;
+    catalogYear?: string | null;
     programId: string;
     terms: PlannerTerm[];
     customs: CustomCourse[];
@@ -85,6 +87,7 @@ export async function upsertDegreePlan(
         user_email: normalizeEmail(params.userEmail),
         degree_name: params.degreeName,
         start_year: params.startYear,
+        catalog_year: params.catalogYear ?? null,
         program_id: params.programId,
         terms: params.terms,
         customs: params.customs,

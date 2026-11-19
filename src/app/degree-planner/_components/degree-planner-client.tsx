@@ -21,24 +21,31 @@ import { createClient } from "@/lib/supabase/client";
 
 import {
   buildDefaultPlan,
+  buildEquivalenceMap,
   buildModel,
   buildOfferingContext,
   buildOfferingsMap,
+  catalogYearToStartYear,
   courseOf,
   creditsOf,
   CREDIT_CAP,
   DEFAULT_START_YEAR,
+  findEquivalentInSet,
+  findProgramInCatalogYear,
   firstFreeSlot,
   matchingBuckets,
   MAX_SLOTS_PER_TERM,
   MAX_START_YEAR,
+  MIN_PLAN_CATALOG_YEAR,
   MIN_START_YEAR,
   normalizeTermSlots,
   placedCodes,
   placedTermIndex,
   prereqFlag,
+  resolveCatalogYearForStartYear,
   seasonsOf,
   SLOTS_PER_TERM,
+  startYearToCatalogYear,
   STORE_PREFIX,
   termCalendarYear,
   termCredits,
@@ -113,6 +120,11 @@ export function DegreePlannerClient({
     return map;
   }, [bootstrap.courses]);
 
+  const equivMap = useMemo(
+    () => buildEquivalenceMap(bootstrap.courses),
+    [bootstrap.courses],
+  );
+
   const offeringsMap = useMemo(
     () => buildOfferingsMap(bootstrap.offerings, bootstrap.courses),
     [bootstrap.offerings, bootstrap.courses],
@@ -150,10 +162,38 @@ export function DegreePlannerClient({
 
   const programCacheRef = useRef<Map<string, DegreeProgramDetail>>(new Map());
 
+  const availableCatalogYears = useMemo(() => {
+    const source =
+      bootstrap.catalogYears && bootstrap.catalogYears.length > 0
+        ? bootstrap.catalogYears
+        : [
+            ...new Set(
+              bootstrap.programs.map((p) => p.catalog_year).filter(Boolean),
+            ),
+          ].sort((a, b) => b.localeCompare(a));
+    const filtered = source.filter((cy) => cy >= MIN_PLAN_CATALOG_YEAR);
+    if (filtered.length > 0) return filtered;
+    return source.length > 0
+      ? source
+      : [startYearToCatalogYear(DEFAULT_START_YEAR)];
+  }, [bootstrap.catalogYears, bootstrap.programs]);
+
+  const initialStartYear = useMemo(
+    () =>
+      initialProgram
+        ? (catalogYearToStartYear(initialProgram.catalog_year) ??
+          DEFAULT_START_YEAR)
+        : DEFAULT_START_YEAR,
+    [initialProgram],
+  );
+
   const initialDefaultPlan = useMemo(() => {
     if (!initialProgram) return { terms: [], unscheduled: [] as UnscheduledItem[] };
-    return buildDefaultPlan(initialProgram, catalogMap, offeringsMap, new Map());
-  }, [initialProgram, catalogMap, offeringsMap]);
+    return buildDefaultPlan(initialProgram, catalogMap, offeringsMap, new Map(), {
+      startYear: initialStartYear,
+      context: offeringContext,
+    });
+  }, [initialProgram, catalogMap, offeringsMap, initialStartYear, offeringContext]);
 
   const [program, setProgram] = useState<DegreeProgramDetail | null>(
     initialProgram,
@@ -175,7 +215,12 @@ export function DegreePlannerClient({
   );
   const [creatingPlan, setCreatingPlan] = useState(false);
 
-  const [startYear, setStartYear] = useState<number>(DEFAULT_START_YEAR);
+  const [startYear, setStartYear] = useState<number>(initialStartYear);
+  const [catalogYear, setCatalogYear] = useState<string>(() =>
+    initialProgram
+      ? initialProgram.catalog_year
+      : resolveCatalogYearForStartYear(initialStartYear, availableCatalogYears),
+  );
   const [gapYears, setGapYears] = useState<number[]>([]);
 
   const [customs, setCustoms] = useState<Map<string, CustomCourse>>(
@@ -186,6 +231,9 @@ export function DegreePlannerClient({
   );
   const [unscheduled, setUnscheduled] = useState<UnscheduledItem[]>(
     () => initialDefaultPlan.unscheduled,
+  );
+  const [planMismatches, setPlanMismatches] = useState<Map<string, string>>(
+    () => new Map(),
   );
   const [previousPlan, setPreviousPlan] = useState<{
     programId: string;
@@ -232,13 +280,14 @@ export function DegreePlannerClient({
   }, []);
 
   const applyProgramWithSaved = useCallback(
-    (prog: DegreeProgramDetail, saved: SavedPlan) => {
+    (prog: DegreeProgramDetail, saved: SavedPlan, startYearOverride?: number) => {
       const nextCustoms = new Map(
         (saved.customs ?? []).map((c) => [c.code, c]),
       );
-      const nextStartYear = saved.startYear ?? startYear;
+      const nextStartYear = startYearOverride ?? saved.startYear ?? startYear;
       const nextGapYears = saved.gapYears ?? [];
       setStartYear(nextStartYear);
+      setCatalogYear(prog.catalog_year);
       setGapYears(nextGapYears);
 
       if (saved.terms && saved.terms.length > 0) {
@@ -261,6 +310,7 @@ export function DegreePlannerClient({
         setUnscheduled(built.unscheduled);
       }
       setCustoms(nextCustoms);
+      setPlanMismatches(new Map());
       setProgram(prog);
       setProgramQuery("");
       setPlanName(saved.planName?.trim() || prog.name);
@@ -283,9 +333,13 @@ export function DegreePlannerClient({
   }, []);
 
   const activateProgram = useCallback(
-    async (prog: DegreeProgramDetail, activeUser?: User | null) => {
+    async (
+      prog: DegreeProgramDetail,
+      activeUser?: User | null,
+      startYearOverride?: number,
+    ) => {
       const localSaved = loadSavedPlan(prog.program_id);
-      applyProgramWithSaved(prog, localSaved);
+      applyProgramWithSaved(prog, localSaved, startYearOverride);
 
       const resolvedUser = activeUser !== undefined ? activeUser : userRef.current;
       if (!resolvedUser?.email) return;
@@ -305,7 +359,8 @@ export function DegreePlannerClient({
           const nextCustoms = new Map(
             remote.customs.map((c) => [c.code, c]),
           );
-          const nextStartYear = remote.start_year ?? undefined;
+          const nextStartYear =
+            startYearOverride ?? remote.start_year ?? undefined;
           const nextPlanName = remote.degree_name?.trim() || prog.name;
           applyProgramWithSaved(prog, {
             terms: remote.terms,
@@ -482,13 +537,14 @@ export function DegreePlannerClient({
     return bootstrap.programs
       .filter(
         (p) =>
-          !q ||
-          `${p.name} ${p.credential ?? ""} ${p.degree_abbrev ?? ""} ${p.faculty ?? ""}`
-            .toLowerCase()
-            .includes(q),
+          p.catalog_year === catalogYear &&
+          (!q ||
+            `${p.name} ${p.credential ?? ""} ${p.degree_abbrev ?? ""} ${p.faculty ?? ""}`
+              .toLowerCase()
+              .includes(q)),
       )
       .slice(0, 60);
-  }, [bootstrap.programs, programQuery]);
+  }, [bootstrap.programs, catalogYear, programQuery]);
 
   const selectProgram = useCallback(
     async (summary: ProgramSummary) => {
@@ -688,6 +744,7 @@ export function DegreePlannerClient({
           userEmail: user.email,
           degreeName: effectiveName,
           startYear: nextStartYear,
+          catalogYear: program.catalog_year,
           programId: program.program_id,
           terms: normalizedTerms,
           customs: [...nextCustoms.values()],
@@ -733,22 +790,42 @@ export function DegreePlannerClient({
 
   const filteredNewPlanPrograms = useMemo(() => {
     const q = newPlanQuery.trim().toLowerCase();
+    const targetCatalogYear = resolveCatalogYearForStartYear(
+      newPlanStartYear,
+      availableCatalogYears,
+    );
     return bootstrap.programs
       .filter(
         (p) =>
-          !q ||
-          `${p.name} ${p.credential ?? ""} ${p.degree_abbrev ?? ""} ${p.faculty ?? ""}`
-            .toLowerCase()
-            .includes(q),
+          p.catalog_year === targetCatalogYear &&
+          (!q ||
+            `${p.name} ${p.credential ?? ""} ${p.degree_abbrev ?? ""} ${p.faculty ?? ""}`
+              .toLowerCase()
+              .includes(q)),
       )
       .slice(0, 60);
-  }, [bootstrap.programs, newPlanQuery]);
+  }, [
+    bootstrap.programs,
+    newPlanQuery,
+    newPlanStartYear,
+    availableCatalogYears,
+  ]);
 
   const handleCreateNewPlan = useCallback(async () => {
     if (!newPlanProgram || creatingPlan) return;
     setCreatingPlan(true);
     try {
-      const detail = await loadProgramDetail(newPlanProgram.program_id);
+      const targetCatalogYear = resolveCatalogYearForStartYear(
+        newPlanStartYear,
+        availableCatalogYears,
+      );
+      const resolvedProgram =
+        findProgramInCatalogYear(
+          bootstrap.programs,
+          newPlanProgram,
+          targetCatalogYear,
+        ) ?? newPlanProgram;
+      const detail = await loadProgramDetail(resolvedProgram.program_id);
       const effectiveName = newPlanName.trim() || detail.name;
       const existingSaved = savedPlans.find(
         (p) => p.program_id === detail.program_id,
@@ -783,11 +860,13 @@ export function DegreePlannerClient({
 
       setPreviousPlan(null);
       setResetConfirmOpen(false);
+      setPlanMismatches(new Map());
       setProgram(detail);
       setProgramQuery("");
       setPlanName(effectiveName);
       setEditingPlanName(false);
       setStartYear(newPlanStartYear);
+      setCatalogYear(detail.catalog_year);
       setGapYears([]);
       setCustoms(nextCustoms);
       setTerms(nextTerms);
@@ -808,6 +887,7 @@ export function DegreePlannerClient({
             userEmail: user.email,
             degreeName: effectiveName,
             startYear: newPlanStartYear,
+            catalogYear: detail.catalog_year,
             programId: detail.program_id,
             terms: nextTerms,
             customs: [...nextCustoms.values()],
@@ -829,6 +909,8 @@ export function DegreePlannerClient({
       setCreatingPlan(false);
     }
   }, [
+    availableCatalogYears,
+    bootstrap.programs,
     newPlanProgram,
     creatingPlan,
     loadProgramDetail,
@@ -886,6 +968,7 @@ export function DegreePlannerClient({
 
   const clearSlot = useCallback(
     (termIndex: number, slotIndex: number) => {
+      const removedCode = terms[termIndex]?.slots[slotIndex] ?? null;
       const nextTerms = terms.map((t, i) =>
         i === termIndex
           ? {
@@ -894,6 +977,14 @@ export function DegreePlannerClient({
             }
           : t,
       );
+      if (removedCode) {
+        setPlanMismatches((prev) => {
+          if (!prev.has(removedCode)) return prev;
+          const next = new Map(prev);
+          next.delete(removedCode);
+          return next;
+        });
+      }
       commitPlan(nextTerms, customs);
     },
     [terms, customs, commitPlan],
@@ -954,6 +1045,7 @@ export function DegreePlannerClient({
     setCustoms(emptyCustoms);
     setTerms(built.terms);
     setUnscheduled(built.unscheduled);
+    setPlanMismatches(new Map());
     showToast(`Plan reset for ${startYear}–${startYear + 1}+`);
   }, [
     program,
@@ -967,8 +1059,205 @@ export function DegreePlannerClient({
     showToast,
   ]);
 
+  const switchToCatalogYear = useCallback(
+    async (
+      nextCatalogYear: string,
+      options?: { startYearOverride?: number; reason?: "start" | "manual" },
+    ) => {
+      const currentProg = programRef.current;
+      const effectiveStartYear = options?.startYearOverride ?? startYear;
+
+      if (!currentProg) {
+        setCatalogYear(nextCatalogYear);
+        if (options?.startYearOverride !== undefined) {
+          setStartYear(options.startYearOverride);
+          showToast(
+            `Degree start year set to ${options.startYearOverride} (${nextCatalogYear} plan)`,
+          );
+        } else {
+          showToast(`Plan year set to ${nextCatalogYear}`);
+        }
+        return;
+      }
+
+      if (currentProg.catalog_year === nextCatalogYear) {
+        setCatalogYear(nextCatalogYear);
+        if (options?.startYearOverride !== undefined) {
+          commitPlan(terms, customs, options.startYearOverride, gapYears);
+          showToast(`Degree start year set to ${options.startYearOverride}`);
+        }
+        return;
+      }
+
+      const match = findProgramInCatalogYear(
+        bootstrap.programs,
+        currentProg,
+        nextCatalogYear,
+      );
+
+      if (!match) {
+        if (options?.reason === "start" && options.startYearOverride !== undefined) {
+          commitPlan(terms, customs, options.startYearOverride, gapYears);
+          showToast(
+            `Start year set to ${options.startYearOverride} (${currentProg.name} not in ${nextCatalogYear} catalog)`,
+          );
+        } else {
+          setCatalogYear(nextCatalogYear);
+          showToast(
+            `${currentProg.name} is not in the ${nextCatalogYear} catalog — pick a program`,
+          );
+        }
+        return;
+      }
+
+      setCatalogYear(nextCatalogYear);
+      setPreviousPlan(null);
+      setResetConfirmOpen(false);
+
+      if (typeof window !== "undefined") {
+        const url = new URL(window.location.href);
+        url.searchParams.set("program", match.program_id);
+        window.history.replaceState(null, "", url.toString());
+      }
+
+      setLoadingProgram(true);
+      try {
+        const detail = await loadProgramDetail(match.program_id);
+        const carriedTerms = terms.map((t) => ({
+          ...t,
+          slots: normalizeTermSlots(t.slots),
+        }));
+        const carriedCustoms = new Map(customs);
+        const carriedGapYears = [...gapYears];
+
+        if (carriedTerms.length === 0) {
+          await activateProgram(detail, undefined, effectiveStartYear);
+          showToast(`Switched to ${nextCatalogYear} ${detail.name} plan`);
+          return;
+        }
+
+        // Flag courses carried over that were required in the previous year's
+        // program (or already mismatched) and are not part of the new plan's
+        // required/choose courses.
+        const prevModel = buildModel(currentProg);
+        const nextModel = buildModel(detail);
+        const prevFixed = new Set(prevModel.required.map((r) => r.code));
+        for (const g of prevModel.chooseGroups) {
+          for (const c of g.options) prevFixed.add(c);
+        }
+        const nextFixed = new Set(nextModel.required.map((r) => r.code));
+        for (const g of nextModel.chooseGroups) {
+          for (const c of g.options) nextFixed.add(c);
+        }
+
+        const nextMismatches = new Map<string, string>();
+        for (const code of placedCodes(carriedTerms)) {
+          if (carriedCustoms.has(code)) continue;
+          if (findEquivalentInSet(code, nextFixed, equivMap)) continue;
+          if (prevFixed.has(code) || planMismatches.has(code)) {
+            nextMismatches.set(
+              code,
+              `Not required in ${detail.catalog_year} plan (from ${currentProg.catalog_year})`,
+            );
+          }
+        }
+
+        const nextPlanName =
+          planName && planName !== currentProg.name ? planName : detail.name;
+
+        setStartYear(effectiveStartYear);
+        setCatalogYear(detail.catalog_year);
+        setGapYears(carriedGapYears);
+        setTerms(carriedTerms);
+        setCustoms(carriedCustoms);
+        setUnscheduled([]);
+        setPlanMismatches(nextMismatches);
+        setProgram(detail);
+        setProgramQuery("");
+        setPlanName(nextPlanName);
+        setEditingPlanName(false);
+
+        persistPlan(
+          detail.program_id,
+          carriedTerms,
+          carriedCustoms,
+          effectiveStartYear,
+          carriedGapYears,
+          nextPlanName,
+        );
+
+        const activeUser = userRef.current;
+        if (activeUser?.email) {
+          void upsertDegreePlan(supabase, {
+            userId: activeUser.id,
+            userEmail: activeUser.email,
+            degreeName: nextPlanName,
+            startYear: effectiveStartYear,
+            catalogYear: detail.catalog_year,
+            programId: detail.program_id,
+            terms: carriedTerms,
+            customs: [...carriedCustoms.values()],
+          })
+            .then((savedRecord) => {
+              setSavedPlans((prev) => [
+                savedRecord,
+                ...prev.filter((p) => p.program_id !== savedRecord.program_id),
+              ]);
+            })
+            .catch(() => {
+              showToast("Could not save plan to your account");
+            });
+        }
+
+        const mismatchCount = nextMismatches.size;
+        showToast(
+          mismatchCount > 0
+            ? `Switched to ${nextCatalogYear} ${detail.name} plan (${mismatchCount} ${mismatchCount === 1 ? "course" : "courses"} flagged)`
+            : `Switched to ${nextCatalogYear} ${detail.name} plan`,
+        );
+      } catch {
+        showToast("Could not load program requirements for that year");
+      } finally {
+        setLoadingProgram(false);
+      }
+    },
+    [
+      activateProgram,
+      bootstrap.programs,
+      commitPlan,
+      customs,
+      equivMap,
+      gapYears,
+      loadProgramDetail,
+      planMismatches,
+      planName,
+      showToast,
+      startYear,
+      supabase,
+      terms,
+    ],
+  );
+
   const handleChangeStartYear = useCallback(
-    (nextYear: number) => {
+    async (nextYear: number) => {
+      const prevDefaultCatalog = resolveCatalogYearForStartYear(
+        startYear,
+        availableCatalogYears,
+      );
+      const nextDefaultCatalog = resolveCatalogYearForStartYear(
+        nextYear,
+        availableCatalogYears,
+      );
+      const wasFollowingStartYear = catalogYear === prevDefaultCatalog;
+
+      if (wasFollowingStartYear && nextDefaultCatalog !== catalogYear) {
+        await switchToCatalogYear(nextDefaultCatalog, {
+          startYearOverride: nextYear,
+          reason: "start",
+        });
+        return;
+      }
+
       if (program) {
         commitPlan(terms, customs, nextYear, gapYears);
       } else {
@@ -976,7 +1265,26 @@ export function DegreePlannerClient({
       }
       showToast(`Degree start year set to ${nextYear}`);
     },
-    [program, terms, customs, gapYears, commitPlan, showToast],
+    [
+      availableCatalogYears,
+      catalogYear,
+      commitPlan,
+      customs,
+      gapYears,
+      program,
+      showToast,
+      startYear,
+      switchToCatalogYear,
+      terms,
+    ],
+  );
+
+  const handleChangeCatalogYear = useCallback(
+    async (nextCatalogYear: string) => {
+      if (nextCatalogYear === catalogYear) return;
+      await switchToCatalogYear(nextCatalogYear, { reason: "manual" });
+    },
+    [catalogYear, switchToCatalogYear],
   );
 
   const handleInsertGapYear = useCallback(
@@ -1274,6 +1582,9 @@ export function DegreePlannerClient({
                                 )}
                               </div>
                               <span className="mt-0.5 block text-[11px] text-zinc-500 dark:text-zinc-400">
+                                {saved.catalog_year
+                                  ? `${saved.catalog_year} plan · `
+                                  : ""}
                                 {saved.start_year
                                   ? `Start ${saved.start_year}`
                                   : "Default start"}{" "}
@@ -1372,22 +1683,44 @@ export function DegreePlannerClient({
               </div>
             )}
 
-            {/* Start Year directly below Plan name */}
-            <label className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400">
-              <span>Start:</span>
-              <select
-                value={startYear}
-                onChange={(e) => handleChangeStartYear(Number(e.target.value))}
-                aria-label="Degree start year"
-                className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs font-medium text-zinc-900 focus:border-blue-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
-              >
-                {startYearOptions.map((y) => (
-                  <option key={y} value={y}>
-                    {y} ({y}–{String(y + 1).slice(-2)})
-                  </option>
-                ))}
-              </select>
-            </label>
+            {/* Start Year & Catalog Year directly below Plan name */}
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400">
+                <span>Start:</span>
+                <select
+                  value={startYear}
+                  onChange={(e) =>
+                    void handleChangeStartYear(Number(e.target.value))
+                  }
+                  aria-label="Degree start year"
+                  className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs font-medium text-zinc-900 focus:border-blue-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+                >
+                  {startYearOptions.map((y) => (
+                    <option key={y} value={y}>
+                      {y} ({y}–{String(y + 1).slice(-2)})
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400">
+                <span>Catalog:</span>
+                <select
+                  value={catalogYear}
+                  onChange={(e) =>
+                    void handleChangeCatalogYear(e.target.value)
+                  }
+                  aria-label="Program map catalog year"
+                  className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs font-medium text-zinc-900 focus:border-blue-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+                >
+                  {availableCatalogYears.map((cy) => (
+                    <option key={cy} value={cy}>
+                      {cy}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
           </div>
 
           {/* Middle: Degree Planner Title above Search */}
@@ -1960,15 +2293,25 @@ export function DegreePlannerClient({
                                 const isTransfer = Boolean(
                                   isCustom && customs.get(code)?.transfer,
                                 );
-                                const flag = prereqFlag(
+                                const baseFlag = prereqFlag(
                                   code,
                                   termIndex,
                                   terms,
                                   catalogMap,
                                   offeringsMap,
                                   customs,
-                                  { startYear, context: offeringContext },
+                                  { startYear, context: offeringContext, equivMap },
                                 );
+                                const mismatchReason = planMismatches.get(code);
+                                const flag = mismatchReason
+                                  ? {
+                                      cls: "bad" as const,
+                                      icon: "⚠",
+                                      title: baseFlag
+                                        ? `${mismatchReason} · ${baseFlag.title}`
+                                        : mismatchReason,
+                                    }
+                                  : baseFlag;
 
                                 return (
                                   <div
@@ -2019,18 +2362,22 @@ export function DegreePlannerClient({
                                     className={`group relative flex min-h-[38px] cursor-grab items-center gap-2 rounded-lg border px-2 py-1 text-[12.5px] transition-colors active:cursor-grabbing ${
                                       isDragOver
                                         ? "border-blue-500 bg-blue-50 ring-1 ring-blue-500 dark:bg-blue-950/40"
-                                        : isCustom
-                                          ? "border-dashed border-blue-300 bg-blue-50/40 hover:border-blue-400 dark:border-blue-800 dark:bg-blue-950/20"
-                                          : "border-zinc-200 bg-zinc-50/60 hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-950/50 dark:hover:border-zinc-700"
+                                        : mismatchReason
+                                          ? "border-red-300 bg-red-50/60 hover:border-red-400 dark:border-red-800/80 dark:bg-red-950/25 dark:hover:border-red-700"
+                                          : isCustom
+                                            ? "border-dashed border-blue-300 bg-blue-50/40 hover:border-blue-400 dark:border-blue-800 dark:bg-blue-950/20"
+                                            : "border-zinc-200 bg-zinc-50/60 hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-950/50 dark:hover:border-zinc-700"
                                     }`}
                                   >
                                     {flag && (
                                       <div
                                         role="tooltip"
                                         className={`pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 hidden w-max max-w-[260px] -translate-x-1/2 rounded-lg border px-2.5 py-1.5 text-[11.5px] font-medium shadow-lg group-hover:block ${
-                                          flag.cls === "bad"
-                                            ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-700/80 dark:bg-zinc-900 dark:text-amber-300"
-                                            : "border-zinc-200 bg-white text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
+                                          mismatchReason
+                                            ? "border-red-300 bg-red-50 text-red-900 dark:border-red-700/80 dark:bg-zinc-900 dark:text-red-300"
+                                            : flag.cls === "bad"
+                                              ? "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-700/80 dark:bg-zinc-900 dark:text-amber-300"
+                                              : "border-zinc-200 bg-white text-zinc-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
                                         }`}
                                       >
                                         {flag.icon} {flag.title}
@@ -2060,9 +2407,11 @@ export function DegreePlannerClient({
                                     {flag && (
                                       <span
                                         className={`text-[11px] ${
-                                          flag.cls === "bad"
-                                            ? "text-amber-600 dark:text-amber-400"
-                                            : "text-zinc-400"
+                                          mismatchReason
+                                            ? "text-red-600 dark:text-red-400"
+                                            : flag.cls === "bad"
+                                              ? "text-amber-600 dark:text-amber-400"
+                                              : "text-zinc-400"
                                         }`}
                                         title={flag.title}
                                       >
@@ -2183,6 +2532,8 @@ export function DegreePlannerClient({
                 startYear={startYear}
                 customs={customs}
                 unscheduled={unscheduled}
+                planMismatches={planMismatches}
+                equivMap={equivMap}
                 onPickBucket={(bucketKey) => {
                   const emptyTerm = terms.findIndex((t) =>
                     t.slots.includes(null),
@@ -2254,6 +2605,7 @@ export function DegreePlannerClient({
           catalogMap={catalogMap}
           offeringsMap={offeringsMap}
           offeringContext={offeringContext}
+          equivMap={equivMap}
           startYear={startYear}
           customs={customs}
           subjects={subjects}
@@ -2277,6 +2629,7 @@ export function DegreePlannerClient({
           catalogMap={catalogMap}
           offeringsMap={offeringsMap}
           offeringContext={offeringContext}
+          equivMap={equivMap}
           customs={customs}
           model={model}
           onClose={() => setSelectedCourse(null)}
@@ -2304,6 +2657,7 @@ function CourseDetailsModal({
   catalogMap,
   offeringsMap,
   offeringContext,
+  equivMap,
   customs,
   model,
   onClose,
@@ -2315,6 +2669,7 @@ function CourseDetailsModal({
   catalogMap: Map<string, CatalogCourse>;
   offeringsMap: Map<string, import("@/lib/degree-types").OfferingEntry>;
   offeringContext: import("@/lib/degree-types").OfferingContext;
+  equivMap: Map<string, Set<string>>;
   customs: Map<string, CustomCourse>;
   model: import("@/lib/degree-types").RequirementModel | null;
   onClose: () => void;
@@ -2333,8 +2688,9 @@ function CourseDetailsModal({
     catalogMap,
     offeringsMap,
     customs,
-    { startYear, context: offeringContext },
+    { startYear, context: offeringContext, equivMap },
   );
+  const equivalentCodes = [...(equivMap.get(selectedCourse.code) ?? [])].sort();
   const isCustom = customs.has(selectedCourse.code);
   const isTransfer = Boolean(
     isCustom && customs.get(selectedCourse.code)?.transfer,
@@ -2391,6 +2747,14 @@ function CourseDetailsModal({
                     .join(" · ")}
                 </p>
               )}
+            {equivalentCodes.length > 0 && (
+              <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
+                Equivalent / Formerly:{" "}
+                <span className="font-mono font-medium text-zinc-800 dark:text-zinc-200">
+                  {equivalentCodes.join(", ")}
+                </span>
+              </p>
+            )}
           </div>
           <button
             type="button"

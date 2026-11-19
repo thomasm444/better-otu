@@ -3,7 +3,7 @@
 Supabase (Postgres), all in the `public` schema, populated from Banner course-schedule scrapes, Undergraduate Academic Calendar scrapes, campus map/booking feeds, and authenticated student data.
 
 The authoritative DDL lives in [`supabase/migrations/`](../supabase/migrations/) —
-eight committed, idempotent migrations. Apply them oldest first:
+ten committed, idempotent migrations. Apply them oldest first:
 
 | migration | what it does |
 | --- | --- |
@@ -15,6 +15,8 @@ eight committed, idempotent migrations. Apply them oldest first:
 | `20261112200000_degree_plans.sql` | creates `degree_plans` for per-user saved degree plans with user-scoped RLS |
 | `20261113143000_degree_plans_columns.sql` | adds `degree_name` and `start_year` to `degree_plans` and orders `user_email`, `degree_name` first |
 | `20261115000000_exam_schedules.sql` | creates `exam_schedules` and adds `booking_date` to `room_detailed_reservations` |
+| `20261118000000_degree_catalog_years.sql` | adds `catalog_year` (e.g. `2026-27`, `2025-26`) to `degree_programs`, `catalog_courses`, and `degree_plans`, plus `(catalog_year, name, program_id)` index |
+| `20261118120000_course_formerly_codes.sql` | adds `formerly_codes text[]` to `catalog_courses` to link renumbered courses (e.g. `CSCI 1050U` ↔ `CSCI 2050U`) |
 
 ```bash
 # With the Supabase CLI
@@ -198,8 +200,8 @@ child rows for the old term will linger.
 ### Degree planner (`degree_subjects`, `catalog_courses`, `degree_programs`, `program_*`)
 
 ```bash
-cd python_scripts
-python ingest_degrees.py   # reads jsons/degrees.json + jsons/courses_parsed.json
+python local/ingest_degrees.py             # ingests all years in local/jsons/years/{year}/degrees.json (oldest → newest)
+python local/ingest_degrees.py --rebuild   # re-parses HTMLs for each year before ingesting
 ```
 
 ### Campus map, bookings & exams
@@ -311,22 +313,22 @@ Created by `20261112000000_campus_map_schema.sql`. All publicly readable (`SELEC
 
 ## Degree Planner tables
 
-Created by `20261112120000_degree_planner_schema.sql`. All publicly readable (`SELECT` for `anon`, `authenticated`).
+Created by `20261112120000_degree_planner_schema.sql` and extended for multi-year catalogs by `20261118000000_degree_catalog_years.sql`. All publicly readable (`SELECT` for `anon`, `authenticated`).
 
 - `degree_subjects` (`code` PK, `name`, `faculty`, `course_count`)
-- `catalog_courses` (`code` PK, `subject` FK → `degree_subjects.code`, `prerequisite_codes`, `prerequisite_ast`, `terms_offered`, etc.) — academic calendar definitions, distinct from `public.courses` (Banner sections)
-- `degree_programs` (`program_id` PK, `name`, `faculty`, `degree`, `total_credit_hours`, `required_course_codes`, etc.)
-- `program_sections` → `program_groups` → `program_items` → `program_item_courses` (cascade-deleted hierarchy of degree requirements)
+- `catalog_courses` (`code` PK, `catalog_year`, `formerly_codes`, `subject` FK → `degree_subjects.code`, `prerequisite_codes`, `prerequisite_ast`, `terms_offered`, etc.) — academic calendar definitions across all ingested years (`catalog_year` records the most recent year the course appeared in; `formerly_codes` links renumbered courses such as `CSCI 1050U` ← `CSCI 2050U`; older/retired courses are preserved alongside current ones), distinct from `public.courses` (Banner sections)
+- `degree_programs` (`program_id` PK, `catalog_year`, `name`, `faculty`, `degree`, `total_credit_hours`, `required_course_codes`, etc.) — Ontario Tech's `poid` (`program_id`) is unique per `(program, catalog_year)`, so all calendar years (`2016-17` through `2026-27`) coexist cleanly, indexed on `(catalog_year, name, program_id)`
+- `program_sections` → `program_groups` → `program_items` → `program_item_courses` (cascade-deleted hierarchy of degree requirements scoped by `program_id`)
 - `course_offerings_summary` — view over `public.courses` aggregating offered terms, section counts, and max credit hours per `subject_course`.
 
 ## Auth & Student tables
 
-Created by `20261112180000_auth_and_student_courses.sql`, `20261112200000_degree_plans.sql`, and `20261113143000_degree_plans_columns.sql`.
+Created by `20261112180000_auth_and_student_courses.sql`, `20261112200000_degree_plans.sql`, `20261113143000_degree_plans_columns.sql`, and `20261118000000_degree_catalog_years.sql`.
 
 - `hook_before_user_created(event)` — Supabase Auth hook restricting sign-ups to `@ontariotechu.net`.
 - `profiles` (`id` PK → `auth.users.id`, `email`, `full_name`, `avatar_url`) — auto-populated on signup via `handle_new_user()`. RLS: users can `SELECT`/`UPDATE` their own row.
 - `student_courses` (`id` uuid PK, `user_id` → `auth.users.id`, `course_code`, `selected_crn`, `semester`, `status`, `grade`; unique `(user_id, course_code, semester)`). RLS: user-scoped CRUD.
-- `degree_plans` (`user_email`, `degree_name`, `start_year`, `program_id`, `terms` jsonb, `customs` jsonb, `user_id`, `id` uuid PK; unique `(user_email, program_id)`). RLS: user-scoped CRUD matching both `auth.uid()` and JWT `email`.
+- `degree_plans` (`user_email`, `degree_name`, `start_year`, `catalog_year`, `program_id`, `terms` jsonb, `customs` jsonb, `user_id`, `id` uuid PK; unique `(user_email, program_id)`). RLS: user-scoped CRUD matching both `auth.uid()` and JWT `email`.
 
 ## Example queries
 
