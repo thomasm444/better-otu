@@ -180,7 +180,7 @@ export function CampusMapView() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [selectedFeature, activeModalFeature, isUnmappedOpen]);
 
-  // Initialize current Toronto week/day/time on mount and load static campus geometries
+  // Initialize current Toronto week/day/time (plus URL presets like ?filter=available&q=...) and load static campus geometries
   useEffect(() => {
     let mounted = true;
     queueMicrotask(() => {
@@ -189,6 +189,30 @@ export function CampusMapView() {
       setCurrentWeekStart(initial.weekStart);
       setCurrentDay(initial.dayIndex);
       setCurrentSlotStart(initial.slotStart);
+
+      const params = new URLSearchParams(window.location.search);
+      const qParam = params.get("q")?.trim();
+      if (qParam) {
+        setSearchQuery(qParam);
+        setIsSearchOpen(true);
+      }
+
+      const filterParam = params.get("filter")?.toLowerCase();
+      if (filterParam === "available") {
+        setCurrentMode("availability");
+        setShowAvailable(true);
+        setShowInUse(false);
+        setShowUnscheduled(false);
+      } else if (filterParam === "all") {
+        setShowAvailable(true);
+        setShowInUse(true);
+        setShowUnscheduled(true);
+      }
+
+      const venueParam = params.get("venue")?.toLowerCase();
+      if (venueParam === "north" || venueParam === "downtown" || venueParam === "whitby") {
+        setActiveVenue(venueParam);
+      }
     });
 
     const controller = new AbortController();
@@ -310,9 +334,17 @@ export function CampusMapView() {
         },
       );
 
+      const initialVenueParam = new URLSearchParams(window.location.search)
+        .get("venue")
+        ?.toLowerCase();
+      const initialVenue =
+        initialVenueParam === "downtown" || initialVenueParam === "whitby"
+          ? VENUES[initialVenueParam]
+          : VENUES.north;
+
       const map = L.map(mapContainerRef.current, {
-        center: [VENUES.north.lat, VENUES.north.lng],
-        zoom: VENUES.north.zoom,
+        center: [initialVenue.lat, initialVenue.lng],
+        zoom: initialVenue.zoom,
         layers: [osm],
         preferCanvas: true,
         zoomControl: false,

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import type { Vocab } from "@/lib/queries";
 import { WeekScheduleGrid } from "./timetable-grid";
 import { AddCourseModal } from "./add-course-modal";
@@ -29,8 +29,19 @@ export function ScheduleContainer({
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [modalDefaultWeek, setModalDefaultWeek] = useState<1 | 2>(1);
+  const [initialModalQuery, setInitialModalQuery] = useState<string>("");
   const [activeView, setActiveView] = useState<"both" | "week1" | "week2">("both");
   const [fitToHeight, setFitToHeight] = useState(true);
+
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search).get("q")?.trim();
+    if (q) {
+      queueMicrotask(() => {
+        setInitialModalQuery(q);
+        setIsAddModalOpen(true);
+      });
+    }
+  }, []);
 
   const handleAddCourse = (
     blocks: ScheduleBlock | ScheduleBlock[],
@@ -203,10 +214,14 @@ export function ScheduleContainer({
       {/* Add Course Modal */}
       {isAddModalOpen && (
         <AddCourseModal
-          key={modalDefaultWeek}
+          key={`${modalDefaultWeek}-${initialModalQuery}`}
           isOpen={isAddModalOpen}
-          onClose={() => setIsAddModalOpen(false)}
+          onClose={() => {
+            setIsAddModalOpen(false);
+            setInitialModalQuery("");
+          }}
           defaultWeek={modalDefaultWeek}
+          initialSearchQuery={initialModalQuery}
           vocab={vocab}
           termLabel={termLabel}
           onAddCourse={handleAddCourse}

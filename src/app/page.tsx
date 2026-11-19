@@ -1,62 +1,32 @@
-import Link from "next/link";
+import { TERM_LABEL } from "@/lib/queries";
 
-import { AuthButton } from "@/components/auth-button";
+import { PortalDashboard } from "./_components/portal-dashboard";
+
+export const metadata = {
+  title: "Better OTU | Ontario Tech University Student Portal",
+  description:
+    "Interactive campus room availability, course timetables, and degree planning built for Ontario Tech University students.",
+};
 
 export default function Home() {
   return (
-    <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-16 font-sans">
-      <header className="mb-12 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
-            Better OTU
-          </h1>
-          <p className="mt-2 text-base text-zinc-600 dark:text-zinc-400">
-            Ontario Tech University Student Portal
-          </p>
-        </div>
-        <AuthButton />
-      </header>
+    <main className="relative flex min-h-screen flex-1 flex-col overflow-x-clip bg-[#F8FAFC] font-sans text-slate-900 dark:bg-[#070B14] dark:text-slate-100">
+      {/* Subtle Light Dot-Grid Texture */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(rgba(0,60,113,0.1)_1px,transparent_1px)] [background-size:22px_22px] [mask-image:radial-gradient(ellipse_85%_75%_at_50%_15%,#000_60%,transparent_100%)] dark:bg-[radial-gradient(rgba(148,163,184,0.14)_1px,transparent_1px)]"
+      />
 
-      <nav className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Link
-          href="/course-schedules"
-          className="group rounded-xl border border-black/[.08] p-6 transition-all hover:border-black/20 hover:bg-black/[.02] dark:border-white/[.12] dark:hover:border-white/25 dark:hover:bg-white/[.04]"
-        >
-          <span className="text-3xl">🗓️</span>
-          <h2 className="mt-4 text-lg font-medium text-zinc-900 group-hover:text-blue-600 dark:text-zinc-100 dark:group-hover:text-blue-400">
-            Course Schedules &rarr;
-          </h2>
-          <p className="mt-1 text-sm text-zinc-500">
-            Browse course sections &amp; timetables
-          </p>
-        </Link>
+      {/* Soft Radial Top Gradient Glow — Ontario Tech Future Blue (#003C71) & Tech Tangerine (#E75D2A) */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 top-0 h-[440px] bg-[radial-gradient(ellipse_62%_58%_at_22%_-6%,rgba(0,60,113,0.15),transparent_70%),radial-gradient(ellipse_50%_46%_at_84%_-8%,rgba(231,93,42,0.13),transparent_68%)] dark:bg-[radial-gradient(ellipse_62%_58%_at_22%_-6%,rgba(0,60,113,0.45),transparent_70%),radial-gradient(ellipse_50%_46%_at_84%_-8%,rgba(231,93,42,0.22),transparent_68%)]"
+      />
 
-        <Link
-          href="/campus-map"
-          className="group rounded-xl border border-black/[.08] p-6 transition-all hover:border-black/20 hover:bg-black/[.02] dark:border-white/[.12] dark:hover:border-white/25 dark:hover:bg-white/[.04]"
-        >
-          <span className="text-3xl">📍</span>
-          <h2 className="mt-4 text-lg font-medium text-zinc-900 group-hover:text-blue-600 dark:text-zinc-100 dark:group-hover:text-blue-400">
-            Campus Map &rarr;
-          </h2>
-          <p className="mt-1 text-sm text-zinc-500">
-            North &amp; Downtown campus navigation
-          </p>
-        </Link>
-
-        <Link
-          href="/degree-planner"
-          className="group rounded-xl border border-black/[.08] p-6 transition-all hover:border-black/20 hover:bg-black/[.02] dark:border-white/[.12] dark:hover:border-white/25 dark:hover:bg-white/[.04]"
-        >
-          <span className="text-3xl">🎓</span>
-          <h2 className="mt-4 text-lg font-medium text-zinc-900 group-hover:text-blue-600 dark:text-zinc-100 dark:group-hover:text-blue-400">
-            Degree Planner &rarr;
-          </h2>
-          <p className="mt-1 text-sm text-zinc-500">
-            Program requirements &amp; course pathways
-          </p>
-        </Link>
-      </nav>
+      {/* Dashboard Content */}
+      <div className="relative z-10 flex flex-1 flex-col">
+        <PortalDashboard termLabel={TERM_LABEL} />
+      </div>
     </main>
   );
 }

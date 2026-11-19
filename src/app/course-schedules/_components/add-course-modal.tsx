@@ -16,6 +16,7 @@ interface AddCourseModalProps {
   isOpen: boolean;
   onClose: () => void;
   defaultWeek?: 1 | 2;
+  initialSearchQuery?: string;
   vocab: Vocab;
   termLabel: string;
   onAddCourse: (
@@ -54,10 +55,15 @@ export function AddCourseModal({
   isOpen,
   onClose,
   defaultWeek = 1,
+  initialSearchQuery,
   vocab,
   termLabel,
   onAddCourse,
 }: AddCourseModalProps) {
+  const trimmedInitial = initialSearchQuery?.trim() ?? "";
+  const isSubjectOnly = /^[A-Za-z]{2,5}$/.test(trimmedInitial);
+  const isCrnOnly = /^\d{4,6}$/.test(trimmedInitial);
+
   const listPrefix = useId();
   const [mode, setMode] = useState<"search" | "custom">("search");
   const [targetWeek, setTargetWeek] = useState<"week1" | "week2" | "both">(
@@ -66,11 +72,13 @@ export function AddCourseModal({
   const [color, setColor] = useState<ColorTheme>("blue");
 
   // Database search filters & results
-  const [subject, setSubject] = useState("");
-  const [courseCode, setCourseCode] = useState("");
+  const [subject, setSubject] = useState(isSubjectOnly ? trimmedInitial.toUpperCase() : "");
+  const [courseCode, setCourseCode] = useState(
+    trimmedInitial && !isSubjectOnly && !isCrnOnly ? trimmedInitial.toUpperCase() : "",
+  );
   const [classType, setClassType] = useState("");
   const [instructor, setInstructor] = useState("");
-  const [crnFilter, setCrnFilter] = useState("");
+  const [crnFilter, setCrnFilter] = useState(isCrnOnly ? trimmedInitial : "");
   const [page, setPage] = useState(1);
 
   const [results, setResults] = useState<Section[]>([]);
