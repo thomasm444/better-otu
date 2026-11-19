@@ -6,6 +6,8 @@ import {
   collectWarnings,
   courseOf,
   creditsOf,
+  expandWithEquivalents,
+  findEquivalentInSet,
   isOffered,
   matchesBucket,
   placedCodes,
@@ -33,6 +35,8 @@ type RequirementsSidebarProps = {
   startYear: number;
   customs: Map<string, CustomCourse>;
   unscheduled: UnscheduledItem[];
+  planMismatches?: Map<string, string>;
+  equivMap?: Map<string, Set<string>>;
   onPickBucket: (bucketKey: string) => void;
   onOpenTransferPicker: () => void;
   onPlaceTransfer: (code: string) => void;
@@ -49,19 +53,24 @@ export function RequirementsSidebar({
   startYear,
   customs,
   unscheduled,
+  planMismatches,
+  equivMap,
   onPickBucket,
   onOpenTransferPicker,
   onPlaceTransfer,
   onRemoveTransfer,
 }: RequirementsSidebarProps) {
   const placed = placedCodes(terms);
-  const doneRequired = model.required.filter((r) => placed.has(r.code));
+  const doneRequired = model.required.filter((r) =>
+    Boolean(findEquivalentInSet(r.code, placed, equivMap)),
+  );
 
   const fixed = new Set(model.required.map((r) => r.code));
   for (const group of model.chooseGroups) {
     for (const code of group.options) fixed.add(code);
   }
-  const freeCodes = [...placed].filter((code) => !fixed.has(code));
+  const fixedWithEquiv = expandWithEquivalents(fixed, equivMap);
+  const freeCodes = [...placed].filter((code) => !fixedWithEquiv.has(code));
 
   const transfers = [...customs.values()].filter((c) => c.transfer);
   const warnings = collectWarnings(
@@ -71,7 +80,7 @@ export function RequirementsSidebar({
     catalogMap,
     offeringsMap,
     customs,
-    { startYear, context: offeringContext },
+    { startYear, context: offeringContext, planMismatches, equivMap },
   );
 
   const subheader = [program.name, program.credential, program.degree_abbrev]
@@ -187,7 +196,10 @@ export function RequirementsSidebar({
           </summary>
           <ul className="mb-1.5 space-y-0.5 pl-5 pr-1.5">
             {model.required.map((r) => {
-              const done = placed.has(r.code);
+              const matchedCode = findEquivalentInSet(r.code, placed, equivMap);
+              const done = Boolean(matchedCode);
+              const viaEquiv =
+                matchedCode && matchedCode !== r.code ? matchedCode : null;
               const course = courseOf(r.code, catalogMap, customs);
               return (
                 <li
@@ -212,10 +224,19 @@ export function RequirementsSidebar({
                         ? "text-zinc-400 dark:text-zinc-500"
                         : "text-zinc-600 dark:text-zinc-300"
                     }`}
-                    title={course?.title ?? ""}
+                    title={
+                      viaEquiv
+                        ? `${course?.title ?? ""} (satisfied by equivalent ${viaEquiv})`
+                        : (course?.title ?? "")
+                    }
                   >
                     {course?.title ?? ""}
                   </span>
+                  {viaEquiv && (
+                    <span className="shrink-0 rounded bg-emerald-50 px-1 py-0.5 font-mono text-[10px] text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
+                      via {viaEquiv}
+                    </span>
+                  )}
                 </li>
               );
             })}
@@ -233,7 +254,9 @@ export function RequirementsSidebar({
               {(() => {
                 const doneGroups = model.chooseGroups.filter(
                   (g) =>
-                    g.options.filter((c) => placed.has(c)).length >= g.required,
+                    g.options.filter((c) =>
+                      Boolean(findEquivalentInSet(c, placed, equivMap)),
+                    ).length >= g.required,
                 ).length;
                 return (
                   <span
@@ -250,7 +273,9 @@ export function RequirementsSidebar({
             </summary>
             <div className="space-y-1">
               {model.chooseGroups.map((group) => {
-                const hits = group.options.filter((c) => placed.has(c));
+                const hits = group.options.filter((c) =>
+                  Boolean(findEquivalentInSet(c, placed, equivMap)),
+                );
                 const ok = hits.length >= group.required;
                 const available = group.options.filter((c) =>
                   isOffered(c, offeringsMap, customs),

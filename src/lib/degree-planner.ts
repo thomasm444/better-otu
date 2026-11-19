@@ -41,6 +41,173 @@ export function normalizeTermSlots(
 export const DEFAULT_START_YEAR = 2026;
 export const MIN_START_YEAR = 2008;
 export const MAX_START_YEAR = 2027;
+export const MIN_PLAN_CATALOG_YEAR = "2021-22";
+
+/**
+ * Builds an undirected equivalence map from `formerly_codes` on catalog courses
+ * (e.g. CSCI 1050U <-> CSCI 2050U, including transitive chains).
+ * Each key maps to the set of *other* equivalent course codes.
+ */
+export function buildEquivalenceMap(
+  courses: CatalogCourse[],
+): Map<string, Set<string>> {
+  const adj = new Map<string, Set<string>>();
+  const addEdge = (a: string, b: string) => {
+    if (!a || !b || a === b) return;
+    let sa = adj.get(a);
+    if (!sa) {
+      sa = new Set();
+      adj.set(a, sa);
+    }
+    sa.add(b);
+    let sb = adj.get(b);
+    if (!sb) {
+      sb = new Set();
+      adj.set(b, sb);
+    }
+    sb.add(a);
+  };
+
+  for (const course of courses) {
+    for (const former of course.formerly_codes ?? []) {
+      addEdge(course.code, former);
+    }
+  }
+
+  // Compute connected components so transitive renames are all linked
+  const equiv = new Map<string, Set<string>>();
+  const visited = new Set<string>();
+  for (const start of adj.keys()) {
+    if (visited.has(start)) continue;
+    const comp: string[] = [];
+    const queue = [start];
+    visited.add(start);
+    while (queue.length > 0) {
+      const cur = queue.shift()!;
+      comp.push(cur);
+      for (const next of adj.get(cur) ?? []) {
+        if (!visited.has(next)) {
+          visited.add(next);
+          queue.push(next);
+        }
+      }
+    }
+    for (const code of comp) {
+      const peers = new Set(comp.filter((c) => c !== code));
+      if (peers.size > 0) equiv.set(code, peers);
+    }
+  }
+
+  return equiv;
+}
+
+export function findEquivalentInSet(
+  code: string,
+  codeSet: Set<string>,
+  equivMap?: Map<string, Set<string>>,
+): string | null {
+  if (codeSet.has(code)) return code;
+  const peers = equivMap?.get(code);
+  if (!peers) return null;
+  for (const peer of peers) {
+    if (codeSet.has(peer)) return peer;
+  }
+  return null;
+}
+
+export function expandWithEquivalents(
+  codes: Set<string>,
+  equivMap?: Map<string, Set<string>>,
+): Set<string> {
+  if (!equivMap || equivMap.size === 0) return codes;
+  const expanded = new Set<string>(codes);
+  for (const code of codes) {
+    const peers = equivMap.get(code);
+    if (!peers) continue;
+    for (const peer of peers) expanded.add(peer);
+  }
+  return expanded;
+}
+
+export function startYearToCatalogYear(year: number): string {
+  return `${year}-${String(year + 1).slice(-2)}`;
+}
+
+export function catalogYearToStartYear(catalogYear: string): number | null {
+  const match = String(catalogYear).match(/^(\d{4})-/);
+  return match ? Number(match[1]) : null;
+}
+
+export function resolveCatalogYearForStartYear(
+  startYear: number,
+  availableYears: string[],
+): string {
+  const exact = startYearToCatalogYear(startYear);
+  if (availableYears.length === 0) return exact;
+  if (availableYears.includes(exact)) return exact;
+
+  const parsed = availableYears
+    .map((cy) => ({ cy, year: catalogYearToStartYear(cy) }))
+    .filter((item): item is { cy: string; year: number } => item.year !== null)
+    .sort((a, b) => b.year - a.year);
+
+  if (parsed.length === 0) return availableYears[0];
+  if (startYear >= parsed[0].year) return parsed[0].cy;
+  if (startYear <= parsed[parsed.length - 1].year) {
+    return parsed[parsed.length - 1].cy;
+  }
+
+  // Pick closest available catalog year <= startYear
+  for (const item of parsed) {
+    if (item.year <= startYear) return item.cy;
+  }
+  return parsed[parsed.length - 1].cy;
+}
+
+function normalizeProgramNameKey(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[\u2013\u2014-]+/g, "-")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function findProgramInCatalogYear<
+  T extends {
+    program_id: string;
+    catalog_year: string;
+    name: string;
+    credential?: string | null;
+  },
+>(
+  programs: T[],
+  current: { name: string; credential?: string | null },
+  targetCatalogYear: string,
+): T | null {
+  const candidates = programs.filter(
+    (p) => p.catalog_year === targetCatalogYear,
+  );
+  if (candidates.length === 0) return null;
+
+  const targetName = normalizeProgramNameKey(current.name);
+  const targetCred = (current.credential ?? "").trim().toLowerCase();
+
+  if (targetCred) {
+    const exactWithCred = candidates.find(
+      (p) =>
+        normalizeProgramNameKey(p.name) === targetName &&
+        (p.credential ?? "").trim().toLowerCase() === targetCred,
+    );
+    if (exactWithCred) return exactWithCred;
+  }
+
+  const exactName = candidates.find(
+    (p) => normalizeProgramNameKey(p.name) === targetName,
+  );
+  if (exactName) return exactName;
+
+  return null;
+}
 
 export function parseTermDesc(
   termDesc: string,
@@ -274,6 +441,7 @@ export function placedCodes(terms: PlannerTerm[]): Set<string> {
 export function completedBefore(
   terms: PlannerTerm[],
   termIndex: number,
+  equivMap?: Map<string, Set<string>>,
 ): Set<string> {
   const set = new Set<string>();
   for (let i = 0; i < termIndex; i++) {
@@ -281,7 +449,7 @@ export function completedBefore(
       if (code) set.add(code);
     }
   }
-  return set;
+  return expandWithEquivalents(set, equivMap);
 }
 
 export function evalPrereq(
@@ -322,6 +490,7 @@ export function prereqFlag(
   options?: {
     startYear?: number;
     context?: OfferingContext;
+    equivMap?: Map<string, Set<string>>;
   },
 ): PrereqFlag | null {
   const term = terms[termIndex];
@@ -360,7 +529,7 @@ export function prereqFlag(
   const ast = course.prerequisite_ast;
   if (!ast) return null;
 
-  const completed = completedBefore(terms, termIndex);
+  const completed = completedBefore(terms, termIndex, options?.equivMap);
   const result = evalPrereq(ast, completed);
   if (result === true) return null;
   if (result === null) {
@@ -931,12 +1100,16 @@ export function collectWarnings(
   options?: {
     startYear?: number;
     context?: OfferingContext;
+    planMismatches?: Map<string, string>;
+    equivMap?: Map<string, Set<string>>;
   },
 ): PlannerWarning[] {
   const out: PlannerWarning[] = [];
   const placed = placedCodes(terms);
   const startYear = options?.startYear ?? DEFAULT_START_YEAR;
   const context = options?.context;
+  const planMismatches = options?.planMismatches;
+  const equivMap = options?.equivMap;
 
   terms.forEach((term, termIndex) => {
     const calYear = termCalendarYear(startYear, term.year, term.season);
@@ -950,6 +1123,14 @@ export function collectWarnings(
 
     term.slots.forEach((code, slotIdx) => {
       if (!code) return;
+      const mismatchReason = planMismatches?.get(code);
+      if (mismatchReason) {
+        out.push({
+          id: `mismatch-${termIndex}-${slotIdx}`,
+          code,
+          text: `${code}: ${mismatchReason}.`,
+        });
+      }
       const shouldCheckOfferings =
         term.season !== "Summer" ||
         Boolean(context?.knownTermKeys.has(termKey("Summer", calYear)));
@@ -984,13 +1165,15 @@ export function collectWarnings(
         catalogMap,
         offeringsMap,
         customs,
-        { startYear, context },
+        { startYear, context, equivMap },
       );
       if (flag?.kind === "prereq") {
         const course = courseOf(code, catalogMap, customs);
         const deps =
           course && !("custom" in course) ? course.prerequisite_codes : [];
-        const missingDeps = deps.filter((d) => !placed.has(d));
+        const missingDeps = deps.filter(
+          (d) => !findEquivalentInSet(d, placed, equivMap),
+        );
         const needs = missingDeps.length
           ? `${missingDeps.join(" / ")} first`
           : "an earlier-term prerequisite";
@@ -1011,7 +1194,9 @@ export function collectWarnings(
     });
   });
 
-  const missing = model.required.filter((r) => !placed.has(r.code));
+  const missing = model.required.filter(
+    (r) => !findEquivalentInSet(r.code, placed, equivMap),
+  );
   if (missing.length > 0) {
     out.push({
       id: "missing-required",
