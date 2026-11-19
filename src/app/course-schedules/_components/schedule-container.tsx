@@ -13,11 +13,12 @@ import { fetchAllDegreePlans } from "@/lib/degree-plan-storage";
 import { buildModel } from "@/lib/degree-planner";
 import type { DegreeProgramDetail, ElectiveMatch } from "@/lib/degree-types";
 import {
-  extractTermFromDegreePlans,
+  extractAllDegreePlansForTerm,
   loadLocalTermSchedule,
   loadUserTermScheduleFromDb,
   saveLocalTermSchedule,
   syncUserTermScheduleToDb,
+  type DegreePlanImportOption,
 } from "@/lib/schedule-storage";
 import { createClient } from "@/lib/supabase/client";
 
@@ -27,8 +28,8 @@ import {
   annotateScheduleConflicts,
   autoFitPlannedCourses,
   convertScheduleSectionToBlocks,
-  findValidSectionComboForCourse,
   formatTimeDisplay,
+  getSingleSectionCrnsForCourse,
   mergeBlockedSlots,
   type BlockedTimeSlot,
   type ColorTheme,
@@ -40,6 +41,7 @@ import {
   type ScheduleSection,
   type ScheduleTermInfo,
   type ScheduleViewMode,
+  type SectionGridPickerTarget,
   type TermScheduleCatalog,
 } from "../types";
 import { CalendarExportModal } from "./calendar-export-modal";
@@ -138,14 +140,15 @@ export function ScheduleContainer({
     Array<{ id: string; label: string; match: ElectiveMatch }>
   >([]);
 
-  const [degreePlanImportInfo, setDegreePlanImportInfo] = useState<{
-    sourceLabel: string | null;
-    termCourseCodes: string[];
-    priorCompleted: string[];
-  }>({ sourceLabel: null, termCourseCodes: [], priorCompleted: [] });
+  const [degreePlanOptions, setDegreePlanOptions] = useState<
+    DegreePlanImportOption[]
+  >([]);
+  const [importMenuOpen, setImportMenuOpen] = useState(false);
 
   const [hoverPreviewSection, setHoverPreviewSection] =
     useState<ScheduleSection | null>(null);
+  const [gridSectionPicker, setGridSectionPicker] =
+    useState<SectionGridPickerTarget | null>(null);
   const [focusedCourseCode, setFocusedCourseCode] = useState<string | null>(
     null,
   );
@@ -168,6 +171,7 @@ export function ScheduleContainer({
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const blockMenuRef = useRef<HTMLDivElement>(null);
+  const importMenuRef = useRef<HTMLDivElement>(null);
 
   const showToast = useCallback((msg: string) => {
     setToastMsg(msg);
@@ -189,6 +193,21 @@ export function ScheduleContainer({
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
   }, [blockMenuOpen]);
+
+  // Close degree-plan import popover on outside click
+  useEffect(() => {
+    if (!importMenuOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (
+        importMenuRef.current &&
+        !importMenuRef.current.contains(e.target as Node)
+      ) {
+        setImportMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [importMenuOpen]);
 
   // Auth listener
   useEffect(() => {
@@ -222,57 +241,26 @@ export function ScheduleContainer({
   }, [catalog.courses]);
 
   const buildEntriesFromCourseCodes = useCallback(
-    (
-      codes: string[],
-      currentBlocked: BlockedTimeSlot[],
-      existingColorStart = 0,
-    ): PlannedCourseEntry[] => {
+    (codes: string[], existingColorStart = 0): PlannedCourseEntry[] => {
       const seen = new Set<string>();
       const entries: PlannedCourseEntry[] = [];
       let colorIdx = existingColorStart;
 
       for (const raw of codes) {
         const code = raw.trim().toUpperCase();
-        if (!code || seen.has(code) || !courseMap.has(code)) continue;
+        const course = courseMap.get(code);
+        if (!code || seen.has(code) || !course) continue;
         seen.add(code);
         entries.push({
           courseCode: code,
           mode: "planned",
-          selectedCrns: {},
+          selectedCrns: getSingleSectionCrnsForCourse(course),
           color: COURSE_COLOR_PALETTE[colorIdx % COURSE_COLOR_PALETTE.length],
         });
         colorIdx++;
       }
 
-      if (entries.length === 0) return [];
-
-      const fitted = autoFitPlannedCourses(entries, courseMap, currentBlocked);
-      if (fitted) {
-        return entries.map((e) => ({
-          ...e,
-          selectedCrns: fitted[e.courseCode] ?? {},
-        }));
-      }
-
-      // Greedy per-course assignment if no global conflict-free combo exists
-      let runningBlocks: ScheduleBlock[] = [];
-      return entries.map((entry) => {
-        const course = courseMap.get(entry.courseCode);
-        if (!course) return entry;
-        const combo =
-          findValidSectionComboForCourse(course, runningBlocks, currentBlocked, {
-            allowConflictingFallback: true,
-          }) ?? {};
-        for (const crn of Object.values(combo)) {
-          const sec = course.sections.find((s) => s.crn === crn);
-          if (sec) {
-            runningBlocks = runningBlocks.concat(
-              convertScheduleSectionToBlocks(sec, entry.color, "planned"),
-            );
-          }
-        }
-        return { ...entry, selectedCrns: combo };
-      });
+      return entries;
     },
     [courseMap],
   );
@@ -321,12 +309,11 @@ export function ScheduleContainer({
 
       if (cancelled) return;
 
-      const degInfo = extractTermFromDegreePlans(remotePlans, termInfo);
-      setDegreePlanImportInfo({
-        sourceLabel: degInfo.sourceLabel,
-        termCourseCodes: degInfo.termCourseCodes,
-        priorCompleted: degInfo.completedPriorCourseCodes,
-      });
+      const planOptions = extractAllDegreePlansForTerm(remotePlans, termInfo);
+      setDegreePlanOptions(planOptions);
+      const primaryPlanForPrereqs =
+        planOptions.find((p) => p.termCourseCodes.length > 0) ??
+        planOptions.find((p) => p.completedPriorCourseCodes.length > 0);
 
       // Optionally load program elective buckets from the active Degree Plan
       const latestProgId = remotePlans[0]?.program_id;
@@ -364,7 +351,7 @@ export function ScheduleContainer({
       const mergedCompleted = [
         ...new Set([
           ...(local?.completedCourses ?? []),
-          ...degInfo.completedPriorCourseCodes,
+          ...(primaryPlanForPrereqs?.completedPriorCourseCodes ?? []),
           ...dbCompleted,
         ]),
       ].sort();
@@ -379,32 +366,16 @@ export function ScheduleContainer({
       let nextCustom: ScheduleBlock[] = [];
 
       if (dbState?.hasAnyRows) {
-        // Fill any missing CRNs on DB rows (e.g., rows imported from Degree Plan without CRNs)
-        let runningBlocks: ScheduleBlock[] = [];
         const hydratedDbCourses = dbState.plannedCourses.map((entry) => {
           const course = courseMap.get(entry.courseCode);
           if (!course) return entry;
-          const hasAllSelected =
-            Object.keys(entry.selectedCrns).length > 0 ||
-            course.requiredComponents.length === 0;
-          const selectedCrns = hasAllSelected
-            ? entry.selectedCrns
-            : (findValidSectionComboForCourse(
-                course,
-                runningBlocks,
-                dbState!.blockedSlots,
-                { allowConflictingFallback: true },
-              ) ?? {});
-
-          for (const crn of Object.values(selectedCrns)) {
-            const sec = course.sections.find((s) => s.crn === crn);
-            if (sec) {
-              runningBlocks = runningBlocks.concat(
-                convertScheduleSectionToBlocks(sec, entry.color, "planned"),
-              );
-            }
-          }
-          return { ...entry, selectedCrns };
+          return {
+            ...entry,
+            selectedCrns: {
+              ...getSingleSectionCrnsForCourse(course),
+              ...entry.selectedCrns,
+            },
+          };
         });
 
         // Keep local exploring courses alongside DB planned courses
@@ -427,20 +398,10 @@ export function ScheduleContainer({
         nextPlanned = local.plannedCourses;
         nextBlocked = local.blockedSlots;
         nextCustom = local.customBlocks;
-        setSyncStatus(user ? "local" : "local");
+        setSyncStatus("local");
         if (user) {
           // Promote guest local schedule up to DB on sign-in
           userDirtyRef.current = true;
-        }
-      } else if (degInfo.termCourseCodes.length > 0) {
-        nextPlanned = buildEntriesFromCourseCodes(degInfo.termCourseCodes, []);
-        if (nextPlanned.length > 0) {
-          showToast(
-            `Loaded ${nextPlanned.length} courses for ${termInfo.label} from your Degree Plan`,
-          );
-          if (user) {
-            userDirtyRef.current = true;
-          }
         }
       }
 
@@ -455,16 +416,7 @@ export function ScheduleContainer({
     return () => {
       cancelled = true;
     };
-  }, [
-    activeTerm,
-    authReady,
-    user,
-    terms,
-    supabase,
-    courseMap,
-    buildEntriesFromCourseCodes,
-    showToast,
-  ]);
+  }, [activeTerm, authReady, user, terms, supabase, courseMap]);
 
   // Persist changes to localStorage + Supabase (debounced)
   useEffect(() => {
@@ -522,6 +474,8 @@ export function ScheduleContainer({
   const handleTermChange = async (nextTerm: string) => {
     if (nextTerm === activeTerm) return;
     setHoverPreviewSection(null);
+    setGridSectionPicker(null);
+    setImportMenuOpen(false);
     const cached = catalogCacheRef.current.get(nextTerm);
     if (cached) {
       setCatalog(cached);
@@ -616,29 +570,35 @@ export function ScheduleContainer({
       }
     }
 
-    const annotated = annotateScheduleConflicts(blocks, blockedSlots);
-    const conflicts = annotated.filter((b) => b.isConflict).length;
+    const baseAnnotated = annotateScheduleConflicts(blocks, blockedSlots);
+    const conflicts = baseAnnotated.filter((b) => b.isConflict).length;
 
+    let gridAnnotated = baseAnnotated;
     if (hoverPreviewSection) {
-      blocks.push(
+      const gridBlocks = blocks.filter(
+        (b) =>
+          !(
+            b.courseCode === hoverPreviewSection.courseCode &&
+            b.component === hoverPreviewSection.component
+          ),
+      );
+      const previewColor =
+        plannedCourses.find(
+          (p) => p.courseCode === hoverPreviewSection.courseCode,
+        )?.color ?? "blue";
+      gridAnnotated = [
+        ...annotateScheduleConflicts(gridBlocks, blockedSlots),
         ...convertScheduleSectionToBlocks(
           hoverPreviewSection,
-          "blue",
+          previewColor,
           "preview",
         ),
-      );
-      annotated.push(
-        ...convertScheduleSectionToBlocks(
-          hoverPreviewSection,
-          "blue",
-          "preview",
-        ),
-      );
+      ];
     }
 
     return {
       rawScheduleBlocks: blocks,
-      annotatedBlocks: annotated,
+      annotatedBlocks: gridAnnotated,
       asyncCoursesSummary: asyncList,
       activeCrns: [...new Set(crns)].sort(),
       totalPlannedCredits: plannedCredits,
@@ -662,31 +622,14 @@ export function ScheduleContainer({
       courseCode: string,
       mode: "planned" | "exploring",
       preferredCrns?: Record<string, string>,
-      deliveryPrefs?: {
-        requireOnline?: boolean;
-        requireAsync?: boolean;
-        requireOpenSeats?: boolean;
-      },
     ) => {
       const course = courseMap.get(courseCode);
       if (!course) return;
 
-      const pickedCombo =
-        findValidSectionComboForCourse(
-          course,
-          rawScheduleBlocks,
-          blockedSlots,
-          {
-            currentSelections: preferredCrns,
-            requireOnline: deliveryPrefs?.requireOnline,
-            requireAsync: deliveryPrefs?.requireAsync,
-            requireOpenSeats: deliveryPrefs?.requireOpenSeats,
-            ignoreCourseCode: courseCode,
-            allowConflictingFallback: true,
-          },
-        ) ??
-        preferredCrns ??
-        {};
+      const pickedCombo = {
+        ...getSingleSectionCrnsForCourse(course),
+        ...(preferredCrns ?? {}),
+      };
 
       markDirty();
       setPlannedCourses((prev) => {
@@ -723,30 +666,51 @@ export function ScheduleContainer({
           : `Added ${courseCode} to your schedule`,
       );
     },
-    [courseMap, rawScheduleBlocks, blockedSlots, markDirty, showToast],
+    [courseMap, markDirty, showToast],
   );
 
   const handleSelectSection = useCallback(
     (courseCode: string, component: CourseComponentType, crn: string) => {
       markDirty();
-      setPlannedCourses((prev) =>
-        prev.map((entry) =>
-          entry.courseCode === courseCode
-            ? {
-                ...entry,
-                hidden: false,
-                selectedCrns: { ...entry.selectedCrns, [component]: crn },
-              }
-            : entry,
-        ),
-      );
+      setIsEditMode(true);
+      setHoverPreviewSection(null);
+      setPlannedCourses((prev) => {
+        const existing = prev.find((entry) => entry.courseCode === courseCode);
+        if (existing) {
+          return prev.map((entry) =>
+            entry.courseCode === courseCode
+              ? {
+                  ...entry,
+                  hidden: false,
+                  selectedCrns: { ...entry.selectedCrns, [component]: crn },
+                }
+              : entry,
+          );
+        }
+        const course = courseMap.get(courseCode);
+        const baseCrns = course ? getSingleSectionCrnsForCourse(course) : {};
+        const nextColor =
+          COURSE_COLOR_PALETTE[prev.length % COURSE_COLOR_PALETTE.length];
+        return [
+          ...prev,
+          {
+            courseCode,
+            mode: "planned",
+            selectedCrns: { ...baseCrns, [component]: crn },
+            color: nextColor,
+          },
+        ];
+      });
     },
-    [markDirty],
+    [courseMap, markDirty],
   );
 
   const handleRemoveCourse = useCallback(
     (courseCode: string) => {
       markDirty();
+      setGridSectionPicker((prev) =>
+        prev?.courseCode === courseCode ? null : prev,
+      );
       setPlannedCourses((prev) =>
         prev.filter((entry) => entry.courseCode !== courseCode),
       );
@@ -921,6 +885,7 @@ export function ScheduleContainer({
     setCustomBlocks([]);
     setBlockedSlots([]);
     setHoverPreviewSection(null);
+    setGridSectionPicker(null);
     showToast("Cleared schedule and blocked times.");
   }, [markDirty, showToast]);
 
@@ -929,43 +894,48 @@ export function ScheduleContainer({
     setPlannedCourses([]);
     setCustomBlocks([]);
     setHoverPreviewSection(null);
+    setGridSectionPicker(null);
     showToast("Cleared all courses from planner.");
   }, [markDirty, showToast]);
 
-  const handleImportFromDegreePlan = () => {
-    if (degreePlanImportInfo.termCourseCodes.length === 0) return;
-    markDirty();
+  const handleImportFromDegreePlan = (plan: DegreePlanImportOption) => {
+    setImportMenuOpen(false);
+    if (plan.termCourseCodes.length === 0) {
+      showToast(
+        `"${plan.label}" has no courses scheduled for ${catalog.termLabel}.`,
+      );
+      return;
+    }
+
     const existingSet = new Set(plannedCourses.map((c) => c.courseCode));
-    const newCodes = degreePlanImportInfo.termCourseCodes.filter(
+    const newCodes = plan.termCourseCodes.filter(
       (c) => !existingSet.has(c.trim().toUpperCase()),
     );
     const imported = buildEntriesFromCourseCodes(
       newCodes,
-      blockedSlots,
       plannedCourses.length,
     );
+
     if (imported.length === 0) {
-      showToast("All courses from this term's Degree Plan are already added.");
+      showToast(
+        newCodes.length === 0
+          ? `All courses from "${plan.label}" for ${catalog.termLabel} are already added.`
+          : `None of the courses in "${plan.label}" are offered in ${catalog.termLabel}.`,
+      );
       return;
     }
-    const merged = [...plannedCourses, ...imported];
-    const refitted = autoFitPlannedCourses(
-      merged,
-      courseMap,
-      blockedSlots,
-      customBlocks,
-    );
-    setPlannedCourses(
-      refitted
-        ? merged.map((e) =>
-            refitted[e.courseCode]
-              ? { ...e, selectedCrns: refitted[e.courseCode] }
-              : e,
-          )
-        : merged,
-    );
+
+    markDirty();
+    setPlannedCourses((prev) => [...prev, ...imported]);
+
+    if (plan.completedPriorCourseCodes.length > 0) {
+      setCompletedCourses((prev) =>
+        [...new Set([...prev, ...plan.completedPriorCourseCodes])].sort(),
+      );
+    }
+
     showToast(
-      `Imported ${imported.length} course${imported.length === 1 ? "" : "s"} from ${degreePlanImportInfo.sourceLabel ?? "Degree Plan"}`,
+      `Imported ${imported.length} course${imported.length === 1 ? "" : "s"} from ${plan.label}`,
     );
   };
 
@@ -1085,6 +1055,7 @@ export function ScheduleContainer({
                     if (!next) {
                       setIsBlockingMode(false);
                       setBlockMenuOpen(false);
+                      setImportMenuOpen(false);
                     }
                     return next;
                   });
@@ -1104,7 +1075,10 @@ export function ScheduleContainer({
                   <div className="relative" ref={blockMenuRef}>
                     <button
                       type="button"
-                      onClick={() => setBlockMenuOpen((v) => !v)}
+                      onClick={() => {
+                        setImportMenuOpen(false);
+                        setBlockMenuOpen((v) => !v);
+                      }}
                       className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition ${
                         isBlockingMode || blockedSlots.length > 0
                           ? "border-rose-300 bg-rose-50 text-rose-800 dark:border-rose-800 dark:bg-rose-950/50 dark:text-rose-200"
@@ -1248,16 +1222,81 @@ export function ScheduleContainer({
                     </button>
                   )}
 
-                  {/* Import from Degree Plan */}
-                  {degreePlanImportInfo.termCourseCodes.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={handleImportFromDegreePlan}
-                      className="rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
-                      title={`Import ${catalog.termLabel} courses from your saved Degree Plan`}
-                    >
-                      Import Degree Plan
-                    </button>
+                  {/* Import from Degree Plan Picker */}
+                  {degreePlanOptions.length > 0 && (
+                    <div className="relative" ref={importMenuRef}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBlockMenuOpen(false);
+                          setImportMenuOpen((v) => !v);
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                        title={`Choose a saved Degree Plan to import courses for ${catalog.termLabel}`}
+                      >
+                        <span>Import Degree Plan</span>
+                        <span className="rounded-full bg-zinc-100 px-1.5 text-[10px] font-semibold text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">
+                          {degreePlanOptions.length}
+                        </span>
+                      </button>
+
+                      {importMenuOpen && (
+                        <div className="absolute right-0 z-40 mt-2 max-h-80 w-80 max-w-[calc(100vw-2rem)] overflow-auto rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-800 dark:bg-zinc-900">
+                          <div className="border-b border-zinc-100 px-3 py-2 dark:border-zinc-800">
+                            <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                              Import Degree Plan ({degreePlanOptions.length})
+                            </p>
+                            <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                              Pick a plan to import {catalog.termLabel} courses
+                            </p>
+                          </div>
+
+                          <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                            {degreePlanOptions.map((plan) => (
+                              <button
+                                key={plan.id}
+                                type="button"
+                                onClick={() => handleImportFromDegreePlan(plan)}
+                                className="flex w-full flex-col gap-1 px-3 py-2.5 text-left transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/60"
+                              >
+                                <div className="flex items-start justify-between gap-2">
+                                  <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
+                                    {plan.label}
+                                  </span>
+                                  <span
+                                    className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                                      plan.termCourseCodes.length > 0
+                                        ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300"
+                                        : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
+                                    }`}
+                                  >
+                                    {plan.termCourseCodes.length} in{" "}
+                                    {catalog.termLabel}
+                                  </span>
+                                </div>
+
+                                <span className="text-[10.5px] text-zinc-500 dark:text-zinc-400">
+                                  {plan.catalogYear
+                                    ? `${plan.catalogYear} plan · `
+                                    : ""}
+                                  Start {plan.startYear} · {plan.totalCourseCount}{" "}
+                                  total{" "}
+                                  {plan.totalCourseCount === 1
+                                    ? "course"
+                                    : "courses"}
+                                </span>
+
+                                <span className="line-clamp-2 text-[10.5px] text-zinc-600 dark:text-zinc-300">
+                                  {plan.termCourseCodes.length > 0
+                                    ? plan.termCourseCodes.join(", ")
+                                    : `No courses scheduled for ${catalog.termLabel}`}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   )}
 
                   {/* Clear Schedule */}
@@ -1382,6 +1421,11 @@ export function ScheduleContainer({
             courses={annotatedBlocks}
             blockedSlots={blockedSlots}
             courseMap={courseMap}
+            gridSectionPicker={gridSectionPicker}
+            onChangeGridSectionPicker={(target) => {
+              setHoverPreviewSection(null);
+              setGridSectionPicker(target);
+            }}
             isEditMode={isEditMode}
             fitToHeight={fitToHeight}
             isBlockingMode={isBlockingMode}
@@ -1446,6 +1490,14 @@ export function ScheduleContainer({
             expandedCompletedSet={expandedCompletedSet}
             programElectives={programElectives}
             focusedCourseCode={focusedCourseCode}
+            gridSectionPicker={gridSectionPicker}
+            onChangeGridSectionPicker={(target) => {
+              setHoverPreviewSection(null);
+              setGridSectionPicker(target);
+              if (target) {
+                setMobileTab("schedule");
+              }
+            }}
             isEditMode={isEditMode}
             onEnableEditMode={() => setIsEditMode(true)}
             onClearPlanner={handleClearPlanner}

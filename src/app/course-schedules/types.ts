@@ -364,6 +364,11 @@ export interface BlockedTimeSlot {
   label: string;
 }
 
+export interface SectionGridPickerTarget {
+  courseCode: string;
+  component: CourseComponentType;
+}
+
 export interface WeekScheduleProps {
   /** View mode controlling combined biweekly side-by-side vs single week */
   viewMode: "combined" | "week1" | "week2";
@@ -377,6 +382,10 @@ export interface WeekScheduleProps {
   blockedSlots?: BlockedTimeSlot[];
   /** Course catalog map for drag-to-snap ghost targets */
   courseMap?: Map<string, ScheduleCourseGroup>;
+  /** Active course+component whose sections are displayed on the grid for click-to-schedule */
+  gridSectionPicker?: SectionGridPickerTarget | null;
+  /** Callback to open/switch or close the grid section picker overlay */
+  onChangeGridSectionPicker?: (target: SectionGridPickerTarget | null) => void;
   /** Whether edit mode is active */
   isEditMode?: boolean;
   /** Earliest start hour on the grid (default: 8 = 8:00 AM) */
@@ -745,6 +754,19 @@ export function areCourseSectionsLinkCompatible(
     }
   }
   return true;
+}
+
+export function getSingleSectionCrnsForCourse(
+  course: ScheduleCourseGroup,
+): Record<string, string> {
+  const selected: Record<string, string> = {};
+  for (const comp of course.requiredComponents) {
+    const compSections = course.sections.filter((s) => s.component === comp);
+    if (compSections.length === 1) {
+      selected[comp] = compSections[0].crn;
+    }
+  }
+  return selected;
 }
 
 export function findValidSectionComboForCourse(

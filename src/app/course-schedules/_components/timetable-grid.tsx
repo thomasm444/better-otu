@@ -15,6 +15,7 @@ import {
   type CourseComponentType,
   type DayOfWeek,
   type ScheduleBlock,
+  type ScheduleCourseGroup,
   type WeekPattern,
   type WeekScheduleProps,
 } from "../types";
@@ -26,6 +27,7 @@ interface PositionedBlock {
 }
 
 interface GhostTargetSlot {
+  id: string;
   crn: string;
   day: DayOfWeek;
   startTime: string;
@@ -39,6 +41,12 @@ interface GhostTargetSlot {
   label: string;
 }
 
+interface PositionedGhost {
+  ghost: GhostTargetSlot;
+  leftPercent: number;
+  widthPercent: number;
+}
+
 interface CourseDragState {
   sourceBlock: ScheduleBlock;
   component: CourseComponentType;
@@ -46,11 +54,19 @@ interface CourseDragState {
   hoveredCrn: string | null;
 }
 
-function layoutDayBlocks(
-  dayBlocks: ScheduleBlock[],
+interface BiweeklyLayoutItem {
+  id: string;
+  startTime: string;
+  endTime: string;
+  weekPattern: WeekPattern;
+}
+
+function layoutBiweeklyItems<T extends BiweeklyLayoutItem>(
+  items: T[],
   viewMode: "combined" | "week1" | "week2",
-): PositionedBlock[] {
-  const filtered = dayBlocks.filter((b) => {
+  tieBreak?: (a: T, b: T) => number,
+): Array<{ item: T; leftPercent: number; widthPercent: number }> {
+  const filtered = items.filter((b) => {
     if (viewMode === "combined") return true;
     return b.weekPattern === "both" || b.weekPattern === viewMode;
   });
@@ -63,11 +79,12 @@ function layoutDayBlocks(
     if (aS !== bS) return aS - bS;
     const aE = parseTimeToMinutes(a.endTime);
     const bE = parseTimeToMinutes(b.endTime);
-    return bE - aE;
+    if (aE !== bE) return bE - aE;
+    return tieBreak ? tieBreak(a, b) : 0;
   });
 
-  const clusters: ScheduleBlock[][] = [];
-  let currentCluster: ScheduleBlock[] = [];
+  const clusters: T[][] = [];
+  let currentCluster: T[] = [];
   let clusterEnd = -1;
 
   for (const b of sorted) {
@@ -84,11 +101,12 @@ function layoutDayBlocks(
   }
   if (currentCluster.length > 0) clusters.push(currentCluster);
 
-  const positioned: PositionedBlock[] = [];
+  const positioned: Array<{ item: T; leftPercent: number; widthPercent: number }> =
+    [];
 
   for (const cluster of clusters) {
     if (viewMode !== "combined") {
-      const cols: ScheduleBlock[][] = [];
+      const cols: T[][] = [];
       const colOf = new Map<string, number>();
 
       for (const b of cluster) {
@@ -121,7 +139,7 @@ function layoutDayBlocks(
       for (const b of cluster) {
         const col = colOf.get(b.id) ?? 0;
         positioned.push({
-          block: b,
+          item: b,
           leftPercent: (col / numCols) * 100,
           widthPercent: 100 / numCols,
         });
@@ -130,9 +148,9 @@ function layoutDayBlocks(
     }
 
     type ColBucket = {
-      both: ScheduleBlock[];
-      week1: ScheduleBlock[];
-      week2: ScheduleBlock[];
+      both: T[];
+      week1: T[];
+      week2: T[];
     };
     const cols: ColBucket[] = [];
     const placement = new Map<
@@ -144,7 +162,7 @@ function layoutDayBlocks(
       const s = parseTimeToMinutes(b.startTime);
       const e = parseTimeToMinutes(b.endTime);
 
-      const overlapsList = (list: ScheduleBlock[]) =>
+      const overlapsList = (list: T[]) =>
         list.some((existing) =>
           intervalsOverlap(
             s,
@@ -246,7 +264,7 @@ function layoutDayBlocks(
       }
 
       positioned.push({
-        block: b,
+        item: b,
         leftPercent,
         widthPercent,
       });
@@ -254,6 +272,74 @@ function layoutDayBlocks(
   }
 
   return positioned;
+}
+
+function layoutDayBlocks(
+  dayBlocks: ScheduleBlock[],
+  viewMode: "combined" | "week1" | "week2",
+): PositionedBlock[] {
+  return layoutBiweeklyItems(dayBlocks, viewMode).map(
+    ({ item, leftPercent, widthPercent }) => ({
+      block: item,
+      leftPercent,
+      widthPercent,
+    }),
+  );
+}
+
+function layoutDayGhosts(
+  dayGhosts: GhostTargetSlot[],
+  viewMode: "combined" | "week1" | "week2",
+): PositionedGhost[] {
+  return layoutBiweeklyItems(dayGhosts, viewMode, (a, b) => {
+    const aAvail = a.fits || a.isCurrent ? 0 : 1;
+    const bAvail = b.fits || b.isCurrent ? 0 : 1;
+    if (aAvail !== bAvail) return aAvail - bAvail;
+    return a.crn.localeCompare(b.crn);
+  }).map(({ item, leftPercent, widthPercent }) => ({
+    ghost: item,
+    leftPercent,
+    widthPercent,
+  }));
+}
+
+function buildSectionGhosts(
+  course: ScheduleCourseGroup,
+  component: CourseComponentType,
+  currentCrn: string | undefined,
+  activeBlocks: ScheduleBlock[],
+  blockedSlots: BlockedTimeSlot[],
+): GhostTargetSlot[] {
+  const candidateSections = course.sections.filter(
+    (s) => s.component === component && s.meetings.length > 0,
+  );
+  const ghosts: GhostTargetSlot[] = [];
+  for (const sec of candidateSections) {
+    const fit = checkSectionFit(
+      sec,
+      activeBlocks,
+      blockedSlots,
+      course.courseCode,
+      component,
+    );
+    sec.meetings.forEach((m, mIdx) => {
+      ghosts.push({
+        id: `ghost-${sec.crn}-${m.day}-${m.startTime}-${mIdx}`,
+        crn: sec.crn,
+        day: m.day,
+        startTime: m.startTime,
+        endTime: m.endTime,
+        startMinutes: m.startMinutes,
+        endMinutes: m.endMinutes,
+        weekPattern: m.weekPattern,
+        room: m.location || (sec.isOnline ? "Online" : "TBA"),
+        fits: fit.fits,
+        isCurrent: Boolean(currentCrn && sec.crn === currentCrn),
+        label: `${course.courseCode} CRN ${sec.crn}`,
+      });
+    });
+  }
+  return ghosts;
 }
 
 function DayHeaderStrip({ position }: { position: "top" | "bottom" }) {
@@ -294,6 +380,8 @@ export function WeekScheduleGrid({
   courses,
   blockedSlots = [],
   courseMap,
+  gridSectionPicker = null,
+  onChangeGridSectionPicker,
   isEditMode = false,
   startHour = 8,
   endHour = 22,
@@ -313,6 +401,7 @@ export function WeekScheduleGrid({
     null,
   );
   const [dragCourse, setDragCourse] = useState<CourseDragState | null>(null);
+  const [hoveredPickerCrn, setHoveredPickerCrn] = useState<string | null>(null);
   const [dragBlockedPreview, setDragBlockedPreview] =
     useState<BlockedTimeSlot | null>(null);
   const [hiddenBlockedId, setHiddenBlockedId] = useState<string | null>(null);
@@ -326,6 +415,18 @@ export function WeekScheduleGrid({
     };
   }, []);
 
+  useEffect(() => {
+    if (!gridSectionPicker) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setHoveredPickerCrn(null);
+        onChangeGridSectionPicker?.(null);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [gridSectionPicker, onChangeGridSectionPicker]);
+
   const totalHours = endHour - startHour;
   const startMinutes = startHour * 60;
   const endMinutesLimit = endHour * 60;
@@ -337,12 +438,14 @@ export function WeekScheduleGrid({
     if (!rect || rect.width <= 0 || rect.height <= 0) return null;
     const relX = Math.max(0, Math.min(rect.width - 1, clientX - rect.left));
     const relY = Math.max(0, Math.min(rect.height, clientY - rect.top));
+    const rawCol = (relX / rect.width) * DAYS_OF_WEEK.length;
     const colIdx = Math.max(
       0,
-      Math.min(
-        DAYS_OF_WEEK.length - 1,
-        Math.floor((relX / rect.width) * DAYS_OF_WEEK.length),
-      ),
+      Math.min(DAYS_OF_WEEK.length - 1, Math.floor(rawCol)),
+    );
+    const dayRelXPercent = Math.max(
+      0,
+      Math.min(100, (rawCol - colIdx) * 100),
     );
     const rawMinutes = startMinutes + (relY / rect.height) * totalMinutes;
     const snapped30 = Math.max(
@@ -351,6 +454,7 @@ export function WeekScheduleGrid({
     );
     return {
       day: DAYS_OF_WEEK[colIdx].key,
+      dayRelXPercent,
       rawMinutes,
       snapped30,
     };
@@ -408,6 +512,37 @@ export function WeekScheduleGrid({
     return grouped;
   }, [blockedSlots, hiddenBlockedId, dragBlockedPreview]);
 
+  const pickerCourse = useMemo(() => {
+    if (!gridSectionPicker || !courseMap) return null;
+    return courseMap.get(gridSectionPicker.courseCode) ?? null;
+  }, [gridSectionPicker, courseMap]);
+
+  const pickerGhosts = useMemo(() => {
+    if (!gridSectionPicker || !pickerCourse) return [];
+    const currentCrn = courses.find(
+      (b) =>
+        b.mode !== "preview" &&
+        !b.isCustom &&
+        b.courseCode === gridSectionPicker.courseCode &&
+        (b.component ?? b.type) === gridSectionPicker.component,
+    )?.crn;
+    return buildSectionGhosts(
+      pickerCourse,
+      gridSectionPicker.component,
+      currentCrn,
+      courses,
+      blockedSlots,
+    );
+  }, [gridSectionPicker, pickerCourse, courses, blockedSlots]);
+
+  const pickerAsyncSections = useMemo(() => {
+    if (!gridSectionPicker || !pickerCourse) return [];
+    return pickerCourse.sections.filter(
+      (s) =>
+        s.component === gridSectionPicker.component && s.meetings.length === 0,
+    );
+  }, [gridSectionPicker, pickerCourse]);
+
   const ghostsByDay = useMemo(() => {
     const grouped: Record<DayOfWeek, GhostTargetSlot[]> = {
       monday: [],
@@ -418,18 +553,30 @@ export function WeekScheduleGrid({
       saturday: [],
       sunday: [],
     };
-    if (!dragCourse) return grouped;
-    for (const g of dragCourse.ghosts) {
+    const activeGhosts = dragCourse
+      ? dragCourse.ghosts
+      : gridSectionPicker
+        ? pickerGhosts
+        : [];
+    for (const g of activeGhosts) {
       if (grouped[g.day]) grouped[g.day].push(g);
     }
-    return grouped;
-  }, [dragCourse]);
+    return {
+      monday: layoutDayGhosts(grouped.monday, viewMode),
+      tuesday: layoutDayGhosts(grouped.tuesday, viewMode),
+      wednesday: layoutDayGhosts(grouped.wednesday, viewMode),
+      thursday: layoutDayGhosts(grouped.thursday, viewMode),
+      friday: layoutDayGhosts(grouped.friday, viewMode),
+      saturday: layoutDayGhosts(grouped.saturday, viewMode),
+      sunday: layoutDayGhosts(grouped.sunday, viewMode),
+    };
+  }, [dragCourse, gridSectionPicker, pickerGhosts, viewMode]);
 
   const startCoursePointerDown = (
     e: React.PointerEvent<HTMLDivElement>,
     block: ScheduleBlock,
   ) => {
-    if (e.button !== 0 || block.mode === "preview") return;
+    if (e.button !== 0 || block.mode === "preview" || gridSectionPicker) return;
     if ((e.target as HTMLElement).closest("[data-no-drag='true']")) return;
 
     const startX = e.clientX;
@@ -451,30 +598,20 @@ export function WeekScheduleGrid({
           )
         : [];
 
-    const ghosts: GhostTargetSlot[] = [];
-    if (canDrag && candidateSections.length > 1) {
-      for (const sec of candidateSections) {
-        const fit = checkSectionFit(
-          sec,
-          courses,
-          blockedSlots,
-          block.courseCode,
-          comp,
-        );
-        for (const m of sec.meetings) {
-          ghosts.push({
-            crn: sec.crn,
-            day: m.day,
-            startTime: m.startTime,
-            endTime: m.endTime,
-            startMinutes: m.startMinutes,
-            endMinutes: m.endMinutes,
-            weekPattern: m.weekPattern,
-            room: m.location || (sec.isOnline ? "Online" : "TBA"),
-            fits: fit.fits,
-            isCurrent: sec.crn === block.crn,
-            label: `${block.courseCode} CRN ${sec.crn}`,
-          });
+    const ghosts =
+      canDrag && course && comp && candidateSections.length >= 1
+        ? buildSectionGhosts(course, comp, block.crn, courses, blockedSlots)
+        : [];
+
+    const positionedGhostsByDay = new Map<DayOfWeek, PositionedGhost[]>();
+    if (ghosts.length > 0) {
+      for (const dayMeta of DAYS_OF_WEEK) {
+        const dayOnly = ghosts.filter((g) => g.day === dayMeta.key);
+        if (dayOnly.length > 0) {
+          positionedGhostsByDay.set(
+            dayMeta.key,
+            layoutDayGhosts(dayOnly, viewMode),
+          );
         }
       }
     }
@@ -489,31 +626,54 @@ export function WeekScheduleGrid({
     ): string | null => {
       const coords = getPointerGridCoords(clientX, clientY);
       if (!coords) return null;
-      const dayGhosts = ghosts.filter((g) => g.day === coords.day);
+      const dayGhosts = positionedGhostsByDay.get(coords.day) ?? [];
       if (dayGhosts.length === 0) return null;
 
-      // Exact interval hit first
-      const exact = dayGhosts.find(
-        (g) =>
-          coords.rawMinutes >= g.startMinutes &&
-          coords.rawMinutes <= g.endMinutes,
+      // Exact vertical interval hit first, disambiguated horizontally for W1/W2 lanes
+      const verticalMatches = dayGhosts.filter(
+        ({ ghost }) =>
+          coords.rawMinutes >= ghost.startMinutes &&
+          coords.rawMinutes <= ghost.endMinutes,
       );
-      if (exact) return exact.crn;
+      if (verticalMatches.length > 0) {
+        const exactHoriz = verticalMatches.find(
+          ({ leftPercent, widthPercent }) =>
+            coords.dayRelXPercent >= leftPercent &&
+            coords.dayRelXPercent <= leftPercent + widthPercent,
+        );
+        if (exactHoriz) return exactHoriz.ghost.crn;
+
+        let bestMatch = verticalMatches[0];
+        let bestHorizDist = Infinity;
+        for (const item of verticalMatches) {
+          const center = item.leftPercent + item.widthPercent / 2;
+          const dist = Math.abs(coords.dayRelXPercent - center);
+          if (dist < bestHorizDist) {
+            bestHorizDist = dist;
+            bestMatch = item;
+          }
+        }
+        return bestMatch.ghost.crn;
+      }
 
       // Otherwise nearest within 25 minutes
-      let best: GhostTargetSlot | null = null;
-      let bestDist = 25;
-      for (const g of dayGhosts) {
-        const dist = Math.min(
-          Math.abs(coords.rawMinutes - g.startMinutes),
-          Math.abs(coords.rawMinutes - g.endMinutes),
+      let best: PositionedGhost | null = null;
+      let bestScore = Infinity;
+      for (const item of dayGhosts) {
+        const timeDist = Math.min(
+          Math.abs(coords.rawMinutes - item.ghost.startMinutes),
+          Math.abs(coords.rawMinutes - item.ghost.endMinutes),
         );
-        if (dist < bestDist) {
-          bestDist = dist;
-          best = g;
+        if (timeDist >= 25) continue;
+        const center = item.leftPercent + item.widthPercent / 2;
+        const horizDist = Math.abs(coords.dayRelXPercent - center);
+        const score = timeDist + horizDist * 0.05;
+        if (score < bestScore) {
+          bestScore = score;
+          best = item;
         }
       }
-      return best ? best.crn : null;
+      return best ? best.ghost.crn : null;
     };
 
     const onMove = (ev: PointerEvent) => {
@@ -568,7 +728,8 @@ export function WeekScheduleGrid({
   };
 
   const startCreateBlockedDrag = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!isEditMode || !isBlockingMode || e.button !== 0) return;
+    if (!isEditMode || !isBlockingMode || gridSectionPicker || e.button !== 0)
+      return;
     if ((e.target as HTMLElement).closest("[data-blocked-slot='true']")) return;
 
     const initial = getPointerGridCoords(e.clientX, e.clientY);
@@ -653,7 +814,13 @@ export function WeekScheduleGrid({
     slot: BlockedTimeSlot,
     mode: "move" | "resize-top" | "resize-bottom",
   ) => {
-    if (!isEditMode || e.button !== 0 || slot.id === "__draft_block__") return;
+    if (
+      !isEditMode ||
+      gridSectionPicker ||
+      e.button !== 0 ||
+      slot.id === "__draft_block__"
+    )
+      return;
     if ((e.target as HTMLElement).closest("[data-no-drag='true']")) return;
     e.stopPropagation();
 
@@ -761,6 +928,18 @@ export function WeekScheduleGrid({
         ? "Week 1"
         : "Week 2");
 
+  const isPickerOverlay = Boolean(gridSectionPicker) && !dragCourse;
+  const isDraggingAny = Boolean(dragCourse) || Boolean(gridSectionPicker);
+  const hasActiveGhosts = dragCourse
+    ? dragCourse.ghosts.length > 0
+    : pickerGhosts.length > 0;
+  const activeOverlayCourseCode = dragCourse
+    ? dragCourse.sourceBlock.courseCode
+    : (gridSectionPicker?.courseCode ?? null);
+  const activeOverlayComponent = dragCourse
+    ? dragCourse.component
+    : (gridSectionPicker?.component ?? null);
+
   return (
     <div className="flex h-full flex-col rounded-xl border border-zinc-300/80 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
       {/* Header */}
@@ -791,9 +970,9 @@ export function WeekScheduleGrid({
           )}
           {dragCourse && (
             <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-[11px] font-medium text-blue-800 dark:bg-blue-950/60 dark:text-blue-200">
-              {dragCourse.ghosts.length > 0
+              {dragCourse.ghosts.some((g) => !g.isCurrent)
                 ? "Drop onto a highlighted section slot"
-                : "No other scheduled times for this component"}
+                : "Only 1 scheduled section for this component"}
             </span>
           )}
           <span className="tabular-nums">
@@ -801,6 +980,74 @@ export function WeekScheduleGrid({
           </span>
         </div>
       </div>
+
+      {/* Click-to-Schedule All Sections Banner */}
+      {gridSectionPicker && (
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-200 bg-emerald-50/75 px-4 py-2 text-xs dark:border-emerald-900/60 dark:bg-emerald-950/35">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-semibold text-emerald-950 dark:text-emerald-100">
+              {gridSectionPicker.courseCode} ({gridSectionPicker.component})
+            </span>
+            <span className="text-[11px] text-emerald-800 dark:text-emerald-300">
+              {pickerGhosts.length > 0
+                ? "Click any highlighted slot to schedule it"
+                : "No scheduled time slots for this component"}
+            </span>
+            {pickerCourse && pickerCourse.requiredComponents.length > 1 && (
+              <div className="flex flex-wrap items-center gap-1">
+                {pickerCourse.requiredComponents.map((comp) => (
+                  <button
+                    key={comp}
+                    type="button"
+                    onClick={() => {
+                      setHoveredPickerCrn(null);
+                      onChangeGridSectionPicker?.({
+                        courseCode: gridSectionPicker.courseCode,
+                        component: comp,
+                      });
+                    }}
+                    className={`rounded-md px-2 py-0.5 text-[11px] font-medium transition ${
+                      gridSectionPicker.component === comp
+                        ? "bg-emerald-700 text-white dark:bg-emerald-600"
+                        : "bg-white/80 text-emerald-900 hover:bg-white dark:bg-zinc-900 dark:text-emerald-200 dark:hover:bg-zinc-800"
+                    }`}
+                  >
+                    {comp}
+                  </button>
+                ))}
+              </div>
+            )}
+            {pickerAsyncSections.map((sec) => (
+              <button
+                key={sec.crn}
+                type="button"
+                onClick={() => {
+                  onSelectSection?.(
+                    gridSectionPicker.courseCode,
+                    gridSectionPicker.component,
+                    sec.crn,
+                  );
+                  setHoveredPickerCrn(null);
+                  onChangeGridSectionPicker?.(null);
+                }}
+                className="rounded-md border border-teal-400 bg-white px-2 py-0.5 text-[11px] font-medium text-teal-900 hover:bg-teal-50 dark:border-teal-700 dark:bg-zinc-900 dark:text-teal-200"
+              >
+                Schedule CRN {sec.crn} (Async)
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setHoveredPickerCrn(null);
+              onChangeGridSectionPicker?.(null);
+            }}
+            className="shrink-0 rounded-md border border-emerald-300 bg-white px-2.5 py-1 text-[11px] font-medium text-emerald-900 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-zinc-900 dark:text-emerald-200 dark:hover:bg-zinc-800"
+          >
+            Cancel (Esc)
+          </button>
+        </div>
+      )}
 
       {/* Spreadsheet Container */}
       <div
@@ -875,10 +1122,15 @@ export function WeekScheduleGrid({
                           style={{
                             top: `${topPercent}%`,
                             height: `${heightPercent}%`,
-                            backgroundImage:
-                              "repeating-linear-gradient(135deg, rgba(244,63,94,0.08), rgba(244,63,94,0.08) 6px, rgba(244,63,94,0.16) 6px, rgba(244,63,94,0.16) 12px)",
+                            backgroundImage: isDraggingAny
+                              ? "repeating-linear-gradient(135deg, rgba(161,161,170,0.08), rgba(161,161,170,0.08) 6px, rgba(161,161,170,0.16) 6px, rgba(161,161,170,0.16) 12px)"
+                              : "repeating-linear-gradient(135deg, rgba(244,63,94,0.08), rgba(244,63,94,0.08) 6px, rgba(244,63,94,0.16) 6px, rgba(244,63,94,0.16) 12px)",
                           }}
-                          className={`pointer-events-auto group absolute left-0.5 right-0.5 flex flex-col justify-between overflow-hidden rounded border border-dashed border-rose-300/90 px-1 py-0.5 text-[10px] text-rose-800 dark:border-rose-700/70 dark:text-rose-200 ${
+                          className={`pointer-events-auto group absolute left-0.5 right-0.5 flex flex-col justify-between overflow-hidden rounded border border-dashed px-1 py-0.5 text-[10px] ${
+                            isDraggingAny
+                              ? "border-zinc-300/80 bg-zinc-200/40 text-zinc-500 opacity-40 grayscale dark:border-zinc-700/70 dark:bg-zinc-800/40 dark:text-zinc-400"
+                              : "border-rose-300/90 text-rose-800 dark:border-rose-700/70 dark:text-rose-200"
+                          } ${
                             isEditMode ? "cursor-grab active:cursor-grabbing" : ""
                           } ${slot.id === "__draft_block__" ? "ring-2 ring-rose-500" : ""}`}
                         >
@@ -953,11 +1205,24 @@ export function WeekScheduleGrid({
                       const isExploring = block.mode === "exploring";
                       const isConflict = Boolean(block.isConflict);
                       const isHalfWidth = widthPercent <= 55;
-                      const isBeingDragged =
-                        dragCourse &&
-                        dragCourse.sourceBlock.courseCode ===
-                          block.courseCode &&
-                        dragCourse.sourceBlock.crn === block.crn;
+                      const blockComp =
+                        block.component ??
+                        (block.type as CourseComponentType | undefined);
+                      const isCurrentOverlayBlock =
+                        isDraggingAny &&
+                        hasActiveGhosts &&
+                        Boolean(activeOverlayCourseCode) &&
+                        !block.isCustom &&
+                        block.mode !== "preview" &&
+                        block.courseCode === activeOverlayCourseCode &&
+                        blockComp === activeOverlayComponent;
+                      const isCorrelatedComponent =
+                        isDraggingAny &&
+                        Boolean(activeOverlayCourseCode) &&
+                        !block.isCustom &&
+                        block.mode !== "preview" &&
+                        block.courseCode === activeOverlayCourseCode &&
+                        blockComp !== activeOverlayComponent;
 
                       return (
                         <div
@@ -972,8 +1237,12 @@ export function WeekScheduleGrid({
                             width: `calc(${widthPercent}% - 4px)`,
                           }}
                           className={`pointer-events-auto group absolute overflow-hidden rounded-md p-1 text-[10.5px] transition-all ${
-                            isBeingDragged
-                              ? "opacity-35"
+                            isDraggingAny
+                              ? isCurrentOverlayBlock
+                                ? "opacity-0 pointer-events-none"
+                                : isCorrelatedComponent
+                                  ? "z-30 border-2 border-blue-500 bg-blue-100/95 text-blue-950 shadow-sm dark:border-blue-400 dark:bg-blue-950/90 dark:text-blue-100"
+                                  : "border border-zinc-300 bg-zinc-200/70 text-zinc-500 opacity-40 grayscale dark:border-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-400"
                               : isPreview
                                 ? "z-40 animate-pulse border-2 border-dashed border-blue-500 bg-blue-500/20 text-blue-950 shadow-md dark:text-blue-50"
                                 : isConflict
@@ -1070,10 +1339,16 @@ export function WeekScheduleGrid({
                     })}
                   </div>
 
-                  {/* Ghost Snap Target Slots during Course Block Drag */}
-                  {dragCourse && dayGhosts.length > 0 && (
-                    <div className="pointer-events-none absolute inset-0 z-40">
-                      {dayGhosts.map((g, idx) => {
+                  {/* Ghost Snap Target Slots during Course Block Drag or Click-to-Schedule */}
+                  {(dragCourse || gridSectionPicker) && dayGhosts.length > 0 && (
+                    <div
+                      className={`${
+                        isPickerOverlay
+                          ? "pointer-events-auto"
+                          : "pointer-events-none"
+                      } absolute inset-0 z-40`}
+                    >
+                      {dayGhosts.map(({ ghost: g, leftPercent, widthPercent }, idx) => {
                         const clampedStart = Math.max(
                           g.startMinutes,
                           startMinutes,
@@ -1088,24 +1363,82 @@ export function WeekScheduleGrid({
                           ((clampedStart - startMinutes) / totalMinutes) * 100;
                         const heightPercent =
                           ((clampedEnd - clampedStart) / totalMinutes) * 100;
-                        const isHovered = dragCourse.hoveredCrn === g.crn;
+                        const isHovered = dragCourse
+                          ? dragCourse.hoveredCrn === g.crn
+                          : hoveredPickerCrn === g.crn;
 
                         return (
                           <div
-                            key={`${g.crn}-${idx}`}
+                            key={`${g.id}-${idx}`}
                             data-ghost-crn={g.crn}
+                            role={isPickerOverlay ? "button" : undefined}
+                            tabIndex={isPickerOverlay ? 0 : undefined}
+                            onMouseEnter={
+                              isPickerOverlay
+                                ? () => setHoveredPickerCrn(g.crn)
+                                : undefined
+                            }
+                            onMouseLeave={
+                              isPickerOverlay
+                                ? () => setHoveredPickerCrn(null)
+                                : undefined
+                            }
+                            onClick={
+                              isPickerOverlay
+                                ? (ev) => {
+                                    ev.stopPropagation();
+                                    onSelectSection?.(
+                                      gridSectionPicker!.courseCode,
+                                      gridSectionPicker!.component,
+                                      g.crn,
+                                    );
+                                    setHoveredPickerCrn(null);
+                                    onChangeGridSectionPicker?.(null);
+                                  }
+                                : undefined
+                            }
+                            onKeyDown={
+                              isPickerOverlay
+                                ? (ev) => {
+                                    if (ev.key === "Enter" || ev.key === " ") {
+                                      ev.preventDefault();
+                                      ev.stopPropagation();
+                                      onSelectSection?.(
+                                        gridSectionPicker!.courseCode,
+                                        gridSectionPicker!.component,
+                                        g.crn,
+                                      );
+                                      setHoveredPickerCrn(null);
+                                      onChangeGridSectionPicker?.(null);
+                                    }
+                                  }
+                                : undefined
+                            }
                             style={{
                               top: `${topPercent}%`,
                               height: `${heightPercent}%`,
+                              left: `calc(${leftPercent}% + 2px)`,
+                              width: `calc(${widthPercent}% - 4px)`,
                             }}
-                            className={`absolute left-0.5 right-0.5 flex flex-col justify-between overflow-hidden rounded-md border-2 border-dashed p-1 text-[10px] transition ${
-                              isHovered
-                                ? "z-50 border-blue-600 bg-blue-500/35 text-blue-950 ring-2 ring-blue-500 dark:text-white"
-                                : g.isCurrent
-                                  ? "border-zinc-500/70 bg-zinc-400/20 text-zinc-700 dark:text-zinc-200"
-                                  : g.fits
-                                    ? "border-emerald-500 bg-emerald-500/20 text-emerald-950 dark:text-emerald-100"
-                                    : "border-rose-400 bg-rose-500/15 text-rose-900 dark:text-rose-200"
+                            title={
+                              isPickerOverlay
+                                ? `Click to schedule ${g.label} (${formatTimeDisplay(g.startTime)}–${formatTimeDisplay(g.endTime)} • ${g.room})`
+                                : undefined
+                            }
+                            className={`absolute flex flex-col justify-between overflow-hidden rounded-md border-2 border-dashed p-1 text-[10px] transition ${
+                              isPickerOverlay ? "cursor-pointer" : ""
+                            } ${
+                              g.isCurrent
+                                ? isHovered
+                                  ? "z-50 border-blue-600 bg-blue-500/35 text-blue-950 ring-2 ring-blue-500 shadow-md dark:border-blue-400 dark:bg-blue-900/80 dark:text-blue-50"
+                                  : "border-blue-500 bg-blue-500/20 text-blue-950 dark:border-blue-400 dark:bg-blue-950/75 dark:text-blue-100"
+                                : g.fits
+                                  ? isHovered
+                                    ? "z-50 border-emerald-600 bg-emerald-500/35 text-emerald-950 ring-2 ring-emerald-500 shadow-md dark:border-emerald-400 dark:bg-emerald-900/80 dark:text-emerald-50"
+                                    : "border-emerald-500 bg-emerald-500/20 text-emerald-950 dark:border-emerald-400 dark:bg-emerald-950/75 dark:text-emerald-100"
+                                  : isHovered
+                                    ? "z-50 border-rose-600 bg-rose-500/35 text-rose-950 ring-2 ring-rose-500 shadow-md dark:border-rose-400 dark:bg-rose-900/80 dark:text-rose-50"
+                                    : "border-rose-500 bg-rose-500/20 text-rose-950 dark:border-rose-400 dark:bg-rose-950/75 dark:text-rose-100"
                             }`}
                           >
                             <div className="flex items-center justify-between gap-1 font-semibold">
@@ -1258,6 +1591,29 @@ export function WeekScheduleGrid({
                       className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-700"
                     >
                       Add Officially
+                    </button>
+                  )}
+                {!selectedCourse.isCustom &&
+                  onChangeGridSectionPicker &&
+                  courseMap?.has(selectedCourse.courseCode) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const comp =
+                          selectedCourse.component ??
+                          (selectedCourse.type as
+                            | CourseComponentType
+                            | undefined);
+                        if (!comp) return;
+                        onChangeGridSectionPicker({
+                          courseCode: selectedCourse.courseCode,
+                          component: comp,
+                        });
+                        setSelectedCourse(null);
+                      }}
+                      className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-800 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-200 dark:hover:bg-emerald-900/60"
+                    >
+                      See All Sections
                     </button>
                   )}
                 {isEditMode && !selectedCourse.isCustom && onInspectCourse && (

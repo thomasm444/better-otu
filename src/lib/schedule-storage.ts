@@ -297,6 +297,110 @@ function termChronoKey(season: "Fall" | "Winter" | "Summer", calYear: number): n
   return calYear * 10 + seasonRank(season);
 }
 
+export interface DegreePlanImportOption {
+  id: string;
+  programId: string;
+  label: string;
+  catalogYear: string | null;
+  startYear: number;
+  totalCourseCount: number;
+  termCourseCodes: string[];
+  completedPriorCourseCodes: string[];
+}
+
+function buildDegreePlanImportOption(
+  params: {
+    id: string;
+    programId: string;
+    label: string;
+    catalogYear: string | null;
+    startYear: number;
+    terms: PlannerTerm[];
+  },
+  termInfo: ScheduleTermInfo,
+): DegreePlanImportOption {
+  const targetChrono = termChronoKey(termInfo.season, termInfo.year);
+  const termCourseCodesSet = new Set<string>();
+  const completedSet = new Set<string>();
+  let totalCourseCount = 0;
+
+  for (const t of params.terms) {
+    const slots = (t.slots ?? []).filter((c): c is string => Boolean(c));
+    totalCourseCount += slots.length;
+    const calYear = termCalendarYear(params.startYear, t.year, t.season);
+    if (t.season === termInfo.season && calYear === termInfo.year) {
+      for (const c of slots) termCourseCodesSet.add(c);
+    } else if (termChronoKey(t.season, calYear) < targetChrono) {
+      for (const c of slots) completedSet.add(c);
+    }
+  }
+
+  return {
+    id: params.id,
+    programId: params.programId,
+    label: params.label,
+    catalogYear: params.catalogYear,
+    startYear: params.startYear,
+    totalCourseCount,
+    termCourseCodes: [...termCourseCodesSet],
+    completedPriorCourseCodes: [...completedSet],
+  };
+}
+
+export function extractAllDegreePlansForTerm(
+  remotePlans: DegreePlanRecord[],
+  termInfo: ScheduleTermInfo,
+): DegreePlanImportOption[] {
+  const options: DegreePlanImportOption[] = [];
+  const seenProgramIds = new Set<string>();
+
+  for (const rp of remotePlans) {
+    if (!Array.isArray(rp.terms) || rp.terms.length === 0) continue;
+    seenProgramIds.add(rp.program_id);
+    const startYear =
+      rp.start_year ??
+      (rp.catalog_year ? catalogYearToStartYear(rp.catalog_year) : null) ??
+      DEFAULT_START_YEAR;
+    options.push(
+      buildDegreePlanImportOption(
+        {
+          id: rp.id || `remote:${rp.program_id}`,
+          programId: rp.program_id,
+          label: rp.degree_name || `Program ${rp.program_id}`,
+          catalogYear: rp.catalog_year ?? null,
+          startYear,
+          terms: rp.terms,
+        },
+        termInfo,
+      ),
+    );
+  }
+
+  const localPlans = loadLocalDegreePlans();
+  for (const lp of localPlans) {
+    if (seenProgramIds.has(lp.programId)) continue;
+    seenProgramIds.add(lp.programId);
+    options.push(
+      buildDegreePlanImportOption(
+        {
+          id: `local:${lp.programId}`,
+          programId: lp.programId,
+          label:
+            localPlans.length > 1 && lp.programId
+              ? `Saved Plan (${lp.programId})`
+              : "Saved Degree Plan",
+          catalogYear: null,
+          startYear: lp.startYear,
+          terms: lp.terms,
+        },
+        termInfo,
+      ),
+    );
+  }
+
+  return options;
+}
+
 export function extractTermFromDegreePlans(
   remotePlans: DegreePlanRecord[],
   termInfo: ScheduleTermInfo,
@@ -305,85 +409,25 @@ export function extractTermFromDegreePlans(
   completedPriorCourseCodes: string[];
   sourceLabel: string | null;
 } {
-  const localPlans = loadLocalDegreePlans();
-  const candidates: Array<{
-    terms: PlannerTerm[];
-    startYear: number;
-    label: string;
-  }> = [];
-
-  for (const rp of remotePlans) {
-    if (!Array.isArray(rp.terms) || rp.terms.length === 0) continue;
-    const startYear =
-      rp.start_year ??
-      (rp.catalog_year ? catalogYearToStartYear(rp.catalog_year) : null) ??
-      DEFAULT_START_YEAR;
-    candidates.push({
-      terms: rp.terms,
-      startYear,
-      label: rp.degree_name || `Program ${rp.program_id}`,
-    });
+  const options = extractAllDegreePlansForTerm(remotePlans, termInfo);
+  const withTermCourses = options.find((o) => o.termCourseCodes.length > 0);
+  if (withTermCourses) {
+    return {
+      termCourseCodes: withTermCourses.termCourseCodes,
+      completedPriorCourseCodes: withTermCourses.completedPriorCourseCodes,
+      sourceLabel: withTermCourses.label,
+    };
   }
 
-  for (const lp of localPlans) {
-    candidates.push({
-      terms: lp.terms,
-      startYear: lp.startYear,
-      label: "Saved Degree Plan",
-    });
-  }
-
-  const targetChrono = termChronoKey(termInfo.season, termInfo.year);
-
-  for (const plan of candidates) {
-    const matchedIdx = plan.terms.findIndex((t) => {
-      const calYear = termCalendarYear(plan.startYear, t.year, t.season);
-      return t.season === termInfo.season && calYear === termInfo.year;
-    });
-
-    if (matchedIdx < 0) continue;
-
-    const termCourseCodes = (plan.terms[matchedIdx].slots ?? []).filter(
-      (c): c is string => Boolean(c),
-    );
-    const completedSet = new Set<string>();
-    for (let i = 0; i < plan.terms.length; i++) {
-      const t = plan.terms[i];
-      const calYear = termCalendarYear(plan.startYear, t.year, t.season);
-      if (termChronoKey(t.season, calYear) < targetChrono) {
-        for (const c of t.slots ?? []) {
-          if (c) completedSet.add(c);
-        }
-      }
-    }
-
-    if (termCourseCodes.length > 0 || completedSet.size > 0) {
-      return {
-        termCourseCodes,
-        completedPriorCourseCodes: [...completedSet],
-        sourceLabel: plan.label,
-      };
-    }
-  }
-
-  // Fallback: even if target term isn't in a plan, still gather prior terms for prereq checking
-  for (const plan of candidates) {
-    const completedSet = new Set<string>();
-    for (const t of plan.terms) {
-      const calYear = termCalendarYear(plan.startYear, t.year, t.season);
-      if (termChronoKey(t.season, calYear) < targetChrono) {
-        for (const c of t.slots ?? []) {
-          if (c) completedSet.add(c);
-        }
-      }
-    }
-    if (completedSet.size > 0) {
-      return {
-        termCourseCodes: [],
-        completedPriorCourseCodes: [...completedSet],
-        sourceLabel: plan.label,
-      };
-    }
+  const withCompleted = options.find(
+    (o) => o.completedPriorCourseCodes.length > 0,
+  );
+  if (withCompleted) {
+    return {
+      termCourseCodes: [],
+      completedPriorCourseCodes: withCompleted.completedPriorCourseCodes,
+      sourceLabel: withCompleted.label,
+    };
   }
 
   return {
