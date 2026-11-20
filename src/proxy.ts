@@ -1,22 +1,38 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+import {
+  buildOnboardingCookieOptions,
+  getSafeNextPath,
+  hasResolvedOnboarding,
+  ONBOARDING_COOKIE_NAME,
+} from "@/lib/onboarding";
+
 const ALLOWED_EMAIL_DOMAIN = "@ontariotechu.net";
 
 function isPublicAuthPath(pathname: string): boolean {
   return pathname === "/login" || pathname.startsWith("/auth/");
 }
 
-function getSafeNextPath(rawNext: string | null): string {
-  if (
-    !rawNext ||
-    !rawNext.startsWith("/") ||
-    rawNext.startsWith("//") ||
-    rawNext === "/login"
-  ) {
-    return "/";
-  }
-  return rawNext;
+function isOnboardingExemptPath(pathname: string): boolean {
+  return (
+    pathname === "/login" ||
+    pathname === "/onboarding" ||
+    pathname.startsWith("/onboarding/") ||
+    pathname.startsWith("/auth/") ||
+    pathname.startsWith("/api/")
+  );
+}
+
+function redirectWithCookies(
+  url: URL,
+  sourceResponse: NextResponse,
+): NextResponse {
+  const redirectResponse = NextResponse.redirect(url);
+  sourceResponse.cookies.getAll().forEach((cookie) => {
+    redirectResponse.cookies.set(cookie);
+  });
+  return redirectResponse;
 }
 
 /**
@@ -90,7 +106,45 @@ export default async function proxy(request: NextRequest) {
   if (pathname === "/login") {
     const destination = getSafeNextPath(request.nextUrl.searchParams.get("next"));
     const targetUrl = new URL(destination, request.url);
-    return NextResponse.redirect(targetUrl);
+    return redirectWithCookies(targetUrl, response);
+  }
+
+  const isPrefetch =
+    Boolean(request.headers.get("next-router-prefetch")) ||
+    request.headers.get("purpose") === "prefetch";
+
+  if (
+    request.method === "GET" &&
+    !isPrefetch &&
+    !isOnboardingExemptPath(pathname) &&
+    request.cookies.get(ONBOARDING_COOKIE_NAME)?.value !== user!.id
+  ) {
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("onboarding_completed_at, onboarding_skipped_at")
+      .eq("id", user!.id)
+      .maybeSingle();
+
+    if (profileError) {
+      return response;
+    }
+
+    if (hasResolvedOnboarding(profile)) {
+      response.cookies.set(
+        ONBOARDING_COOKIE_NAME,
+        user!.id,
+        buildOnboardingCookieOptions(),
+      );
+      return response;
+    }
+
+    const onboardingUrl = request.nextUrl.clone();
+    onboardingUrl.pathname = "/onboarding";
+    onboardingUrl.search = "";
+    if (pathname !== "/") {
+      onboardingUrl.searchParams.set("next", `${pathname}${search}`);
+    }
+    return redirectWithCookies(onboardingUrl, response);
   }
 
   return response;

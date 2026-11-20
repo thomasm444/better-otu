@@ -12,8 +12,29 @@ export interface StudentProfile {
   email: string;
   full_name: string | null;
   avatar_url: string | null;
+  year_of_study: 1 | 2 | 3 | 4 | null;
+  degree_program_id: string | null;
+  has_minor: boolean | null;
+  minor_program_id: string | null;
+  onboarding_completed_at: string | null;
+  onboarding_skipped_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface ProfileProgramSummary {
+  program_id: string;
+  name: string;
+  catalog_year: string;
+  credential: string | null;
+  degree: string | null;
+  degree_abbrev: string | null;
+  faculty: string | null;
+}
+
+export interface StudentProfileWithPrograms extends StudentProfile {
+  degree_program: ProfileProgramSummary | null;
+  minor_program: ProfileProgramSummary | null;
 }
 
 export interface StudentCourse {
@@ -65,6 +86,66 @@ export async function fetchStudentProfile(
 
   if (error) throw error;
   return data as StudentProfile | null;
+}
+
+function normalizeJoinedProgram(
+  raw: ProfileProgramSummary | ProfileProgramSummary[] | null | undefined,
+): ProfileProgramSummary | null {
+  if (!raw) return null;
+  return Array.isArray(raw) ? (raw[0] ?? null) : raw;
+}
+
+export async function fetchStudentProfileWithPrograms(
+  supabase: SupabaseClient,
+): Promise<StudentProfileWithPrograms | null> {
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser();
+
+  if (authError || !user) return null;
+
+  const { data, error } = await supabase
+    .from("profiles")
+    .select(
+      `
+      *,
+      degree_program:degree_programs!profiles_degree_program_id_fkey (
+        program_id,
+        name,
+        catalog_year,
+        credential,
+        degree,
+        degree_abbrev,
+        faculty
+      ),
+      minor_program:degree_programs!profiles_minor_program_id_fkey (
+        program_id,
+        name,
+        catalog_year,
+        credential,
+        degree,
+        degree_abbrev,
+        faculty
+      )
+    `,
+    )
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!data) return null;
+
+  const row = data as StudentProfile & {
+    degree_program?: ProfileProgramSummary | ProfileProgramSummary[] | null;
+    minor_program?: ProfileProgramSummary | ProfileProgramSummary[] | null;
+  };
+
+  return {
+    ...row,
+    degree_program: normalizeJoinedProgram(row.degree_program),
+    minor_program: normalizeJoinedProgram(row.minor_program),
+  };
 }
 
 export async function fetchStudentCourses(

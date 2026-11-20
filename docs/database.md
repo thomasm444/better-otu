@@ -3,7 +3,7 @@
 Supabase (Postgres), all in the `public` schema, populated from Banner course-schedule scrapes, Undergraduate Academic Calendar scrapes, campus map/booking feeds, and authenticated student data.
 
 The authoritative DDL lives in [`supabase/migrations/`](../supabase/migrations/) —
-fourteen committed, idempotent migrations. Apply them oldest first:
+fifteen committed, idempotent migrations. Apply them oldest first:
 
 | migration | what it does |
 | --- | --- |
@@ -21,6 +21,7 @@ fourteen committed, idempotent migrations. Apply them oldest first:
 | `20261119120000_course_offerings_summary_cache.sql` | backs `course_offerings_summary` with precomputed `course_offerings_summary_cache`, adds `refresh_course_offerings_summary()`, and indexes `degree_programs (catalog_year desc, name asc, program_id asc)` |
 | `20261119120000_ratemyprof_schema.sql` | creates `rmp_professors` and `rmp_professor_courses`, links `course_faculty` and `exam_schedules` via `rmp_professor_id` FKs + auto-link triggers, and links `rmp_professor_courses` to `catalog_courses` |
 | `20261120000000_degree_plans_minor.sql` | adds `minor_program_id text` to `degree_plans` so an attached minor persists with the saved plan |
+| `20261120160000_profiles_onboarding.sql` | adds student onboarding columns (`year_of_study`, `degree_program_id`, `has_minor`, `minor_program_id`, `onboarding_completed_at`, `onboarding_skipped_at`) to `profiles` with FKs to `degree_programs`, backfills missing profiles, and adds student `INSERT` RLS |
 
 ```bash
 # With the Supabase CLI
@@ -427,10 +428,10 @@ Created by `20261112120000_degree_planner_schema.sql` and extended for multi-yea
 
 ## Auth & Student tables
 
-Created by `20261112180000_auth_and_student_courses.sql`, `20261112200000_degree_plans.sql`, `20261113143000_degree_plans_columns.sql`, and `20261118000000_degree_catalog_years.sql`.
+Created by `20261112180000_auth_and_student_courses.sql`, `20261112200000_degree_plans.sql`, `20261113143000_degree_plans_columns.sql`, `20261118000000_degree_catalog_years.sql`, `20261120000000_degree_plans_minor.sql`, and `20261120160000_profiles_onboarding.sql`.
 
 - `hook_before_user_created(event)` — Supabase Auth hook restricting sign-ups to `@ontariotechu.net`.
-- `profiles` (`id` PK → `auth.users.id`, `email`, `full_name`, `avatar_url`) — auto-populated on signup via `handle_new_user()`. RLS: users can `SELECT`/`UPDATE` their own row.
+- `profiles` (`id` PK → `auth.users.id`, `email`, `full_name`, `avatar_url`, `year_of_study` smallint `1..4`, `degree_program_id` FK → `degree_programs.program_id`, `has_minor` boolean, `minor_program_id` FK → `degree_programs.program_id`, `onboarding_completed_at` timestamptz, `onboarding_skipped_at` timestamptz) — auto-populated on signup via `handle_new_user()`. RLS: users can `SELECT`/`INSERT`/`UPDATE` their own row.
 - `student_courses` (`id` uuid PK, `user_id` → `auth.users.id`, `course_code`, `selected_crn`, `semester`, `status`, `grade`; unique `(user_id, course_code, semester)`). RLS: user-scoped CRUD.
 - `degree_plans` (`user_email`, `degree_name`, `start_year`, `catalog_year`, `program_id`, `minor_program_id`, `terms` jsonb, `customs` jsonb, `user_id`, `id` uuid PK; unique `(user_email, program_id)`). RLS: user-scoped CRUD matching both `auth.uid()` and JWT `email`.
 

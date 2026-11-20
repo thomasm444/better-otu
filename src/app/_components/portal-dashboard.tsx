@@ -14,9 +14,19 @@ import {
   fetchLatestDegreePlan,
   type DegreePlanRecord,
 } from "@/lib/degree-plan-storage";
+import { DEFAULT_START_YEAR } from "@/lib/degree-planner";
+import {
+  formatYearOfStudy,
+  getCurrentAcademicStartYear,
+  yearOfStudyToStartYear,
+} from "@/lib/onboarding";
 import type { CampusMapWeekData } from "@/lib/queries";
 import { loadLocalTermSchedule } from "@/lib/schedule-storage";
-import { fetchStudentCourses } from "@/lib/student-courses";
+import {
+  fetchStudentCourses,
+  fetchStudentProfileWithPrograms,
+  type StudentProfileWithPrograms,
+} from "@/lib/student-courses";
 import { createClient } from "@/lib/supabase/client";
 
 interface PortalDashboardProps {
@@ -132,6 +142,8 @@ function computeDegreeProgress(plan: DegreePlanRecord | null): {
 
 export function PortalDashboard({ termLabel }: PortalDashboardProps) {
   const [firstName, setFirstName] = useState<string | null>(null);
+  const [profile, setProfile] = useState<StudentProfileWithPrograms | null>(null);
+  const [academicStartYear, setAcademicStartYear] = useState<number>(DEFAULT_START_YEAR);
   const [savedCourseCodes, setSavedCourseCodes] = useState<string[]>([]);
   const [latestPlan, setLatestPlan] = useState<DegreePlanRecord | null>(null);
 
@@ -186,14 +198,16 @@ export function PortalDashboard({ termLabel }: PortalDashboardProps) {
           .filter(Boolean) ?? [];
 
       if (!user) {
+        setProfile(null);
         setSavedCourseCodes(localFallback);
         setLatestPlan(null);
         return;
       }
 
-      const [coursesRes, planRes] = await Promise.allSettled([
+      const [coursesRes, planRes, profileRes] = await Promise.allSettled([
         fetchStudentCourses(supabase),
         user.email ? fetchLatestDegreePlan(supabase, user.email) : Promise.resolve(null),
+        fetchStudentProfileWithPrograms(supabase),
       ]);
 
       if (!active) return;
@@ -217,6 +231,10 @@ export function PortalDashboard({ termLabel }: PortalDashboardProps) {
 
       if (planRes.status === "fulfilled") {
         setLatestPlan(planRes.value);
+      }
+
+      if (profileRes.status === "fulfilled") {
+        setProfile(profileRes.value);
       }
     };
 
@@ -242,6 +260,7 @@ export function PortalDashboard({ termLabel }: PortalDashboardProps) {
     const nowState = getDefaultCampusMapState(new Date());
 
     queueMicrotask(() => {
+      setAcademicStartYear(getCurrentAcademicStartYear());
       setNowLabel(
         `${DAY_SHORT[nowState.dayIndex]}, ${formatShortIsoDate(nowState.date)} · ${formatMinutesToClock(nowState.slotStart)}`,
       );
@@ -337,6 +356,17 @@ export function PortalDashboard({ termLabel }: PortalDashboardProps) {
 
   const degreeProgress = computeDegreeProgress(latestPlan);
   const visibleCourseCodes = savedCourseCodes.slice(0, 4);
+  const yearLabel = formatYearOfStudy(profile?.year_of_study);
+  const profileDegreeName = profile?.degree_program?.name ?? null;
+  const profileMinorName =
+    profile?.has_minor !== false ? (profile?.minor_program?.name ?? null) : null;
+  const hasAcademicSummary = Boolean(
+    yearLabel || profileDegreeName || profileMinorName,
+  );
+  const derivedProfileStartYear = yearOfStudyToStartYear(
+    profile?.year_of_study,
+    academicStartYear,
+  );
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-5 py-7 sm:px-8 sm:py-10">
@@ -349,6 +379,40 @@ export function PortalDashboard({ termLabel }: PortalDashboardProps) {
           <p className="mt-0.5 text-xs font-medium text-slate-500 dark:text-slate-400">
             Ontario Tech University &bull; {termLabel}
           </p>
+          {hasAcademicSummary ? (
+            <p className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-slate-600 dark:text-slate-300">
+              <span className="font-medium text-[#003C71] dark:text-sky-300">
+                {[
+                  yearLabel,
+                  profileDegreeName,
+                  profileMinorName ? `Minor: ${profileMinorName}` : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </span>
+              <span
+                aria-hidden="true"
+                className="text-slate-300 dark:text-slate-600"
+              >
+                &bull;
+              </span>
+              <Link
+                href="/onboarding"
+                className="font-medium text-slate-500 underline decoration-slate-300 underline-offset-2 transition-colors hover:text-[#003C71] dark:text-slate-400 dark:decoration-slate-700 dark:hover:text-sky-300"
+              >
+                Edit
+              </Link>
+            </p>
+          ) : profile?.onboarding_skipped_at ? (
+            <p className="mt-1 text-xs">
+              <Link
+                href="/onboarding"
+                className="font-medium text-[#003C71] underline decoration-[#9AC0EB] underline-offset-2 transition-colors hover:text-[#002D56] dark:text-sky-300 dark:decoration-sky-700 dark:hover:text-sky-200"
+              >
+                Personalize your year &amp; degree &rarr;
+              </Link>
+            </p>
+          ) : null}
         </div>
 
         <AuthButton />
@@ -437,7 +501,7 @@ export function PortalDashboard({ termLabel }: PortalDashboardProps) {
 
             {/* Right Section: Progress Bar & Degree Requirements */}
             <div className="flex flex-1 flex-col items-center justify-center px-6 py-5 text-center sm:px-8">
-              {degreeProgress ? (
+              {degreeProgress && degreeProgress.plannedCourses > 0 ? (
                 <div className="w-full max-w-sm">
                   <div className="flex items-center justify-between gap-2 text-xs">
                     <span className="truncate font-semibold text-slate-900 dark:text-slate-100">
@@ -455,6 +519,38 @@ export function PortalDashboard({ termLabel }: PortalDashboardProps) {
                   </div>
                   <p className="mt-1.5 text-[11px] font-medium text-slate-600 dark:text-slate-400">
                     {degreeProgress.plannedCourses} courses planned &bull; {degreeProgress.percent}% toward 120-credit degree
+                    {profileMinorName ? ` · Minor: ${profileMinorName}` : ""}
+                  </p>
+                </div>
+              ) : latestPlan ? (
+                <div className="w-full max-w-sm">
+                  <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
+                    {latestPlan.degree_name ||
+                      profileDegreeName ||
+                      "Saved Degree Plan"}
+                  </p>
+                  {profileMinorName && (
+                    <p className="mt-0.5 truncate text-xs font-medium text-[#003C71] dark:text-sky-300">
+                      Minor: {profileMinorName}
+                    </p>
+                  )}
+                  <p className="mt-1.5 text-xs text-slate-600 dark:text-slate-400">
+                    Start {latestPlan.start_year ?? derivedProfileStartYear}{" "}
+                    &bull; Open planner to load your roadmap
+                  </p>
+                </div>
+              ) : profileDegreeName ? (
+                <div className="w-full max-w-sm">
+                  <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
+                    {profileDegreeName}
+                  </p>
+                  {profileMinorName && (
+                    <p className="mt-0.5 truncate text-xs font-medium text-[#003C71] dark:text-sky-300">
+                      Minor: {profileMinorName}
+                    </p>
+                  )}
+                  <p className="mt-1.5 text-xs text-slate-600 dark:text-slate-400">
+                    Start {derivedProfileStartYear} &bull; Ready in Degree Planner
                   </p>
                 </div>
               ) : (

@@ -17,6 +17,10 @@ import {
   upsertDegreePlan,
   type DegreePlanRecord,
 } from "@/lib/degree-plan-storage";
+import { yearOfStudyToStartYear } from "@/lib/onboarding";
+import {
+  fetchStudentProfile,
+} from "@/lib/student-courses";
 import { createClient } from "@/lib/supabase/client";
 
 import {
@@ -281,6 +285,8 @@ export function DegreePlannerClient({
 
   const supabase = useMemo(() => createClient(), []);
   const [user, setUser] = useState<User | null>(null);
+  const [profileDefaultStartYear, setProfileDefaultStartYear] =
+    useState<number>(DEFAULT_START_YEAR);
   const [savedPlans, setSavedPlans] = useState<DegreePlanRecord[]>([]);
   const [plansMenuOpen, setPlansMenuOpen] = useState(false);
   const [planToDelete, setPlanToDelete] = useState<DegreePlanRecord | null>(null);
@@ -482,6 +488,7 @@ export function DegreePlannerClient({
       userRef.current = nextUser;
       setUser(nextUser);
       if (!nextUser?.email) {
+        setProfileDefaultStartYear(DEFAULT_START_YEAR);
         savedPlansRef.current = [];
         setSavedPlans([]);
         return;
@@ -489,10 +496,18 @@ export function DegreePlannerClient({
 
       const currentProg = programRef.current;
       try {
-        const allPlans = await fetchAllDegreePlans(supabase, nextUser.email);
+        const [allPlans, profile] = await Promise.all([
+          fetchAllDegreePlans(supabase, nextUser.email),
+          fetchStudentProfile(supabase).catch(() => null),
+        ]);
         if (!active) return;
         savedPlansRef.current = allPlans;
         setSavedPlans(allPlans);
+
+        const derivedStartYear = profile?.year_of_study
+          ? yearOfStudyToStartYear(profile.year_of_study)
+          : DEFAULT_START_YEAR;
+        setProfileDefaultStartYear(derivedStartYear);
 
         if (currentProg) {
           const remote = allPlans.find(
@@ -508,33 +523,172 @@ export function DegreePlannerClient({
             const nextCustoms = new Map(
               remote.customs.map((c) => [c.code, c]),
             );
-            const nextStartYear = remote.start_year ?? undefined;
+            const effectiveStartYear = remote.start_year ?? derivedStartYear;
             const nextPlanName = remote.degree_name?.trim() || currentProg.name;
-            const inferredGapYears = inferGapYearsFromTerms(remote.terms);
-            applyProgramWithSaved(currentProg, {
-              terms: remote.terms,
-              customs: remote.customs,
-              startYear: nextStartYear,
-              gapYears: inferredGapYears,
-              planName: nextPlanName,
-              minorProgramId: remote.minor_program_id,
-            });
-            persistPlan(
-              currentProg.program_id,
-              remote.terms,
-              nextCustoms,
-              nextStartYear,
-              inferredGapYears,
-              nextPlanName,
-              remote.minor_program_id,
-            );
-            void loadMinorDetail(remote.minor_program_id);
+
+            if (remote.terms.length === 0) {
+              const built = buildDefaultPlan(
+                currentProg,
+                catalogMap,
+                offeringsMap,
+                nextCustoms,
+                {
+                  startYear: effectiveStartYear,
+                  gapYears: [],
+                  context: offeringContext,
+                },
+              );
+              applyProgramWithSaved(currentProg, {
+                terms: built.terms,
+                customs: remote.customs,
+                startYear: effectiveStartYear,
+                gapYears: [],
+                planName: nextPlanName,
+                minorProgramId: remote.minor_program_id,
+              });
+              setUnscheduled(built.unscheduled);
+              persistPlan(
+                currentProg.program_id,
+                built.terms,
+                nextCustoms,
+                effectiveStartYear,
+                [],
+                nextPlanName,
+                remote.minor_program_id,
+              );
+              void loadMinorDetail(remote.minor_program_id);
+              void upsertDegreePlan(supabase, {
+                userId: nextUser.id,
+                userEmail: nextUser.email,
+                degreeName: nextPlanName,
+                startYear: effectiveStartYear,
+                catalogYear: currentProg.catalog_year,
+                programId: currentProg.program_id,
+                minorProgramId: remote.minor_program_id,
+                terms: built.terms,
+                customs: remote.customs,
+              })
+                .then((savedRecord) => {
+                  if (!active) return;
+                  setSavedPlans((prev) => {
+                    const next = [
+                      savedRecord,
+                      ...prev.filter(
+                        (p) => p.program_id !== savedRecord.program_id,
+                      ),
+                    ];
+                    savedPlansRef.current = next;
+                    return next;
+                  });
+                })
+                .catch(() => {
+                  // Ignore background hydration sync failure
+                });
+            } else {
+              const inferredGapYears = inferGapYearsFromTerms(remote.terms);
+              applyProgramWithSaved(currentProg, {
+                terms: remote.terms,
+                customs: remote.customs,
+                startYear: effectiveStartYear,
+                gapYears: inferredGapYears,
+                planName: nextPlanName,
+                minorProgramId: remote.minor_program_id,
+              });
+              persistPlan(
+                currentProg.program_id,
+                remote.terms,
+                nextCustoms,
+                effectiveStartYear,
+                inferredGapYears,
+                nextPlanName,
+                remote.minor_program_id,
+              );
+              void loadMinorDetail(remote.minor_program_id);
+            }
           }
           return;
         }
 
         const latest = allPlans[0];
-        if (!latest) return;
+        if (!latest) {
+          setStartYear(derivedStartYear);
+          setCatalogYear(
+            resolveCatalogYearForStartYear(
+              derivedStartYear,
+              availableCatalogYears,
+            ),
+          );
+
+          if (!profile?.degree_program_id) return;
+
+          setLoadingProgram(true);
+          const detail = await loadProgramDetail(profile.degree_program_id);
+          if (!active) return;
+
+          if (typeof window !== "undefined") {
+            const url = new URL(window.location.href);
+            url.searchParams.set("program", detail.program_id);
+            window.history.replaceState(null, "", url.toString());
+          }
+
+          const emptyCustoms = new Map<string, CustomCourse>();
+          const built = buildDefaultPlan(
+            detail,
+            catalogMap,
+            offeringsMap,
+            emptyCustoms,
+            {
+              startYear: derivedStartYear,
+              gapYears: [],
+              context: offeringContext,
+            },
+          );
+          const minorId =
+            profile.has_minor !== false
+              ? (profile.minor_program_id ?? null)
+              : null;
+
+          applyProgramWithSaved(detail, {
+            terms: built.terms,
+            customs: [],
+            startYear: derivedStartYear,
+            gapYears: [],
+            planName: detail.name,
+            minorProgramId: minorId,
+          });
+          setUnscheduled(built.unscheduled);
+          persistPlan(
+            detail.program_id,
+            built.terms,
+            emptyCustoms,
+            derivedStartYear,
+            [],
+            detail.name,
+            minorId,
+          );
+          void loadMinorDetail(minorId);
+
+          try {
+            const savedRecord = await upsertDegreePlan(supabase, {
+              userId: nextUser.id,
+              userEmail: nextUser.email,
+              degreeName: detail.name,
+              startYear: derivedStartYear,
+              catalogYear: detail.catalog_year,
+              programId: detail.program_id,
+              minorProgramId: minorId,
+              terms: built.terms,
+              customs: [],
+            });
+            if (active) {
+              savedPlansRef.current = [savedRecord];
+              setSavedPlans([savedRecord]);
+            }
+          } catch {
+            // Keep generated plan in view even if initial save fails
+          }
+          return;
+        }
 
         setLoadingProgram(true);
         const detail = await loadProgramDetail(latest.program_id);
@@ -547,27 +701,88 @@ export function DegreePlannerClient({
         }
 
         const nextCustoms = new Map(latest.customs.map((c) => [c.code, c]));
-        const nextStartYear = latest.start_year ?? undefined;
+        const effectiveStartYear = latest.start_year ?? derivedStartYear;
         const nextPlanName = latest.degree_name?.trim() || detail.name;
-        const latestGapYears = inferGapYearsFromTerms(latest.terms);
-        applyProgramWithSaved(detail, {
-          terms: latest.terms,
-          customs: latest.customs,
-          startYear: nextStartYear,
-          gapYears: latestGapYears,
-          planName: nextPlanName,
-          minorProgramId: latest.minor_program_id,
-        });
-        persistPlan(
-          detail.program_id,
-          latest.terms,
-          nextCustoms,
-          nextStartYear,
-          latestGapYears,
-          nextPlanName,
-          latest.minor_program_id,
-        );
-        void loadMinorDetail(latest.minor_program_id);
+
+        if (latest.terms.length === 0) {
+          const built = buildDefaultPlan(
+            detail,
+            catalogMap,
+            offeringsMap,
+            nextCustoms,
+            {
+              startYear: effectiveStartYear,
+              gapYears: [],
+              context: offeringContext,
+            },
+          );
+          applyProgramWithSaved(detail, {
+            terms: built.terms,
+            customs: latest.customs,
+            startYear: effectiveStartYear,
+            gapYears: [],
+            planName: nextPlanName,
+            minorProgramId: latest.minor_program_id,
+          });
+          setUnscheduled(built.unscheduled);
+          persistPlan(
+            detail.program_id,
+            built.terms,
+            nextCustoms,
+            effectiveStartYear,
+            [],
+            nextPlanName,
+            latest.minor_program_id,
+          );
+          void loadMinorDetail(latest.minor_program_id);
+          void upsertDegreePlan(supabase, {
+            userId: nextUser.id,
+            userEmail: nextUser.email,
+            degreeName: nextPlanName,
+            startYear: effectiveStartYear,
+            catalogYear: detail.catalog_year,
+            programId: detail.program_id,
+            minorProgramId: latest.minor_program_id,
+            terms: built.terms,
+            customs: latest.customs,
+          })
+            .then((savedRecord) => {
+              if (!active) return;
+              setSavedPlans((prev) => {
+                const next = [
+                  savedRecord,
+                  ...prev.filter(
+                    (p) => p.program_id !== savedRecord.program_id,
+                  ),
+                ];
+                savedPlansRef.current = next;
+                return next;
+              });
+            })
+            .catch(() => {
+              // Ignore background hydration sync failure
+            });
+        } else {
+          const latestGapYears = inferGapYearsFromTerms(latest.terms);
+          applyProgramWithSaved(detail, {
+            terms: latest.terms,
+            customs: latest.customs,
+            startYear: effectiveStartYear,
+            gapYears: latestGapYears,
+            planName: nextPlanName,
+            minorProgramId: latest.minor_program_id,
+          });
+          persistPlan(
+            detail.program_id,
+            latest.terms,
+            nextCustoms,
+            effectiveStartYear,
+            latestGapYears,
+            nextPlanName,
+            latest.minor_program_id,
+          );
+          void loadMinorDetail(latest.minor_program_id);
+        }
       } catch {
         if (active) showToast("Could not load saved degree plan");
       } finally {
@@ -593,8 +808,12 @@ export function DegreePlannerClient({
     };
   }, [
     applyProgramWithSaved,
+    availableCatalogYears,
+    catalogMap,
     loadMinorDetail,
     loadProgramDetail,
+    offeringContext,
+    offeringsMap,
     showToast,
     supabase,
   ]);
@@ -984,9 +1203,9 @@ export function DegreePlannerClient({
     setNewPlanQuery("");
     setNewPlanProgram(null);
     setNewPlanName("");
-    setNewPlanStartYear(startYear);
+    setNewPlanStartYear(program ? startYear : profileDefaultStartYear);
     setAddPlanModalOpen(true);
-  }, [startYear]);
+  }, [program, startYear, profileDefaultStartYear]);
 
   const openSavePreviewAsPlanModal = useCallback(() => {
     if (!program) return;
