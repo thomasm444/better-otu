@@ -162,10 +162,13 @@ export function RoomDetailsDrawer({
       onMouseDown={(e) => e.stopPropagation()}
       onTouchStart={(e) => e.stopPropagation()}
       onWheel={(e) => e.stopPropagation()}
-      className="absolute bottom-0 left-0 top-0 z-[1050] flex w-full max-w-[360px] flex-col border-r border-slate-200 bg-white/98 shadow-2xl backdrop-blur-md transition-transform duration-200 dark:border-zinc-800 dark:bg-zinc-900/98 dark:text-zinc-100"
+      className="absolute inset-x-0 bottom-0 top-auto z-[1050] flex max-h-[72dvh] w-full flex-col rounded-t-2xl border-t border-slate-200 bg-white/98 shadow-2xl backdrop-blur-md transition-transform duration-200 lg:inset-x-auto lg:bottom-0 lg:left-0 lg:top-0 lg:max-h-none lg:max-w-[360px] lg:rounded-none lg:border-r lg:border-t-0 dark:border-zinc-800 dark:bg-zinc-900/98 dark:text-zinc-100"
     >
+      {/* Mobile Bottom Sheet Handle */}
+      <div className="mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-slate-300 lg:hidden dark:bg-zinc-700" />
+
       {/* Drawer Header */}
-      <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-4 py-3.5 dark:border-zinc-800">
+      <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-4 py-3 lg:py-3.5 dark:border-zinc-800">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <h2 className="truncate text-lg font-bold tracking-tight text-slate-900 dark:text-zinc-50">
@@ -526,7 +529,7 @@ export function RoomDetailsDrawer({
       </div>
 
       {/* Primary Action Footer */}
-      <div className="border-t border-slate-200 bg-slate-50/90 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900/90">
+      <div className="border-t border-slate-200 bg-slate-50/90 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:py-3 dark:border-zinc-800 dark:bg-zinc-900/90">
         {p.isLibraryRoom ? (
           <div className="flex gap-2">
             <a

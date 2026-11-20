@@ -68,7 +68,7 @@ export function TimeScrubber({
         onMouseDown={(e) => e.stopPropagation()}
         onTouchStart={(e) => e.stopPropagation()}
         onWheel={(e) => e.stopPropagation()}
-        className="absolute bottom-4 left-1/2 z-[1000] flex max-w-[92%] -translate-x-1/2 items-center gap-2 rounded-full border border-slate-200/95 bg-white/95 py-1.5 pl-3.5 pr-1.5 shadow-xl backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/95 dark:text-zinc-100"
+        className="absolute bottom-[max(0.75rem,env(safe-area-inset-bottom))] left-1/2 z-[1000] flex max-w-[calc(100%-1.5rem)] -translate-x-1/2 items-center gap-2 rounded-full border border-slate-200/95 bg-white/95 py-1.5 pl-3 pr-1.5 shadow-xl backdrop-blur-md sm:pl-3.5 lg:bottom-4 lg:max-w-[92%] dark:border-zinc-700 dark:bg-zinc-900/95 dark:text-zinc-100"
       >
         <button
           type="button"
@@ -91,6 +91,15 @@ export function TimeScrubber({
           {weekLoading && (
             <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-sky-600 border-t-transparent" />
           )}
+        </button>
+
+        <button
+          type="button"
+          onClick={onSetNow}
+          title="Jump back to current date and time"
+          className="shrink-0 rounded-full border border-emerald-400 bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-800 transition hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-200 dark:hover:bg-emerald-900/70"
+        >
+          Now
         </button>
 
         <button
@@ -119,7 +128,7 @@ export function TimeScrubber({
       onMouseDown={(e) => e.stopPropagation()}
       onTouchStart={(e) => e.stopPropagation()}
       onWheel={(e) => e.stopPropagation()}
-      className="absolute bottom-4 left-1/2 z-[1000] w-[92%] max-w-[540px] -translate-x-1/2 rounded-2xl border border-slate-200/95 bg-white/95 px-3 py-2.5 shadow-2xl backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/95 dark:text-zinc-100"
+      className="absolute bottom-[max(0.625rem,env(safe-area-inset-bottom))] left-1/2 z-[1000] max-h-[62dvh] w-[calc(100%-1rem)] max-w-[540px] -translate-x-1/2 overflow-y-auto rounded-2xl border border-slate-200/95 bg-white/95 px-2.5 py-2 shadow-2xl backdrop-blur-md sm:w-[92%] sm:px-3 sm:py-2.5 lg:bottom-4 lg:max-h-none lg:overflow-visible dark:border-zinc-700 dark:bg-zinc-900/95 dark:text-zinc-100"
     >
       {/* Row 1: Week Navigation, Academic Context, Date Picker & Collapse Button */}
       <div className="flex flex-wrap items-center justify-between gap-1.5 border-b border-slate-200/80 pb-1.5 dark:border-zinc-800">
@@ -183,15 +192,20 @@ export function TimeScrubber({
             }}
             className="rounded-md border border-slate-300 bg-slate-50 px-1.5 py-0.5 text-[11px] font-semibold text-slate-800 outline-none focus:border-sky-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
           />
+          <span
+            aria-hidden="true"
+            className="mx-0.5 h-4 w-px bg-slate-200 dark:bg-zinc-700"
+          />
           <button
             type="button"
             onClick={onToggleCollapse}
-            aria-label="Minimize time controls"
-            title="Minimize time controls"
-            className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 bg-slate-50 text-slate-700 transition hover:bg-slate-100 hover:text-slate-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+            aria-label="Collapse time bar"
+            title="Collapse time bar"
+            className="inline-flex items-center gap-1 rounded-md border border-slate-300 bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-200 hover:text-slate-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
           >
+            <span>Hide</span>
             <svg
-              className="h-3.5 w-3.5"
+              className="h-3 w-3"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -327,15 +341,15 @@ export function TimeScrubber({
             value={currentSlotStart}
             onChange={(e) => onChangeSlotStart(Number(e.target.value))}
             aria-label="Time of day"
-            className="w-full cursor-pointer accent-sky-600"
+            className="h-5 w-full cursor-pointer accent-sky-600 sm:h-auto"
           />
           <div className="flex items-center justify-between text-[10px] font-medium text-slate-600 dark:text-zinc-300">
             <span>8 AM</span>
-            <span>10 AM</span>
+            <span className="hidden sm:inline">10 AM</span>
             <span>12 PM</span>
-            <span>2 PM</span>
+            <span className="hidden sm:inline">2 PM</span>
             <span>4 PM</span>
-            <span>6 PM</span>
+            <span className="hidden sm:inline">6 PM</span>
             <span>8 PM</span>
             <span>10 PM</span>
           </div>

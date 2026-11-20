@@ -82,7 +82,7 @@ function ModalBackdrop({
         }
         backdropMouseDownRef.current = false;
       }}
-      className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/60 p-2 backdrop-blur-sm sm:p-4"
     >
       {children}
     </div>
@@ -129,6 +129,10 @@ export function CampusMapView() {
   // Timeline Controls
   const [isPlaying, setIsPlaying] = useState<boolean>(false);
   const [isTimeCardCollapsed, setIsTimeCardCollapsed] = useState<boolean>(false);
+
+  // Mobile-only collapsible panels (unused on lg: desktop)
+  const [isMobileControlsOpen, setIsMobileControlsOpen] = useState<boolean>(false);
+  const [isMobileLegendOpen, setIsMobileLegendOpen] = useState<boolean>(false);
 
   // Stats
   const [stats, setStats] = useState({
@@ -189,6 +193,9 @@ export function CampusMapView() {
       setCurrentWeekStart(initial.weekStart);
       setCurrentDay(initial.dayIndex);
       setCurrentSlotStart(initial.slotStart);
+      if (window.innerWidth < 1024) {
+        setIsTimeCardCollapsed(true);
+      }
 
       const params = new URLSearchParams(window.location.search);
       const qParam = params.get("q")?.trim();
@@ -544,9 +551,10 @@ export function CampusMapView() {
       const tempLayer = L.geoJSON(feature as unknown as GeoJSON.GeoJsonObject);
       const bounds = tempLayer.getBounds();
       if (bounds.isValid()) {
+        const isMobile = window.innerWidth < 1024;
         map.flyToBounds(bounds, {
-          paddingTopLeft: [380, 70],
-          paddingBottomRight: [90, 140],
+          paddingTopLeft: isMobile ? [24, 48] : [380, 70],
+          paddingBottomRight: isMobile ? [24, 240] : [90, 140],
           maxZoom: 19,
           duration: 0.75,
         });
@@ -807,14 +815,16 @@ export function CampusMapView() {
               ? "#10b981"
               : "#f43f5e";
 
-        featureLayer.bindTooltip(
-          `<div style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;">
-            <span style="width:8px;height:8px;border-radius:9999px;background:${tooltipDot};display:inline-block;"></span>
-            <span>${escapeHtml(roomLabel)}</span>
-            <span style="font-weight:500;color:#475569;">&bull; ${escapeHtml(tooltipStatus)}</span>
-          </div>`,
-          { direction: "top", sticky: true, opacity: 0.96 },
-        );
+        if (window.matchMedia("(hover: hover)").matches) {
+          featureLayer.bindTooltip(
+            `<div style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;">
+              <span style="width:8px;height:8px;border-radius:9999px;background:${tooltipDot};display:inline-block;"></span>
+              <span>${escapeHtml(roomLabel)}</span>
+              <span style="font-weight:500;color:#475569;">&bull; ${escapeHtml(tooltipStatus)}</span>
+            </div>`,
+            { direction: "top", sticky: true, opacity: 0.96 },
+          );
+        }
 
         featureLayer.on({
           click: (e) => {
@@ -947,26 +957,53 @@ export function CampusMapView() {
   );
 
   return (
-    <div className="relative flex h-screen w-full flex-col overflow-hidden bg-slate-100 font-sans text-slate-900 dark:bg-zinc-950 dark:text-zinc-100">
+    <div className="relative flex h-dvh w-full flex-col overflow-hidden bg-slate-100 font-sans text-slate-900 lg:h-screen dark:bg-zinc-950 dark:text-zinc-100">
       {/* Consolidated Single Top Navigation Bar */}
       <header className="relative z-30 flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-slate-200 bg-white px-3 py-2 shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-        {/* Left: Home + Title */}
-        <div className="flex items-center gap-2.5">
-          <Link
-            href="/"
-            className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 hover:text-slate-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+        {/* Left: Home + Title (+ Mobile Menu Toggle) */}
+        <div className="flex w-full items-center justify-between gap-2.5 lg:w-auto lg:justify-start">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <Link
+              href="/"
+              className="inline-flex shrink-0 items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 hover:text-slate-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+            >
+              &larr; Home
+            </Link>
+            <h1 className="truncate whitespace-nowrap text-sm font-bold tracking-tight text-sky-700 sm:text-base dark:text-sky-400">
+              Campus Rooms &amp; Availability
+            </h1>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsMobileControlsOpen((prev) => !prev)}
+            aria-expanded={isMobileControlsOpen}
+            aria-label={isMobileControlsOpen ? "Hide map options" : "Show map options"}
+            className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold transition lg:hidden ${
+              isMobileControlsOpen
+                ? "border-sky-600 bg-sky-600 text-white shadow-xs"
+                : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+            }`}
           >
-            &larr; Home
-          </Link>
-          <h1 className="whitespace-nowrap text-sm font-bold tracking-tight text-sky-700 sm:text-base dark:text-sky-400">
-            Campus Rooms &amp; Availability
-          </h1>
+            <svg
+              className="h-3.5 w-3.5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+            >
+              <line x1="4" y1="6" x2="20" y2="6" />
+              <line x1="4" y1="12" x2="20" y2="12" />
+              <line x1="4" y1="18" x2="20" y2="18" />
+            </svg>
+            <span>Menu</span>
+          </button>
         </div>
 
         {/* Center Controls: Search, View Mode, Campus Switcher, Unmapped Spaces */}
-        <div className="flex flex-1 flex-wrap items-center gap-2 text-xs">
+        <div className="flex w-full flex-1 flex-wrap items-center gap-2 text-xs lg:w-auto">
           {/* Search Input with Live Dropdown */}
-          <div ref={searchBoxRef} className="relative">
+          <div ref={searchBoxRef} className="relative w-full lg:w-auto">
             <input
               type="text"
               placeholder="Search room, building, course..."
@@ -984,7 +1021,7 @@ export function CampusMapView() {
                   setIsSearchOpen(false);
                 }
               }}
-              className="w-44 rounded-lg border border-slate-300 bg-slate-50 py-1.5 pl-2.5 pr-7 text-xs text-slate-900 placeholder:text-slate-500 outline-none transition focus:border-sky-500 focus:bg-white sm:w-52 xl:w-56 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder:text-zinc-400"
+              className="w-full rounded-lg border border-slate-300 bg-slate-50 py-1.5 pl-2.5 pr-7 text-xs text-slate-900 placeholder:text-slate-500 outline-none transition focus:border-sky-500 focus:bg-white lg:w-52 xl:w-56 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder:text-zinc-400"
             />
             {searchQuery && (
               <button
@@ -1002,7 +1039,7 @@ export function CampusMapView() {
 
             {/* Autocomplete Dropdown */}
             {isSearchOpen && searchQuery.trim().length > 0 && (
-              <div className="absolute left-0 top-full z-50 mt-1.5 w-72 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
+              <div className="absolute left-0 top-full z-50 mt-1.5 w-full overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl lg:w-72 dark:border-zinc-700 dark:bg-zinc-900">
                 {searchSuggestions.length === 0 ? (
                   <div className="px-3 py-2.5 text-xs text-slate-600 dark:text-zinc-400">
                     No matching rooms on the map.
@@ -1060,62 +1097,81 @@ export function CampusMapView() {
             )}
           </div>
 
-          {/* Mode Switcher: Live Availability / Floor Colors */}
-          <div className="flex rounded-lg border border-slate-200 bg-slate-100 p-0.5 dark:border-zinc-700 dark:bg-zinc-800">
-            <button
-              type="button"
-              onClick={() => setCurrentMode("availability")}
-              className={`rounded-md px-2.5 py-1 text-[11px] font-semibold transition ${
-                currentMode === "availability"
-                  ? "bg-sky-600 text-white shadow-xs"
-                  : "text-slate-700 hover:text-slate-950 dark:text-zinc-200 dark:hover:text-white"
-              }`}
-            >
-              Live Availability
-            </button>
-            <button
-              type="button"
-              onClick={() => setCurrentMode("floors")}
-              className={`rounded-md px-2.5 py-1 text-[11px] font-semibold transition ${
-                currentMode === "floors"
-                  ? "bg-sky-600 text-white shadow-xs"
-                  : "text-slate-700 hover:text-slate-950 dark:text-zinc-200 dark:hover:text-white"
-              }`}
-            >
-              Floor Colors
-            </button>
-          </div>
-
-          {/* Campus Switcher */}
-          <div className="flex rounded-lg border border-slate-200 bg-slate-100 p-0.5 dark:border-zinc-700 dark:bg-zinc-800">
-            {(Object.keys(VENUES) as VenueKey[]).map((key) => (
+          {/* Collapsible Controls on Mobile; Inline on Desktop (lg:) */}
+          <div
+            className={`${
+              isMobileControlsOpen ? "flex" : "hidden"
+            } w-full flex-wrap items-center gap-2 pt-0.5 lg:contents`}
+          >
+            {/* Mode Switcher: Live Availability / Floor Colors */}
+            <div className="flex rounded-lg border border-slate-200 bg-slate-100 p-0.5 dark:border-zinc-700 dark:bg-zinc-800">
               <button
-                key={key}
                 type="button"
-                onClick={() => jumpToVenue(key)}
-                className={`rounded-md px-2 py-1 text-[11px] font-semibold transition ${
-                  activeVenue === key
-                    ? "bg-white text-sky-700 shadow-xs dark:bg-zinc-700 dark:text-sky-300"
-                    : "text-slate-700 hover:text-sky-700 dark:text-zinc-200 dark:hover:text-sky-300"
+                onClick={() => setCurrentMode("availability")}
+                className={`rounded-md px-2.5 py-1 text-[11px] font-semibold transition ${
+                  currentMode === "availability"
+                    ? "bg-sky-600 text-white shadow-xs"
+                    : "text-slate-700 hover:text-slate-950 dark:text-zinc-200 dark:hover:text-white"
                 }`}
               >
-                {VENUES[key].label}
+                Live Availability
               </button>
-            ))}
-          </div>
+              <button
+                type="button"
+                onClick={() => setCurrentMode("floors")}
+                className={`rounded-md px-2.5 py-1 text-[11px] font-semibold transition ${
+                  currentMode === "floors"
+                    ? "bg-sky-600 text-white shadow-xs"
+                    : "text-slate-700 hover:text-slate-950 dark:text-zinc-200 dark:hover:text-white"
+                }`}
+              >
+                Floor Colors
+              </button>
+            </div>
 
-          {/* Unmapped Spaces Button */}
-          <button
-            type="button"
-            onClick={() => setIsUnmappedOpen(true)}
-            className="whitespace-nowrap rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 shadow-2xs transition hover:bg-slate-50 hover:text-slate-950 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
-          >
-            {mergedUnmappedSpaces.length} Unmapped Spaces
-          </button>
+            {/* Campus Switcher */}
+            <div className="flex rounded-lg border border-slate-200 bg-slate-100 p-0.5 dark:border-zinc-700 dark:bg-zinc-800">
+              {(Object.keys(VENUES) as VenueKey[]).map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => {
+                    jumpToVenue(key);
+                    setIsMobileControlsOpen(false);
+                  }}
+                  className={`rounded-md px-2 py-1 text-[11px] font-semibold transition ${
+                    activeVenue === key
+                      ? "bg-white text-sky-700 shadow-xs dark:bg-zinc-700 dark:text-sky-300"
+                      : "text-slate-700 hover:text-sky-700 dark:text-zinc-200 dark:hover:text-sky-300"
+                  }`}
+                >
+                  {VENUES[key].label}
+                </button>
+              ))}
+            </div>
+
+            {/* Unmapped Spaces Button */}
+            <button
+              type="button"
+              onClick={() => {
+                setIsUnmappedOpen(true);
+                setIsMobileControlsOpen(false);
+              }}
+              className="whitespace-nowrap rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 shadow-2xs transition hover:bg-slate-50 hover:text-slate-950 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+            >
+              {mergedUnmappedSpaces.length} Unmapped Spaces
+            </button>
+          </div>
         </div>
 
         {/* Far Top-Right: User Profile / Auth */}
-        <div className="ml-auto shrink-0">
+        <div
+          className={`${
+            isMobileControlsOpen
+              ? "flex w-full justify-end border-t border-slate-100 pt-2 dark:border-zinc-800"
+              : "hidden"
+          } lg:ml-auto lg:block lg:w-auto lg:shrink-0 lg:border-0 lg:pt-0`}
+        >
           <AuthButton />
         </div>
       </header>
@@ -1124,7 +1180,7 @@ export function CampusMapView() {
       <div className="relative z-0 h-full w-full flex-1 overflow-hidden">
         {/* Loading Overlay */}
         {showInitialOverlay && (
-          <div className="absolute inset-0 z-[1100] flex flex-col items-center justify-center bg-white/80 backdrop-blur-sm dark:bg-zinc-950/80">
+          <div className="absolute inset-0 z-[1100] flex flex-col items-center justify-center bg-white/80 px-6 text-center backdrop-blur-sm dark:bg-zinc-950/80">
             <div className="h-10 w-10 animate-spin rounded-full border-4 border-sky-600 border-t-transparent" />
             <p className="mt-3 text-sm font-semibold text-slate-700 dark:text-zinc-300">
               Loading campus rooms &amp; live weekly schedules from Supabase...
@@ -1158,7 +1214,7 @@ export function CampusMapView() {
 
         {/* Transient Week Load Banner (if base map is ready) */}
         {!error && weekData && weekError && (
-          <div className="absolute left-1/2 top-4 z-[1060] flex -translate-x-1/2 items-center gap-3 rounded-xl border border-red-200 bg-red-50/95 px-4 py-2 text-xs font-semibold text-red-700 shadow-lg backdrop-blur dark:border-red-900 dark:bg-red-950/95 dark:text-red-200">
+          <div className="absolute left-1/2 top-4 z-[1060] flex w-[calc(100%-1.5rem)] max-w-lg -translate-x-1/2 items-center justify-between gap-3 rounded-xl border border-red-200 bg-red-50/95 px-4 py-2 text-xs font-semibold text-red-700 shadow-lg backdrop-blur sm:w-auto dark:border-red-900 dark:bg-red-950/95 dark:text-red-200">
             <span>
               Could not load schedule for {formatWeekRangeLabel(effectiveWeekStart)}:{" "}
               {weekError}
@@ -1241,22 +1297,83 @@ export function CampusMapView() {
           onFocusRoom={focusRoomOnMap}
         />
 
+        {/* Mobile-Only Compact Legend Pill (collapsed by default on < lg) */}
+        {!isMobileLegendOpen && (
+          <button
+            type="button"
+            onMouseDown={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
+            onClick={() => setIsMobileLegendOpen(true)}
+            aria-label="Open map legend and filters"
+            className="absolute left-2.5 top-2.5 z-[1000] flex items-center gap-2 rounded-full border border-slate-200/95 bg-white/95 px-3 py-1.5 text-xs font-semibold text-slate-800 shadow-lg backdrop-blur-md transition hover:bg-white lg:hidden dark:border-zinc-700 dark:bg-zinc-900/95 dark:text-zinc-100"
+          >
+            {currentMode === "availability" ? (
+              <>
+                <span className="flex items-center gap-1 tabular-nums">
+                  <span
+                    className={`h-2 w-2 rounded-full ${
+                      showAvailable ? "bg-emerald-500" : "bg-slate-400"
+                    }`}
+                  />
+                  <span className="text-emerald-800 dark:text-emerald-300">
+                    {stats.availCount}
+                  </span>
+                </span>
+                <span className="text-slate-300 dark:text-zinc-600">&bull;</span>
+                <span className="flex items-center gap-1 tabular-nums">
+                  <span
+                    className={`h-2 w-2 rounded-full ${
+                      showInUse ? "bg-rose-500" : "bg-slate-400"
+                    }`}
+                  />
+                  <span className="text-rose-800 dark:text-rose-300">
+                    {stats.busyCount}
+                  </span>
+                </span>
+              </>
+            ) : (
+              <span>Floors</span>
+            )}
+            <svg
+              className="h-3.5 w-3.5 text-slate-500 dark:text-zinc-400"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+            >
+              <path d="m6 9 6 6 6-6" />
+            </svg>
+          </button>
+        )}
+
         {/* Interactive Bottom-Left Status Legend & Filter */}
         <div
           onMouseDown={(e) => e.stopPropagation()}
           onTouchStart={(e) => e.stopPropagation()}
           onWheel={(e) => e.stopPropagation()}
-          className="absolute left-3 top-3 z-[1000] flex w-[214px] flex-col gap-1 rounded-xl border border-slate-200/95 bg-white/95 p-2.5 text-xs shadow-xl backdrop-blur-md lg:bottom-4 lg:left-4 lg:top-auto dark:border-zinc-700 dark:bg-zinc-900/95 dark:text-zinc-100"
+          className={`${
+            isMobileLegendOpen ? "flex" : "hidden lg:flex"
+          } absolute left-2.5 top-2.5 z-[1000] w-[214px] flex-col gap-1 rounded-xl border border-slate-200/95 bg-white/95 p-2.5 text-xs shadow-xl backdrop-blur-md lg:bottom-4 lg:left-4 lg:top-auto dark:border-zinc-700 dark:bg-zinc-900/95 dark:text-zinc-100`}
         >
           <div className="flex items-center justify-between px-1 pb-0.5">
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-zinc-300">
               {currentMode === "availability" ? "Status Legend" : "Floor Legend"}
             </span>
-            {currentMode === "availability" && (
-              <span className="text-[10px] font-medium text-slate-500 dark:text-zinc-400">
-                Click to filter
-              </span>
-            )}
+            <div className="flex items-center gap-1.5">
+              {currentMode === "availability" && (
+                <span className="text-[10px] font-medium text-slate-500 dark:text-zinc-400">
+                  Click to filter
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => setIsMobileLegendOpen(false)}
+                aria-label="Collapse legend"
+                className="flex h-5 w-5 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-800 lg:hidden dark:text-zinc-400 dark:hover:bg-zinc-800"
+              >
+                ✕
+              </button>
+            </div>
           </div>
 
           {currentMode === "availability" ? (
@@ -1399,36 +1516,49 @@ export function CampusMapView() {
       {/* Google Calendar-Style Weekly Schedule Modal */}
       {activeModalFeature && (
         <ModalBackdrop onClose={() => setActiveModalFeature(null)}>
-          <div className="flex h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900">
+          <div className="flex h-[94dvh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl lg:h-[90vh] dark:border-zinc-700 dark:bg-zinc-900">
             {/* Modal Header */}
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-6 py-4 dark:border-zinc-800">
-              <div>
-                <h2 className="text-lg font-bold text-slate-900 dark:text-zinc-100">
-                  {activeModalSubRoom ? `${activeModalSubRoom} • ` : ""}
-                  {activeModalFeature.properties.name}
-                  <span className="ml-2 text-xs font-semibold text-sky-700 dark:text-sky-400">
-                    ({weekRangeText})
-                  </span>
-                </h2>
-                <p className="mt-0.5 text-xs text-slate-600 dark:text-zinc-300">
-                  Building: <strong>{activeModalFeature.properties.building || "—"}</strong>{" "}
-                  &bull; Floor:{" "}
-                  <strong>{formatFloor(activeModalFeature.properties.floor)}</strong> &bull;
-                  Capacity:{" "}
-                  <strong>
-                    {activeModalFeature.properties.isLibraryRoom &&
-                    activeModalFeature.properties.minCapacity
-                      ? `${activeModalFeature.properties.minCapacity}–${activeModalFeature.properties.capacity}`
-                      : activeModalFeature.properties.capacity || "—"}
-                  </strong>{" "}
-                  &bull;{" "}
-                  <span className="font-semibold text-slate-800 dark:text-zinc-200">
-                    {weekContextLabel}
-                  </span>
-                </p>
+            <div className="flex flex-col gap-2 border-b border-slate-200 px-3 py-2.5 lg:flex-row lg:flex-wrap lg:items-center lg:justify-between lg:gap-3 lg:px-6 lg:py-4 dark:border-zinc-800">
+              <div className="flex items-start justify-between gap-2 lg:block lg:min-w-0 lg:flex-1">
+                <div className="min-w-0 flex-1">
+                  <h2 className="truncate text-sm font-bold text-slate-900 lg:text-lg dark:text-zinc-100">
+                    {activeModalSubRoom ? `${activeModalSubRoom} • ` : ""}
+                    {activeModalFeature.properties.name}
+                    <span className="ml-2 hidden text-xs font-semibold text-sky-700 lg:inline dark:text-sky-400">
+                      ({weekRangeText})
+                    </span>
+                  </h2>
+                  <p className="mt-0.5 truncate text-[11px] text-slate-600 lg:text-xs dark:text-zinc-300">
+                    <span className="hidden lg:inline">Building: </span>
+                    <strong>{activeModalFeature.properties.building || "—"}</strong>{" "}
+                    &bull; Fl{" "}
+                    <strong>{formatFloor(activeModalFeature.properties.floor)}</strong> &bull;
+                    Cap{" "}
+                    <strong>
+                      {activeModalFeature.properties.isLibraryRoom &&
+                      activeModalFeature.properties.minCapacity
+                        ? `${activeModalFeature.properties.minCapacity}–${activeModalFeature.properties.capacity}`
+                        : activeModalFeature.properties.capacity || "—"}
+                    </strong>{" "}
+                    &bull;{" "}
+                    <span className="font-semibold text-slate-800 dark:text-zinc-200">
+                      {weekContextLabel}
+                    </span>
+                  </p>
+                </div>
+
+                {/* Mobile Close Button (top-right aligned with title) */}
+                <button
+                  type="button"
+                  onClick={() => setActiveModalFeature(null)}
+                  aria-label="Close weekly schedule"
+                  className="shrink-0 rounded-full p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800 lg:hidden dark:text-zinc-400 dark:hover:bg-zinc-800"
+                >
+                  ✕
+                </button>
               </div>
 
-              <div className="flex flex-wrap items-center gap-3">
+              <div className="flex flex-wrap items-center gap-1.5 lg:gap-3">
                 {/* Multi-Room Switcher for UP / U5 */}
                 {activeModalFeature.properties.isBuildingContainer &&
                   activeModalFeature.properties.rooms && (
@@ -1438,7 +1568,7 @@ export function CampusMapView() {
                           key={rm}
                           type="button"
                           onClick={() => setActiveModalSubRoom(rm)}
-                          className={`rounded px-2.5 py-1 text-xs font-bold transition ${
+                          className={`rounded px-2 py-0.5 text-[11px] font-bold transition lg:px-2.5 lg:py-1 lg:text-xs ${
                             activeModalSubRoom === rm
                               ? "bg-sky-600 text-white shadow"
                               : "text-slate-700 hover:text-slate-950 dark:text-zinc-300"
@@ -1456,28 +1586,41 @@ export function CampusMapView() {
                     type="button"
                     disabled={!canGoPrevWeek}
                     onClick={() => selectWeek(addDaysIso(effectiveWeekStart, -7))}
-                    className="rounded px-2 py-1 text-xs font-semibold text-slate-700 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-40 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                    className="rounded px-2 py-0.5 text-[11px] font-semibold text-slate-700 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-40 lg:py-1 lg:text-xs dark:text-zinc-200 dark:hover:bg-zinc-700"
                   >
-                    &larr; Prev Week
+                    &larr; <span className="hidden lg:inline">Prev Week</span>
+                    <span className="lg:hidden">Prev</span>
                   </button>
-                  <span className="px-2 text-xs font-bold text-slate-800 dark:text-zinc-100">
+                  <span className="px-1 text-[11px] font-bold text-slate-800 lg:px-2 lg:text-xs dark:text-zinc-100">
                     {weekLoading ? "Loading…" : weekRangeText}
                   </span>
                   <button
                     type="button"
                     disabled={!canGoNextWeek}
                     onClick={() => selectWeek(addDaysIso(effectiveWeekStart, 7))}
-                    className="rounded px-2 py-1 text-xs font-semibold text-slate-700 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-40 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                    className="rounded px-2 py-0.5 text-[11px] font-semibold text-slate-700 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-40 lg:py-1 lg:text-xs dark:text-zinc-200 dark:hover:bg-zinc-700"
                   >
-                    Next Week &rarr;
+                    <span className="hidden lg:inline">Next Week</span>
+                    <span className="lg:hidden">Next</span> &rarr;
                   </button>
                 </div>
 
-                {/* Close Button */}
+                {/* Jump back to current date & time */}
+                <button
+                  type="button"
+                  onClick={setTimeToNow}
+                  title="Jump back to current date and time"
+                  className="rounded-lg border border-emerald-400 bg-emerald-50 px-2 py-1 text-[11px] font-bold text-emerald-800 transition hover:bg-emerald-100 lg:px-2.5 lg:text-xs dark:border-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-200 dark:hover:bg-emerald-900/70"
+                >
+                  Now
+                </button>
+
+                {/* Desktop Close Button */}
                 <button
                   type="button"
                   onClick={() => setActiveModalFeature(null)}
-                  className="rounded-full p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                  aria-label="Close weekly schedule"
+                  className="hidden rounded-full p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800 lg:inline-flex dark:text-zinc-400 dark:hover:bg-zinc-800"
                 >
                   ✕
                 </button>
@@ -1488,7 +1631,7 @@ export function CampusMapView() {
             {isModalLibraryOutsideWindow &&
               weekData?.libraryWindowStart &&
               weekData?.libraryWindowEnd && (
-                <div className="border-b border-amber-200 bg-amber-50 px-6 py-2 text-xs font-medium text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+                <div className="border-b border-amber-200 bg-amber-50 px-3 py-1.5 text-[11px] font-medium text-amber-900 lg:px-6 lg:py-2 lg:text-xs dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
                   Library study room bookings are updated daily for the upcoming ~1-week
                   window (
                   <strong>
@@ -1500,66 +1643,79 @@ export function CampusMapView() {
               )}
 
             {/* Color Key */}
-            <div className="flex flex-wrap items-center gap-4 border-b border-slate-100 bg-slate-50/80 px-6 py-1.5 text-[11px] font-medium text-slate-700 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-300">
-              <span className="flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-sm bg-sky-500" /> Course / Lab /
-                Tutorial
+            <div className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5 border-b border-slate-100 bg-slate-50/80 px-3 py-1 text-[10px] font-medium text-slate-700 lg:gap-4 lg:px-6 lg:py-1.5 lg:text-[11px] dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-300">
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-2 rounded-sm bg-sky-500 lg:h-2.5 lg:w-2.5" /> Course / Lab
+                <span className="hidden lg:inline"> / Tutorial</span>
               </span>
-              <span className="flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-sm bg-amber-500" /> Final Exam
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-2 rounded-sm bg-amber-500 lg:h-2.5 lg:w-2.5" /> Final Exam
               </span>
-              <span className="flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-sm bg-emerald-500" /> Library Booking
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-2 rounded-sm bg-emerald-500 lg:h-2.5 lg:w-2.5" /> Library
+                <span className="hidden lg:inline"> Booking</span>
               </span>
-              <span className="flex items-center gap-1.5">
-                <span className="h-2.5 w-2.5 rounded-sm bg-purple-500" /> Room Reservation
+              <span className="flex items-center gap-1">
+                <span className="h-2 w-2 rounded-sm bg-purple-500 lg:h-2.5 lg:w-2.5" /> Reservation
               </span>
             </div>
 
-            {/* Modal Body: Timetable Grid */}
-            <div className="flex flex-1 flex-col overflow-hidden">
-              {/* Day Column Headers */}
-              <div className="grid grid-cols-8 border-b border-slate-200 bg-slate-50 text-xs font-bold text-slate-700 dark:border-zinc-800 dark:bg-zinc-800/50 dark:text-zinc-200">
-                <div className="border-r border-slate-200 p-2 text-center text-slate-600 dark:border-zinc-700 dark:text-zinc-400">
-                  Time
-                </div>
-                {weekDays.map((dayInfo) => (
-                  <div
-                    key={dayInfo.date}
-                    title={dayInfo.note || dayInfo.date}
-                    className={`p-2 text-center ${
-                      !dayInfo.inBounds
-                        ? "opacity-40"
-                        : dayInfo.dayIndex === currentDay
-                          ? "bg-sky-100/70 font-extrabold text-sky-900 dark:bg-sky-950/60 dark:text-sky-200"
-                          : ""
-                    }`}
-                  >
-                    <div>
-                      {DAY_SHORT[dayInfo.dayIndex]} {formatShortIsoDate(dayInfo.date)}
-                    </div>
-                    {dayInfo.note && (
-                      <div className="truncate text-[10px] font-semibold text-amber-700 dark:text-amber-300">
-                        {dayInfo.note}
-                      </div>
-                    )}
+            {/* Modal Body: Timetable Grid (zero vertical scroll & minimal horizontal scroll on mobile; unchanged on desktop) */}
+            <div className="flex flex-1 flex-col overflow-x-auto overflow-y-hidden lg:overflow-x-hidden lg:overflow-y-auto">
+              <div className="flex h-full min-w-[430px] flex-col lg:block lg:h-auto lg:min-w-0">
+                {/* Day Column Headers */}
+                <div className="grid shrink-0 grid-cols-[38px_repeat(7,minmax(0,1fr))] border-b border-slate-200 bg-slate-50 text-[10px] font-bold text-slate-700 lg:sticky lg:top-0 lg:z-20 lg:grid-cols-8 lg:text-xs dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200">
+                  <div className="sticky left-0 z-10 border-r border-slate-200 bg-slate-50 px-1 py-1.5 text-center text-slate-600 lg:static lg:p-2 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400">
+                    Time
                   </div>
-                ))}
-              </div>
+                  {weekDays.map((dayInfo) => {
+                    const dayNum = Number(dayInfo.date.slice(8, 10));
+                    return (
+                      <div
+                        key={dayInfo.date}
+                        title={dayInfo.note || dayInfo.date}
+                        className={`px-0.5 py-1 text-center lg:p-2 ${
+                          !dayInfo.inBounds
+                            ? "opacity-40"
+                            : dayInfo.dayIndex === currentDay
+                              ? "bg-sky-100/70 font-extrabold text-sky-900 dark:bg-sky-950/60 dark:text-sky-200"
+                              : ""
+                        }`}
+                      >
+                        <div className="lg:hidden">
+                          <div>{DAY_SHORT[dayInfo.dayIndex]}</div>
+                          <div className="text-[9px] font-semibold opacity-80">{dayNum}</div>
+                        </div>
+                        <div className="hidden lg:block">
+                          {DAY_SHORT[dayInfo.dayIndex]} {formatShortIsoDate(dayInfo.date)}
+                        </div>
+                        {dayInfo.note && (
+                          <div className="truncate text-[9px] font-semibold text-amber-700 lg:text-[10px] dark:text-amber-300">
+                            {dayInfo.note}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
 
-              {/* Scrollable Calendar Body */}
-              <div className="relative flex-1 overflow-y-auto">
-                <div className="relative grid h-[728px] grid-cols-8">
+                {/* Calendar Body */}
+                <div className="relative grid min-h-0 flex-1 grid-cols-[38px_repeat(7,minmax(0,1fr))] lg:h-[728px] lg:flex-none lg:grid-cols-8">
                   {/* Time Labels Column */}
-                  <div className="border-r border-slate-200 dark:border-zinc-800">
+                  <div className="sticky left-0 z-10 flex h-full flex-col border-r border-slate-200 bg-white lg:static lg:block dark:border-zinc-800 dark:bg-zinc-900">
                     {Array.from({ length: 14 }).map((_, i) => {
                       const hourMin = 480 + i * 60;
+                      const h24 = 8 + i;
+                      const compactHour = `${h24 % 12 || 12}${h24 >= 12 ? "p" : "a"}`;
                       return (
                         <div
                           key={i}
-                          className="h-[52px] border-b border-slate-100 pr-2 text-right text-[11px] font-medium text-slate-600 dark:border-zinc-800/80 dark:text-zinc-400"
+                          className="flex-1 border-b border-slate-100 pr-1 pt-0.5 text-right text-[9px] font-medium leading-none text-slate-600 lg:h-[52px] lg:flex-none lg:pr-2 lg:pt-0 lg:text-[11px] lg:leading-normal dark:border-zinc-800/80 dark:text-zinc-400"
                         >
-                          {formatMinutesToTime(hourMin)}
+                          <span className="lg:hidden">{compactHour}</span>
+                          <span className="hidden lg:inline">
+                            {formatMinutesToTime(hourMin)}
+                          </span>
                         </div>
                       );
                     })}
@@ -1574,7 +1730,7 @@ export function CampusMapView() {
                     return (
                       <div
                         key={day}
-                        className={`relative border-r border-slate-200 dark:border-zinc-800 ${
+                        className={`relative flex h-full flex-col border-r border-slate-200 lg:block dark:border-zinc-800 ${
                           !dayInfo.inBounds
                             ? "bg-slate-100/60 dark:bg-zinc-950/40"
                             : isToday
@@ -1586,7 +1742,7 @@ export function CampusMapView() {
                         {Array.from({ length: 14 }).map((_, i) => (
                           <div
                             key={i}
-                            className="h-[52px] border-b border-slate-100 dark:border-zinc-800/60"
+                            className="flex-1 border-b border-slate-100 lg:h-[52px] lg:flex-none dark:border-zinc-800/60"
                           />
                         ))}
 
@@ -1594,10 +1750,10 @@ export function CampusMapView() {
                         {dayEvents.map((ev, idx) => {
                           const visibleStart = Math.max(480, ev.start);
                           const visibleEnd = Math.min(1320, ev.end);
-                          const topPx = ((visibleStart - 480) / 840) * 728;
-                          const heightPx = Math.max(
-                            24,
-                            ((visibleEnd - visibleStart) / 840) * 728,
+                          const topPct = ((visibleStart - 480) / 840) * 100;
+                          const heightPct = Math.max(
+                            3.3,
+                            ((visibleEnd - visibleStart) / 840) * 100,
                           );
                           const isActiveNow =
                             isToday &&
@@ -1610,13 +1766,13 @@ export function CampusMapView() {
                             <div
                               key={idx}
                               style={{
-                                top: `${topPx}px`,
-                                height: `${heightPx}px`,
-                                left: `calc(${leftPct}% + 2px)`,
-                                width: `calc(${widthPct}% - 4px)`,
+                                top: `${topPct}%`,
+                                height: `${heightPct}%`,
+                                left: `calc(${leftPct}% + 1px)`,
+                                width: `calc(${widthPct}% - 2px)`,
                               }}
                               title={`${formatMinutesToTime(ev.start)} – ${formatMinutesToTime(ev.end)}\n${ev.title}${ev.meta ? `\n${ev.meta}` : ""}`}
-                              className={`absolute overflow-hidden rounded-md p-1 text-[11px] leading-tight shadow-sm transition hover:z-20 hover:shadow-md ${
+                              className={`absolute overflow-hidden rounded p-0.5 text-[9px] leading-tight shadow-sm transition hover:z-20 hover:shadow-md lg:rounded-md lg:p-1 lg:text-[11px] ${
                                 isActiveNow
                                   ? "bg-rose-600 text-white ring-2 ring-rose-400"
                                   : ev.type === "exam"
@@ -1628,9 +1784,14 @@ export function CampusMapView() {
                                         : "border border-sky-300 bg-sky-100 text-sky-900 dark:bg-sky-950/70 dark:text-sky-200"
                               }`}
                             >
-                              <div className="font-bold opacity-85">
-                                {formatMinutesToTime(ev.start)} –{" "}
-                                {formatMinutesToTime(ev.end)}
+                              <div className="truncate font-bold opacity-85 lg:whitespace-normal">
+                                <span className="lg:hidden">
+                                  {formatMinutesToTime(ev.start).replace(" AM", "a").replace(" PM", "p")}
+                                </span>
+                                <span className="hidden lg:inline">
+                                  {formatMinutesToTime(ev.start)} –{" "}
+                                  {formatMinutesToTime(ev.end)}
+                                </span>
                               </div>
                               <div className="line-clamp-2 font-semibold">{ev.title}</div>
                             </div>
@@ -1649,9 +1810,9 @@ export function CampusMapView() {
       {/* Unmapped Rooms Modal */}
       {isUnmappedOpen && (
         <ModalBackdrop onClose={() => setIsUnmappedOpen(false)}>
-          <div className="flex max-h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900">
-            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 dark:border-zinc-800">
-              <div>
+          <div className="flex max-h-[90dvh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl sm:max-h-[85vh] dark:border-zinc-700 dark:bg-zinc-900">
+            <div className="flex items-center justify-between gap-2 border-b border-slate-200 px-4 py-3 sm:px-6 sm:py-4 dark:border-zinc-800">
+              <div className="min-w-0">
                 <h3 className="text-base font-bold text-slate-900 dark:text-zinc-100">
                   Unmapped Spaces &amp; Atria ({weekRangeText})
                 </h3>
@@ -1663,13 +1824,13 @@ export function CampusMapView() {
               <button
                 type="button"
                 onClick={() => setIsUnmappedOpen(false)}
-                className="rounded-full p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-zinc-400 dark:hover:bg-zinc-800"
+                className="shrink-0 rounded-full p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800 dark:text-zinc-400 dark:hover:bg-zinc-800"
               >
                 ✕
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4">
+            <div className="flex-1 overflow-y-auto p-3 sm:p-4">
               <div className="space-y-2">
                 {mergedUnmappedSpaces.map((u) => {
                   const dayKey = String(currentDay);
@@ -1685,7 +1846,7 @@ export function CampusMapView() {
                       className="flex items-start justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs dark:border-zinc-800 dark:bg-zinc-800/40"
                     >
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                           <span className="font-bold text-sky-700 dark:text-sky-400">
                             {u.roomId}
                           </span>
