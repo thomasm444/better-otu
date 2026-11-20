@@ -72,3 +72,14 @@ jobs:
           else
             echo "Skipping exam schedule (runs Mondays)."
           fi
+
+      - name: Ingest RateMyProfessors ratings (daily)
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "$(date -u +%H)" = "11" ]; then
+            python python_scripts/ingest_ratemyprof.py
+          else
+            echo "Skipping RateMyProfessors ingest (runs daily at 11:00 UTC)."
+          fi

@@ -3,7 +3,7 @@
 Supabase (Postgres), all in the `public` schema, populated from Banner course-schedule scrapes, Undergraduate Academic Calendar scrapes, campus map/booking feeds, and authenticated student data.
 
 The authoritative DDL lives in [`supabase/migrations/`](../supabase/migrations/) —
-ten committed, idempotent migrations. Apply them oldest first:
+twelve committed, idempotent migrations. Apply them oldest first:
 
 | migration | what it does |
 | --- | --- |
@@ -17,6 +17,8 @@ ten committed, idempotent migrations. Apply them oldest first:
 | `20261115000000_exam_schedules.sql` | creates `exam_schedules` and adds `booking_date` to `room_detailed_reservations` |
 | `20261118000000_degree_catalog_years.sql` | adds `catalog_year` (e.g. `2026-27`, `2025-26`) to `degree_programs`, `catalog_courses`, and `degree_plans`, plus `(catalog_year, name, program_id)` index |
 | `20261118120000_course_formerly_codes.sql` | adds `formerly_codes text[]` to `catalog_courses` to link renumbered courses (e.g. `CSCI 1050U` ↔ `CSCI 2050U`) |
+| `20261119000000_campus_map_week_indexes.sql` | adds partial and composite indexes for weekly campus map schedule queries on `course_meetings`, `room_detailed_reservations`, `exam_schedules`, and `campus_spaces` |
+| `20261119120000_ratemyprof_schema.sql` | creates `rmp_professors` and `rmp_professor_courses`, links `course_faculty` and `exam_schedules` via `rmp_professor_id` FKs + auto-link triggers, and links `rmp_professor_courses` to `catalog_courses` |
 
 ```bash
 # With the Supabase CLI
@@ -34,6 +36,10 @@ only — it is no longer the source of truth.
 erDiagram
     courses ||--o{ course_faculty : "has instructors"
     courses ||--o{ course_meetings : "has meeting slots"
+    rmp_professors ||--o{ course_faculty : "links instructors"
+    rmp_professors ||--o{ exam_schedules : "links exam instructors"
+    rmp_professors ||--o{ rmp_professor_courses : "has per-course ratings"
+    catalog_courses ||--o{ rmp_professor_courses : "canonical course"
 
     courses {
         bigint id PK
@@ -51,6 +57,7 @@ erDiagram
         text display_name
         text email_address
         boolean primary_indicator
+        text rmp_professor_id FK
     }
     course_meetings {
         bigint id PK
@@ -62,9 +69,43 @@ erDiagram
         boolean monday
         boolean sunday
     }
+    exam_schedules {
+        bigint id PK
+        integer term_id
+        text subject_code
+        text course_code
+        text crn
+        text instructor
+        text rmp_professor_id FK
+    }
+    rmp_professors {
+        text id PK
+        integer legacy_id UK
+        text full_name
+        text best_match_display_name
+        numeric match_score
+        numeric avg_rating
+        numeric avg_difficulty
+        numeric would_take_again_percent
+        integer num_ratings
+        integer r1
+        integer r5
+    }
+    rmp_professor_courses {
+        bigint id PK
+        text professor_id FK
+        text course_code
+        text subject_course
+        text catalog_course_code FK
+        boolean taught_in_banner
+        numeric avg_rating
+        numeric avg_difficulty
+        numeric would_take_again_percent
+        integer num_ratings
+    }
 ```
 
-Both child tables cascade on delete from `courses`.
+`course_faculty` and `course_meetings` cascade on delete from `courses`. `rmp_professor_courses` cascades on delete from `rmp_professors` (and sets `catalog_course_code` to null if removed from `catalog_courses`). `course_faculty.rmp_professor_id` and `exam_schedules.rmp_professor_id` set null on delete of a parent `rmp_professors` row.
 
 ## `courses`
 
@@ -114,6 +155,7 @@ Indexes:
 | `courses_term_class_type_idx` | `(term, schedule_type_description)` | class-type filter |
 | `courses_term_idx` | `(term)` | redundant prefix of `courses_search_order_idx`; safe to drop |
 | `courses_subject_idx`, `courses_course_number_idx` | single column | subject/course lookups without a term |
+| `courses_crn_idx` | `(crn)` | CRN lookups for linking `exam_schedules` → `courses` → `course_faculty` |
 | `courses_title_idx` | `(course_title)` | exact title lookups |
 
 Earlier revisions of this table held `faculty` and `meetings` as `jsonb`; they are
@@ -133,9 +175,10 @@ One row per instructor on a section.
 | `email_address` | `text` | |
 | `category` | `text` | always null in current data |
 | `primary_indicator` | `boolean` | `true` for the instructor of record |
+| `rmp_professor_id` | `text` FK → `rmp_professors.id` | nullable (`on delete set null`); auto-populated by trigger when `display_name` matches a professor at `> 80%` |
 
 Unique on `(course_id, banner_id, display_name)`. Indexes on `course_id`,
-`banner_id`, `email_address`, plus `(display_name, course_id)` for filtering
+`banner_id`, `email_address`, `rmp_professor_id`, plus `(display_name, course_id)` for filtering
 sections by instructor and `(term, display_name)` for the instructor suggestion
 list.
 
@@ -212,6 +255,7 @@ Production-ready scripts that scrape and ingest directly into Supabase live unde
 - `ingest_lib_bookings.py` — scrapes library study rooms and upserts `library_study_rooms`
 - `ingest_other_bookings.py` — scrapes Infosilem room details & reservations into `room_booking_details` and `room_detailed_reservations`
 - `ingest_exam_schedule.py` — scrapes the exam schedule API into `exam_schedules`
+- `ingest_ratemyprof.py` — matches Ontario Tech instructors against RateMyProfessors (`score > 80.0%`), upserts `rmp_professors` and `rmp_professor_courses`, and refreshes `rmp_professor_id` links daily (`.github/workflows/courses-and-exams.yml`)
 
 (Legacy/local-only scratch scripts and JSON dumps live under gitignored `local/`.)
 
@@ -307,9 +351,66 @@ Created by `20261112000000_campus_map_schema.sql`. All publicly readable (`SELEC
 - `room_booking_details` — room registry metadata (`room` PK, `campus`, `building`, `room_type`, `capacity`, `config_type`, `raw_data`)
 - `library_study_rooms` — library group study rooms & bookings (`room_id` PK, `min_capacity`, `max_capacity`, `bookings` jsonb)
 - `room_detailed_reservations` — calendar reservation occurrences (`id` identity PK, `room_id`, `day`, `start_time`, `duration`, `end_time`, `booking_date`, `title`, `type`)
-- `exam_schedules` — final exam schedules (`id` PK, `term_id`, `subject_code`, `course_code`, `crn`, `exam_date`, `exam_time`, `duration`, `room`, `location`, `surname`, etc.), created by `20261115000000_exam_schedules.sql`
+- `exam_schedules` — final exam schedules (`id` PK, `term_id`, `subject_code`, `course_code`, `crn`, `instructor`, `rmp_professor_id` FK → `rmp_professors.id`, `exam_date`, `exam_time`, `duration`, `room`, `location`, `surname`, etc.), created by `20261115000000_exam_schedules.sql` and linked to `rmp_professors` by `20261119120000_ratemyprof_schema.sql`
 - `campus_map_cache` — materialized GeoJSON `FeatureCollection` (`id` PK, `data` json)
 - `get_campus_map_data(p_floor, p_building)` — RPC returning the cached `FeatureCollection` when unfiltered, or building it on the fly from `campus_spaces` + `campus_unmapped_spaces`.
+
+## RateMyProfessors tables
+
+Created by `20261119120000_ratemyprof_schema.sql`. All publicly readable (`SELECT` for `anon`, `authenticated`); written daily by `python_scripts/ingest_ratemyprof.py`.
+
+### `rmp_professors`
+
+One row per Ontario Tech RateMyProfessors profile matched to `course_faculty.display_name` with fuzzy `name_score > 80.0%` (same scoring algorithm as `local/tgraphql/temp.py`). Stores the headline rating shown beside an instructor's name plus overall breakdown metrics across all courses.
+
+| column | type | notes |
+| --- | --- | --- |
+| `id` | `text` PK | RMP GraphQL node ID (e.g. `'VGVhY2hlci03NjE0Nzg='`) |
+| `legacy_id` | `integer` unique | numeric RMP teacher ID (`ratemyprofessors.com/professor/<legacy_id>`) |
+| `first_name` / `last_name` / `full_name` | `text` not null | name on RateMyProfessors |
+| `department` / `department_id` | `text` | RMP department metadata |
+| `best_match_display_name` | `text` | primary matched `course_faculty.display_name` (`Surname, First`) |
+| `matched_display_names` | `text[]` not null | all Banner `display_name` strings matching this RMP profile at `> 80%` |
+| `match_score` | `numeric(5,2)` not null | check `match_score > 80.0` |
+| `avg_rating` | `numeric(3,2)` | overall quality rating (`0.00`–`5.00`, null when unrated) |
+| `avg_difficulty` | `numeric(3,2)` | overall level of difficulty (`0.00`–`5.00`, null when unrated) |
+| `num_ratings` | `integer` not null | total review count |
+| `would_take_again_percent` | `numeric(5,2)` | `0.00`–`100.00`, null when no WTA responses exist |
+| `would_take_again_count` | `integer` not null | denominator for `would_take_again_percent` |
+| `r1` … `r5` | `integer` not null | review count at each star rating (`1` through `5`) |
+| `updated_at` | `timestamptz` not null | defaults to `now()` |
+
+Indexes on `(best_match_display_name)`, GIN on `(matched_display_names)`, and `(lower(last_name))`.
+
+### `rmp_professor_courses`
+
+One row per `(professor_id, course_code)` covering every course the professor offers in Banner (`courses` / `course_faculty`) as well as any additional courses present in their RateMyProfessors reviews. Selecting `"All courses"` reads directly from `rmp_professors`; selecting a specific course from the professor's dropdown reads the corresponding `rmp_professor_courses` row to dynamically update `r1`–`r5`, `would_take_again_percent`, `avg_difficulty`, `avg_rating`, and `num_ratings`.
+
+| column | type | notes |
+| --- | --- | --- |
+| `id` | `bigint` identity PK | surrogate |
+| `professor_id` | `text` FK → `rmp_professors.id` | cascade delete |
+| `course_code` | `text` not null | normalized code with space (e.g. `'BIOL 1010U'`), or cleaned RMP code |
+| `subject_course` | `text` not null | compact code without space (e.g. `'BIOL1010U'`) matching `courses.subject_course` |
+| `course_title` | `text` | title from `catalog_courses` or `courses` when available |
+| `catalog_course_code` | `text` FK → `catalog_courses.code` | nullable (`on update cascade on delete set null`) |
+| `raw_course_codes` | `text[]` not null | raw RMP `class` strings merged into this course |
+| `taught_in_banner` | `boolean` not null | `true` when the professor teaches this course in `public.courses` |
+| `terms_taught` | `text[]` not null | Banner term codes taught (e.g. `{'202609', '202701'}`) |
+| `avg_rating` / `avg_difficulty` | `numeric(3,2)` | course-specific quality & difficulty (null when `num_ratings = 0`) |
+| `num_ratings` | `integer` not null | review count for this course |
+| `would_take_again_percent` | `numeric(5,2)` | course-specific WTA % (null when `would_take_again_count = 0`) |
+| `would_take_again_count` | `integer` not null | WTA-eligible review count for this course |
+| `r1` … `r5` | `integer` not null | course-specific review count at each star rating (`1` through `5`) |
+| `updated_at` | `timestamptz` not null | defaults to `now()` |
+
+Unique on `(professor_id, course_code)`. Indexes on `(professor_id)`, `(subject_course, professor_id)`, and `(catalog_course_code)`.
+
+### Professor table connections & auto-linking
+
+- `course_faculty.rmp_professor_id` → `rmp_professors.id` (`on delete set null`). Trigger `course_faculty_link_rmp_professor` (`BEFORE INSERT OR UPDATE OF display_name`) calls `resolve_course_faculty_rmp_professor_id(display_name)` so per-term rebuilds in `ingest_courses.py` keep `rmp_professor_id` populated automatically.
+- `exam_schedules.rmp_professor_id` → `rmp_professors.id` (`on delete set null`). Trigger `exam_schedules_link_rmp_professor` calls `resolve_exam_rmp_professor_id(...)`, resolving first via `(crn, subject_code, course_code)` in `courses` + `course_faculty`, then via course + surname, then via unambiguous `rmp_professors.last_name`.
+- `refresh_rmp_professor_links()` (`service_role` RPC) bulk-syncs both FKs after daily `ingest_ratemyprof.py` updates.
 
 ## Degree Planner tables
 
@@ -362,4 +463,63 @@ from public.courses c
 where not exists (
   select 1 from public.course_faculty f where f.course_id = c.id
 );
+```
+
+Sections with the linked RateMyProfessors rating, overall breakdown, and per-course dropdown options (PostgREST / Supabase JS):
+
+```ts
+supabase
+  .from("courses")
+  .select(`
+    crn,
+    subject,
+    course_number,
+    course_faculty (
+      display_name,
+      primary_indicator,
+      rmp_professors (
+        id,
+        legacy_id,
+        full_name,
+        avg_rating,
+        avg_difficulty,
+        num_ratings,
+        would_take_again_percent,
+        r1, r2, r3, r4, r5,
+        rmp_professor_courses (
+          course_code,
+          subject_course,
+          course_title,
+          taught_in_banner,
+          avg_rating,
+          avg_difficulty,
+          num_ratings,
+          would_take_again_percent,
+          r1, r2, r3, r4, r5
+        )
+      )
+    )
+  `)
+  .eq("term", "202609");
+```
+
+Or in SQL for a specific professor's overall stats vs. a selected course from their dropdown:
+
+```sql
+select
+  p.full_name,
+  p.avg_rating            as overall_rating,
+  p.avg_difficulty        as overall_difficulty,
+  p.would_take_again_percent as overall_wta_pct,
+  p.r1, p.r2, p.r3, p.r4, p.r5,
+  pc.course_code,
+  pc.course_title,
+  pc.avg_rating           as course_rating,
+  pc.avg_difficulty       as course_difficulty,
+  pc.would_take_again_percent as course_wta_pct,
+  pc.r1 as c_r1, pc.r2 as c_r2, pc.r3 as c_r3, pc.r4 as c_r4, pc.r5 as c_r5
+from public.rmp_professors p
+join public.rmp_professor_courses pc on pc.professor_id = p.id
+where p.best_match_display_name = 'Tavares, Annette'
+order by pc.taught_in_banner desc, pc.num_ratings desc, pc.course_code;
 ```
