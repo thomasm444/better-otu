@@ -4,6 +4,46 @@ import { cacheLife, cacheTag } from "next/cache";
 
 import { collectPages } from "@/lib/queries";
 import { getPublicClient } from "@/lib/supabase/public";
+
+const DEGREE_PAGE_SIZE = 1000;
+
+/**
+ * Keyset (cursor) pagination over rows ordered ascending by a unique text key.
+ * Avoids Postgres OFFSET scans that degrade on later pages and trigger cold-start timeouts.
+ */
+async function collectPagesByStringKey(
+  keyField: string,
+  fetchPage: (
+    lastKey: string | null,
+    limit: number,
+  ) => PromiseLike<{
+    data: unknown;
+    error: { message: string } | null;
+  }>,
+): Promise<Record<string, unknown>[]> {
+  const rows: Record<string, unknown>[] = [];
+  let lastKey: string | null = null;
+
+  for (;;) {
+    let result = await fetchPage(lastKey, DEGREE_PAGE_SIZE);
+    if (result.error && /statement timeout/i.test(result.error.message)) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      result = await fetchPage(lastKey, DEGREE_PAGE_SIZE);
+    }
+
+    if (result.error) {
+      throw new Error(`Supabase pagination failed: ${result.error.message}`);
+    }
+
+    const page = (result.data ?? []) as Record<string, unknown>[];
+    rows.push(...page);
+
+    if (page.length < DEGREE_PAGE_SIZE) return rows;
+    const nextRaw = page[page.length - 1][keyField];
+    if (nextRaw === null || nextRaw === undefined) return rows;
+    lastKey = String(nextRaw);
+  }
+}
 import type {
   CatalogCourse,
   CourseOffering,
@@ -78,17 +118,21 @@ export async function getCatalogCourses(): Promise<CatalogCourse[]> {
   cacheTag("catalog-courses");
 
   const supabase = getPublicClient();
-  const rows = await collectPages((from, to) =>
-    supabase
+  const rows = await collectPagesByStringKey("code", (lastKey, limit) => {
+    let query = supabase
       .from("catalog_courses")
       .select(
         "code, catalog_year, subject, number, subject_course, level, faculty, subject_name, title, short_title, description, credit_hours, hours_lecture, hours_laboratory, hours_tutorial, terms_offered, sections_in_offerings, prerequisite_codes, prerequisite_text, prerequisite_ast, formerly_codes, calendar_url",
       )
       .order("code", { ascending: true })
-      .range(from, to),
-  );
+      .limit(limit);
+    if (lastKey !== null) {
+      query = query.gt("code", lastKey);
+    }
+    return query;
+  });
 
-  return (rows as Record<string, unknown>[]).map((row) => ({
+  return rows.map((row) => ({
     code: String(row.code),
     catalog_year: row.catalog_year ? String(row.catalog_year) : undefined,
     subject: String(row.subject),
@@ -126,15 +170,24 @@ export async function getCourseOfferings(): Promise<CourseOffering[]> {
   cacheTag("course-offerings");
 
   const supabase = getPublicClient();
-  const rows = await collectPages((from, to) =>
-    supabase
-      .from("course_offerings_summary")
-      .select("subject_course, subject, course_number, terms, sections, credit_hours")
-      .order("subject_course", { ascending: true })
-      .range(from, to),
+  const rows = await collectPagesByStringKey(
+    "subject_course",
+    (lastKey, limit) => {
+      let query = supabase
+        .from("course_offerings_summary")
+        .select(
+          "subject_course, subject, course_number, terms, sections, credit_hours",
+        )
+        .order("subject_course", { ascending: true })
+        .limit(limit);
+      if (lastKey !== null) {
+        query = query.gt("subject_course", lastKey);
+      }
+      return query;
+    },
   );
 
-  return (rows as Record<string, unknown>[]).map((row) => ({
+  return rows.map((row) => ({
     subject_course: String(row.subject_course),
     subject: row.subject ? String(row.subject) : undefined,
     course_number: row.course_number ? String(row.course_number) : undefined,
@@ -149,12 +202,21 @@ export async function getDegreeBootstrap(): Promise<DegreeBootstrapData> {
   cacheLife("days");
   cacheTag("degree-bootstrap");
 
-  const [subjects, programs, catalogCourses, offerings] = await Promise.all([
+  const [subjects, programs, catalogCourses] = await Promise.all([
     getDegreeSubjects(),
     getProgramSummaries(),
     getCatalogCourses(),
-    getCourseOfferings(),
   ]);
+
+  let offerings: CourseOffering[] = [];
+  try {
+    offerings = await getCourseOfferings();
+  } catch (error) {
+    console.warn(
+      "getCourseOfferings failed; falling back to catalog_courses terms_offered:",
+      error,
+    );
+  }
 
   const subjectMap = new Map(subjects.map((s) => [s.code, s]));
   const existingKeys = new Set(

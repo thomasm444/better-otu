@@ -3,7 +3,7 @@
 Supabase (Postgres), all in the `public` schema, populated from Banner course-schedule scrapes, Undergraduate Academic Calendar scrapes, campus map/booking feeds, and authenticated student data.
 
 The authoritative DDL lives in [`supabase/migrations/`](../supabase/migrations/) —
-twelve committed, idempotent migrations. Apply them oldest first:
+thirteen committed, idempotent migrations. Apply them oldest first:
 
 | migration | what it does |
 | --- | --- |
@@ -18,6 +18,7 @@ twelve committed, idempotent migrations. Apply them oldest first:
 | `20261118000000_degree_catalog_years.sql` | adds `catalog_year` (e.g. `2026-27`, `2025-26`) to `degree_programs`, `catalog_courses`, and `degree_plans`, plus `(catalog_year, name, program_id)` index |
 | `20261118120000_course_formerly_codes.sql` | adds `formerly_codes text[]` to `catalog_courses` to link renumbered courses (e.g. `CSCI 1050U` ↔ `CSCI 2050U`) |
 | `20261119000000_campus_map_week_indexes.sql` | adds partial and composite indexes for weekly campus map schedule queries on `course_meetings`, `room_detailed_reservations`, `exam_schedules`, and `campus_spaces` |
+| `20261119120000_course_offerings_summary_cache.sql` | backs `course_offerings_summary` with precomputed `course_offerings_summary_cache`, adds `refresh_course_offerings_summary()`, and indexes `degree_programs (catalog_year desc, name asc, program_id asc)` |
 | `20261119120000_ratemyprof_schema.sql` | creates `rmp_professors` and `rmp_professor_courses`, links `course_faculty` and `exam_schedules` via `rmp_professor_id` FKs + auto-link triggers, and links `rmp_professor_courses` to `catalog_courses` |
 
 ```bash
@@ -420,7 +421,8 @@ Created by `20261112120000_degree_planner_schema.sql` and extended for multi-yea
 - `catalog_courses` (`code` PK, `catalog_year`, `formerly_codes`, `subject` FK → `degree_subjects.code`, `prerequisite_codes`, `prerequisite_ast`, `terms_offered`, etc.) — academic calendar definitions across all ingested years (`catalog_year` records the most recent year the course appeared in; `formerly_codes` links renumbered courses such as `CSCI 1050U` ← `CSCI 2050U`; older/retired courses are preserved alongside current ones), distinct from `public.courses` (Banner sections)
 - `degree_programs` (`program_id` PK, `catalog_year`, `name`, `faculty`, `degree`, `total_credit_hours`, `required_course_codes`, etc.) — Ontario Tech's `poid` (`program_id`) is unique per `(program, catalog_year)`, so all calendar years (`2016-17` through `2026-27`) coexist cleanly, indexed on `(catalog_year, name, program_id)`
 - `program_sections` → `program_groups` → `program_items` → `program_item_courses` (cascade-deleted hierarchy of degree requirements scoped by `program_id`)
-- `course_offerings_summary` — view over `public.courses` aggregating offered terms, section counts, and max credit hours per `subject_course`.
+- `course_offerings_summary_cache` (`subject_course` PK, `subject`, `course_number`, `terms`, `sections`, `credit_hours`, `updated_at`) — precomputed summary table populated from `public.courses` by `refresh_course_offerings_summary()` (service-role RPC, called after Banner ingestion).
+- `course_offerings_summary` — view reading directly from `course_offerings_summary_cache` (so `getCourseOfferings()` does fast primary-key index lookups instead of live `GROUP BY` scans over `public.courses`).
 
 ## Auth & Student tables
 
