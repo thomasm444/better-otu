@@ -1497,3 +1497,115 @@ export async function getSampleScheduleSections(
   return { shared, week1Only, week2Only };
 }
 
+export type LastUpdatedInfo = {
+  timestamp: string;
+  source: "github-actions" | "supabase";
+  actionsUrl: string;
+};
+
+const GITHUB_ACTIONS_REPO = "thomasm444/better-otu";
+const GITHUB_ACTIONS_URL = `https://github.com/${GITHUB_ACTIONS_REPO}/actions`;
+
+/**
+ * Returns the most recent timestamp when data ingestion ran.
+ * Prefers the latest GitHub Actions workflow run for `thomasm444/better-otu`
+ * (works automatically for public repos, or private repos when `GITHUB_TOKEN`
+ * is set with `actions:read`), and falls back to the latest `updated_at`
+ * across the Supabase tables updated by those workflows.
+ */
+export async function getLastUpdatedInfo(): Promise<LastUpdatedInfo | null> {
+  "use cache";
+  cacheLife("minutes");
+
+  try {
+    const headers: Record<string, string> = {
+      Accept: "application/vnd.github+json",
+      "User-Agent": "better-otu",
+    };
+    const token = process.env.GITHUB_TOKEN?.trim();
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+
+    const res = await fetch(
+      `https://api.github.com/repos/${GITHUB_ACTIONS_REPO}/actions/runs?per_page=1`,
+      { headers },
+    );
+
+    if (res.ok) {
+      const json = (await res.json()) as {
+        workflow_runs?: Array<{
+          updated_at?: string;
+          run_started_at?: string;
+          created_at?: string;
+          html_url?: string;
+        }>;
+      };
+      const latest = json.workflow_runs?.[0];
+      const ts = latest?.updated_at ?? latest?.run_started_at ?? latest?.created_at;
+      if (ts && !Number.isNaN(Date.parse(ts))) {
+        return {
+          timestamp: ts,
+          source: "github-actions",
+          actionsUrl: latest?.html_url ?? GITHUB_ACTIONS_URL,
+        };
+      }
+    }
+  } catch {
+    // Fall through to Supabase timestamp fallback.
+  }
+
+  try {
+    const supabase = getPublicClient();
+    const results = await Promise.all([
+      supabase
+        .from("library_study_rooms")
+        .select("updated_at")
+        .order("updated_at", { ascending: false })
+        .limit(1),
+      supabase
+        .from("room_detailed_reservations")
+        .select("updated_at")
+        .order("updated_at", { ascending: false })
+        .limit(1),
+      supabase
+        .from("courses")
+        .select("updated_at")
+        .order("updated_at", { ascending: false })
+        .limit(1),
+      supabase
+        .from("exam_schedules")
+        .select("updated_at")
+        .order("updated_at", { ascending: false })
+        .limit(1),
+    ]);
+
+    let latestMs = -1;
+    let latestIso: string | null = null;
+
+    for (const res of results) {
+      if (res.error) continue;
+      const row = (res.data as Array<{ updated_at?: string }> | null)?.[0];
+      if (!row?.updated_at) continue;
+      const ms = Date.parse(row.updated_at);
+      if (!Number.isNaN(ms) && ms > latestMs) {
+        latestMs = ms;
+        latestIso = row.updated_at;
+      }
+    }
+
+    if (latestIso) {
+      return {
+        timestamp: latestIso,
+        source: "supabase",
+        actionsUrl: GITHUB_ACTIONS_URL,
+      };
+    }
+  } catch {
+    // No timestamp available.
+  }
+
+  return null;
+}
+
+

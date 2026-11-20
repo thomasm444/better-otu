@@ -25,6 +25,7 @@ interface ShortcutItem {
   href: string;
   color: ShortcutColorKey;
   icon: "library" | "canvas" | "portal" | "custom";
+  imageUrl?: string;
   isCustom?: boolean;
 }
 
@@ -100,6 +101,8 @@ const BUILTIN_SHORTCUTS: ShortcutItem[] = [
     href: "https://apps.library.dc-ot.ca/OTrooms/calendar.aspx",
     color: "emerald",
     icon: "library",
+    imageUrl:
+      "https://shared.ontariotechu.ca/shared/ontario-tech/images/buildings/north-oshawa/library/photo-gallery/150822-18-1200x800.jpg",
   },
   {
     id: "builtin-canvas",
@@ -107,6 +110,8 @@ const BUILTIN_SHORTCUTS: ShortcutItem[] = [
     href: "https://learn.ontariotechu.ca/",
     color: "orange",
     icon: "canvas",
+    imageUrl:
+      "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSjTe2Ezo-kf87I47CDzz6sZX90zscDwO_xy-xJQb5Yr2GImwUtWmndGqZS&s=10",
   },
   {
     id: "builtin-portal",
@@ -114,6 +119,8 @@ const BUILTIN_SHORTCUTS: ShortcutItem[] = [
     href: "https://my.ontariotechu.ca/",
     color: "blue",
     icon: "portal",
+    imageUrl:
+      "https://pbs.twimg.com/profile_images/1111288285236731905/y6veEFsr_400x400.png",
   },
 ];
 
@@ -807,44 +814,18 @@ export function PortalDashboard({ termLabel }: PortalDashboardProps) {
                           className="pointer-events-none absolute right-4 top-3.5 h-0.5 w-0.5 rounded-full bg-white/65"
                         />
 
-                        <span className="mb-1 flex h-5 w-5 items-center justify-center text-white drop-shadow-xs">
-                          {item.icon === "canvas" ? (
-                            <svg
-                              className="h-4 w-4"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                            >
-                              <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />
-                            </svg>
-                          ) : item.icon === "portal" ? (
-                            <svg
-                              className="h-4 w-4"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                            >
-                              <rect width="7" height="7" x="3" y="3" rx="1" />
-                              <rect width="7" height="7" x="14" y="3" rx="1" />
-                              <rect width="7" height="7" x="14" y="14" rx="1" />
-                              <rect width="7" height="7" x="3" y="14" rx="1" />
-                            </svg>
-                          ) : item.icon === "library" ? (
-                            <svg
-                              className="h-4 w-4"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                            >
-                              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
-                              <circle cx="9" cy="7" r="4" />
-                              <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
-                              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-                            </svg>
-                          ) : (
+                        {item.imageUrl ? (
+                          <span className="mb-1 flex aspect-square h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-white/15 shadow-xs ring-1 ring-white/40">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={item.imageUrl}
+                              alt=""
+                              aria-hidden="true"
+                              className="h-full w-full object-cover object-center"
+                            />
+                          </span>
+                        ) : (
+                          <span className="mb-1 flex h-5 w-5 items-center justify-center text-white drop-shadow-xs">
                             <svg
                               className="h-4 w-4"
                               viewBox="0 0 24 24"
@@ -857,8 +838,8 @@ export function PortalDashboard({ termLabel }: PortalDashboardProps) {
                               <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71" />
                               <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71" />
                             </svg>
-                          )}
-                        </span>
+                          </span>
+                        )}
 
                         <span className="line-clamp-2 text-[10.5px] leading-tight font-bold text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.45)]">
                           {item.name}
