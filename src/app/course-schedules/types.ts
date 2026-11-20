@@ -396,10 +396,14 @@ export interface WeekScheduleProps {
   blockedSlots?: BlockedTimeSlot[];
   /** Course catalog map for drag-to-snap ghost targets */
   courseMap?: Map<string, ScheduleCourseGroup>;
-  /** Active course+component whose sections are displayed on the grid for click-to-schedule */
-  gridSectionPicker?: SectionGridPickerTarget | null;
-  /** Callback to open/switch or close the grid section picker overlay */
-  onChangeGridSectionPicker?: (target: SectionGridPickerTarget | null) => void;
+  /** Active course+component targets whose sections are displayed on the grid */
+  gridSectionPickers?: SectionGridPickerTarget[];
+  /** Callback to update the active grid section picker targets */
+  onChangeGridSectionPickers?: (
+    updater:
+      | SectionGridPickerTarget[]
+      | ((prev: SectionGridPickerTarget[]) => SectionGridPickerTarget[]),
+  ) => void;
   /** Whether edit mode is active */
   isEditMode?: boolean;
   /** Earliest start hour on the grid (default: 8 = 8:00 AM) */

@@ -146,8 +146,9 @@ export function ScheduleContainer({
 
   const [hoverPreviewSection, setHoverPreviewSection] =
     useState<ScheduleSection | null>(null);
-  const [gridSectionPicker, setGridSectionPicker] =
-    useState<SectionGridPickerTarget | null>(null);
+  const [gridSectionPickers, setGridSectionPickers] = useState<
+    SectionGridPickerTarget[]
+  >([]);
   const [focusedCourseCode, setFocusedCourseCode] = useState<string | null>(
     null,
   );
@@ -475,7 +476,7 @@ export function ScheduleContainer({
   const handleTermChange = async (nextTerm: string) => {
     if (nextTerm === activeTerm) return;
     setHoverPreviewSection(null);
-    setGridSectionPicker(null);
+    setGridSectionPickers([]);
     setImportMenuOpen(false);
     const cached = catalogCacheRef.current.get(nextTerm);
     if (cached) {
@@ -709,8 +710,8 @@ export function ScheduleContainer({
   const handleRemoveCourse = useCallback(
     (courseCode: string) => {
       markDirty();
-      setGridSectionPicker((prev) =>
-        prev?.courseCode === courseCode ? null : prev,
+      setGridSectionPickers((prev) =>
+        prev.filter((t) => t.courseCode !== courseCode),
       );
       setPlannedCourses((prev) =>
         prev.filter((entry) => entry.courseCode !== courseCode),
@@ -886,7 +887,7 @@ export function ScheduleContainer({
     setCustomBlocks([]);
     setBlockedSlots([]);
     setHoverPreviewSection(null);
-    setGridSectionPicker(null);
+    setGridSectionPickers([]);
     showToast("Cleared schedule and blocked times.");
   }, [markDirty, showToast]);
 
@@ -895,7 +896,7 @@ export function ScheduleContainer({
     setPlannedCourses([]);
     setCustomBlocks([]);
     setHoverPreviewSection(null);
-    setGridSectionPicker(null);
+    setGridSectionPickers([]);
     showToast("Cleared all courses from planner.");
   }, [markDirty, showToast]);
 
@@ -1414,10 +1415,10 @@ export function ScheduleContainer({
             courses={annotatedBlocks}
             blockedSlots={blockedSlots}
             courseMap={courseMap}
-            gridSectionPicker={gridSectionPicker}
-            onChangeGridSectionPicker={(target) => {
+            gridSectionPickers={gridSectionPickers}
+            onChangeGridSectionPickers={(updater) => {
               setHoverPreviewSection(null);
-              setGridSectionPicker(target);
+              setGridSectionPickers(updater);
             }}
             isEditMode={isEditMode}
             fitToHeight={true}
@@ -1484,13 +1485,17 @@ export function ScheduleContainer({
             programElectives={programElectives}
             focusedCourseCode={focusedCourseCode}
             hydratedKey={hydratedKey}
-            gridSectionPicker={gridSectionPicker}
-            onChangeGridSectionPicker={(target) => {
+            gridSectionPickers={gridSectionPickers}
+            onChangeGridSectionPickers={(updater) => {
               setHoverPreviewSection(null);
-              setGridSectionPicker(target);
-              if (target) {
-                setMobileTab("schedule");
-              }
+              setGridSectionPickers((prev) => {
+                const next =
+                  typeof updater === "function" ? updater(prev) : updater;
+                if (next.length > prev.length) {
+                  setMobileTab("schedule");
+                }
+                return next;
+              });
             }}
             isEditMode={isEditMode}
             onEnableEditMode={() => setIsEditMode(true)}

@@ -30,6 +30,7 @@ interface PositionedBlock {
 
 interface GhostTargetSlot {
   id: string;
+  courseCode: string;
   crn: string;
   component: CourseComponentType;
   section: ScheduleSection;
@@ -43,13 +44,85 @@ interface GhostTargetSlot {
   fits: boolean;
   conflictsWith: string[];
   isCurrent: boolean;
+  multiColorIndex?: number;
   label: string;
 }
+
+const MULTI_COURSE_GHOST_PALETTE: Array<{
+  dot: string;
+  defaultClass: string;
+  hoverClass: string;
+}> = [
+  {
+    dot: "bg-emerald-500",
+    defaultClass:
+      "border-emerald-500 bg-emerald-500/20 text-emerald-950 dark:border-emerald-400 dark:bg-emerald-950/75 dark:text-emerald-100",
+    hoverClass:
+      "z-50 border-emerald-600 bg-emerald-500/35 text-emerald-950 ring-2 ring-emerald-500 shadow-md dark:border-emerald-400 dark:bg-emerald-900/80 dark:text-emerald-50",
+  },
+  {
+    dot: "bg-purple-500",
+    defaultClass:
+      "border-purple-500 bg-purple-500/20 text-purple-950 dark:border-purple-400 dark:bg-purple-950/75 dark:text-purple-100",
+    hoverClass:
+      "z-50 border-purple-600 bg-purple-500/35 text-purple-950 ring-2 ring-purple-500 shadow-md dark:border-purple-400 dark:bg-purple-900/80 dark:text-purple-50",
+  },
+  {
+    dot: "bg-orange-500",
+    defaultClass:
+      "border-orange-500 bg-orange-500/20 text-orange-950 dark:border-orange-400 dark:bg-orange-950/75 dark:text-orange-100",
+    hoverClass:
+      "z-50 border-orange-600 bg-orange-500/35 text-orange-950 ring-2 ring-orange-500 shadow-md dark:border-orange-400 dark:bg-orange-900/80 dark:text-orange-50",
+  },
+  {
+    dot: "bg-cyan-500",
+    defaultClass:
+      "border-cyan-500 bg-cyan-500/20 text-cyan-950 dark:border-cyan-400 dark:bg-cyan-950/75 dark:text-cyan-100",
+    hoverClass:
+      "z-50 border-cyan-600 bg-cyan-500/35 text-cyan-950 ring-2 ring-cyan-500 shadow-md dark:border-cyan-400 dark:bg-cyan-900/80 dark:text-cyan-50",
+  },
+  {
+    dot: "bg-amber-500",
+    defaultClass:
+      "border-amber-500 bg-amber-400/25 text-amber-950 dark:border-amber-400 dark:bg-amber-950/75 dark:text-amber-100",
+    hoverClass:
+      "z-50 border-amber-600 bg-amber-400/40 text-amber-950 ring-2 ring-amber-500 shadow-md dark:border-amber-400 dark:bg-amber-900/80 dark:text-amber-50",
+  },
+  {
+    dot: "bg-fuchsia-500",
+    defaultClass:
+      "border-fuchsia-500 bg-fuchsia-500/20 text-fuchsia-950 dark:border-fuchsia-400 dark:bg-fuchsia-950/75 dark:text-fuchsia-100",
+    hoverClass:
+      "z-50 border-fuchsia-600 bg-fuchsia-500/35 text-fuchsia-950 ring-2 ring-fuchsia-500 shadow-md dark:border-fuchsia-400 dark:bg-fuchsia-900/80 dark:text-fuchsia-50",
+  },
+  {
+    dot: "bg-teal-500",
+    defaultClass:
+      "border-teal-500 bg-teal-500/20 text-teal-950 dark:border-teal-400 dark:bg-teal-950/75 dark:text-teal-100",
+    hoverClass:
+      "z-50 border-teal-600 bg-teal-500/35 text-teal-950 ring-2 ring-teal-500 shadow-md dark:border-teal-400 dark:bg-teal-900/80 dark:text-teal-50",
+  },
+  {
+    dot: "bg-indigo-500",
+    defaultClass:
+      "border-indigo-500 bg-indigo-500/20 text-indigo-950 dark:border-indigo-400 dark:bg-indigo-950/75 dark:text-indigo-100",
+    hoverClass:
+      "z-50 border-indigo-600 bg-indigo-500/35 text-indigo-950 ring-2 ring-indigo-500 shadow-md dark:border-indigo-400 dark:bg-indigo-900/80 dark:text-indigo-50",
+  },
+];
 
 function getFittingGhostClasses(
   component: CourseComponentType,
   isHovered: boolean,
+  multiColorIndex?: number,
 ): string {
+  if (multiColorIndex !== undefined) {
+    const entry =
+      MULTI_COURSE_GHOST_PALETTE[
+        multiColorIndex % MULTI_COURSE_GHOST_PALETTE.length
+      ];
+    return isHovered ? entry.hoverClass : entry.defaultClass;
+  }
   if (component === "LAB") {
     return isHovered
       ? "z-50 border-orange-600 bg-orange-500/35 text-orange-950 ring-2 ring-orange-500 shadow-md dark:border-orange-400 dark:bg-orange-900/80 dark:text-orange-50"
@@ -333,6 +406,7 @@ function buildSectionGhosts(
   currentCrn: string | undefined,
   activeBlocks: ScheduleBlock[],
   blockedSlots: BlockedTimeSlot[],
+  multiColorIndex?: number,
 ): GhostTargetSlot[] {
   const candidateSections = course.sections.filter(
     (s) => s.component === component && s.meetings.length > 0,
@@ -348,7 +422,8 @@ function buildSectionGhosts(
     );
     sec.meetings.forEach((m, mIdx) => {
       ghosts.push({
-        id: `ghost-${sec.crn}-${m.day}-${m.startTime}-${mIdx}`,
+        id: `ghost-${course.courseCode}-${sec.crn}-${m.day}-${m.startTime}-${mIdx}`,
+        courseCode: course.courseCode,
         crn: sec.crn,
         component,
         section: sec,
@@ -362,6 +437,7 @@ function buildSectionGhosts(
         fits: fit.fits,
         conflictsWith: fit.conflictsWith,
         isCurrent: Boolean(currentCrn && sec.crn === currentCrn),
+        multiColorIndex,
         label: `${course.courseCode} ${component} CRN ${sec.crn}`,
       });
     });
@@ -407,8 +483,8 @@ export function WeekScheduleGrid({
   courses,
   blockedSlots = [],
   courseMap,
-  gridSectionPicker = null,
-  onChangeGridSectionPicker,
+  gridSectionPickers = [],
+  onChangeGridSectionPickers,
   isEditMode = false,
   startHour = 8,
   endHour = 22,
@@ -443,7 +519,7 @@ export function WeekScheduleGrid({
   }, []);
 
   useEffect(() => {
-    if (!gridSectionPicker && !selectedCourse) return;
+    if (gridSectionPickers.length === 0 && !selectedCourse) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         if (selectedCourse) {
@@ -451,12 +527,12 @@ export function WeekScheduleGrid({
           return;
         }
         setHoveredPickerCrn(null);
-        onChangeGridSectionPicker?.(null);
+        onChangeGridSectionPickers?.([]);
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [gridSectionPicker, selectedCourse, onChangeGridSectionPicker]);
+  }, [gridSectionPickers.length, selectedCourse, onChangeGridSectionPickers]);
 
   const totalHours = endHour - startHour;
   const startMinutes = startHour * 60;
@@ -543,49 +619,44 @@ export function WeekScheduleGrid({
     return grouped;
   }, [blockedSlots, hiddenBlockedId, dragBlockedPreview]);
 
-  const pickerCourse = useMemo(() => {
-    if (!gridSectionPicker || !courseMap) return null;
-    return courseMap.get(gridSectionPicker.courseCode) ?? null;
-  }, [gridSectionPicker, courseMap]);
+  const isMultiCoursePicker = gridSectionPickers.length >= 2;
 
   const pickerGhosts = useMemo(() => {
-    if (!gridSectionPicker || !pickerCourse) return [];
-    const targetComponents =
-      gridSectionPicker.component === "ALL"
-        ? pickerCourse.requiredComponents
-        : [gridSectionPicker.component];
-
+    if (gridSectionPickers.length === 0 || !courseMap) return [];
     const allGhosts: GhostTargetSlot[] = [];
-    for (const comp of targetComponents) {
-      const currentCrn = courses.find(
-        (b) =>
-          b.mode !== "preview" &&
-          !b.isCustom &&
-          b.courseCode === gridSectionPicker.courseCode &&
-          (b.component ?? b.type) === comp,
-      )?.crn;
-      allGhosts.push(
-        ...buildSectionGhosts(
-          pickerCourse,
-          comp,
-          currentCrn,
-          courses,
-          blockedSlots,
-        ),
-      );
-    }
-    return allGhosts;
-  }, [gridSectionPicker, pickerCourse, courses, blockedSlots]);
 
-  const pickerAsyncSections = useMemo(() => {
-    if (!gridSectionPicker || !pickerCourse) return [];
-    return pickerCourse.sections.filter(
-      (s) =>
-        (gridSectionPicker.component === "ALL" ||
-          s.component === gridSectionPicker.component) &&
-        s.meetings.length === 0,
-    );
-  }, [gridSectionPicker, pickerCourse]);
+    gridSectionPickers.forEach((target, targetIdx) => {
+      const course = courseMap.get(target.courseCode);
+      if (!course) return;
+      const targetComponents =
+        target.component === "ALL"
+          ? course.requiredComponents
+          : [target.component];
+      const colorIndex = isMultiCoursePicker ? targetIdx : undefined;
+
+      for (const comp of targetComponents) {
+        const currentCrn = courses.find(
+          (b) =>
+            b.mode !== "preview" &&
+            !b.isCustom &&
+            b.courseCode === target.courseCode &&
+            (b.component ?? b.type) === comp,
+        )?.crn;
+        allGhosts.push(
+          ...buildSectionGhosts(
+            course,
+            comp,
+            currentCrn,
+            courses,
+            blockedSlots,
+            colorIndex,
+          ),
+        );
+      }
+    });
+
+    return allGhosts;
+  }, [gridSectionPickers, isMultiCoursePicker, courseMap, courses, blockedSlots]);
 
   const ghostsByDay = useMemo(() => {
     const grouped: Record<DayOfWeek, GhostTargetSlot[]> = {
@@ -599,7 +670,7 @@ export function WeekScheduleGrid({
     };
     const activeGhosts = dragCourse
       ? dragCourse.ghosts
-      : gridSectionPicker
+      : gridSectionPickers.length > 0
         ? pickerGhosts
         : [];
     for (const g of activeGhosts) {
@@ -614,13 +685,18 @@ export function WeekScheduleGrid({
       saturday: layoutDayGhosts(grouped.saturday, viewMode),
       sunday: layoutDayGhosts(grouped.sunday, viewMode),
     };
-  }, [dragCourse, gridSectionPicker, pickerGhosts, viewMode]);
+  }, [dragCourse, gridSectionPickers.length, pickerGhosts, viewMode]);
 
   const startCoursePointerDown = (
     e: React.PointerEvent<HTMLDivElement>,
     block: ScheduleBlock,
   ) => {
-    if (e.button !== 0 || block.mode === "preview" || gridSectionPicker) return;
+    if (
+      e.button !== 0 ||
+      block.mode === "preview" ||
+      gridSectionPickers.length > 0
+    )
+      return;
     if ((e.target as HTMLElement).closest("[data-no-drag='true']")) return;
 
     const startX = e.clientX;
@@ -772,7 +848,12 @@ export function WeekScheduleGrid({
   };
 
   const startCreateBlockedDrag = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (!isEditMode || !isBlockingMode || gridSectionPicker || e.button !== 0)
+    if (
+      !isEditMode ||
+      !isBlockingMode ||
+      gridSectionPickers.length > 0 ||
+      e.button !== 0
+    )
       return;
     if ((e.target as HTMLElement).closest("[data-blocked-slot='true']")) return;
 
@@ -860,7 +941,7 @@ export function WeekScheduleGrid({
   ) => {
     if (
       !isEditMode ||
-      gridSectionPicker ||
+      gridSectionPickers.length > 0 ||
       e.button !== 0 ||
       slot.id === "__draft_block__"
     )
@@ -974,18 +1055,17 @@ export function WeekScheduleGrid({
         ? "Week 1"
         : "Week 2");
 
-  const isPickerOverlay = Boolean(gridSectionPicker) && !dragCourse;
+  const hasGridPickers = gridSectionPickers.length > 0;
+  const isPickerOverlay = hasGridPickers && !dragCourse;
   const canPickOnGrid = isPickerOverlay && isEditMode;
-  const isDraggingAny = Boolean(dragCourse) || Boolean(gridSectionPicker);
+  const isDraggingAny = Boolean(dragCourse) || hasGridPickers;
   const hasActiveGhosts = dragCourse
     ? dragCourse.ghosts.length > 0
     : pickerGhosts.length > 0;
-  const activeOverlayCourseCode = dragCourse
-    ? dragCourse.sourceBlock.courseCode
-    : (gridSectionPicker?.courseCode ?? null);
-  const activeOverlayComponent = dragCourse
-    ? dragCourse.component
-    : (gridSectionPicker?.component ?? null);
+  const pickerByCourseCode = useMemo(
+    () => new Map(gridSectionPickers.map((t) => [t.courseCode, t])),
+    [gridSectionPickers],
+  );
 
   return (
     <div className="flex h-full flex-col rounded-xl border border-zinc-300/80 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
@@ -1028,112 +1108,169 @@ export function WeekScheduleGrid({
         </div>
       </div>
 
-      {/* Click-to-Schedule All Sections Banner */}
-      {gridSectionPicker && (
-        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-200 bg-emerald-50/75 px-4 py-2 text-xs dark:border-emerald-900/60 dark:bg-emerald-950/35">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="font-semibold text-emerald-950 dark:text-emerald-100">
-              {gridSectionPicker.courseCode} (
-              {gridSectionPicker.component === "ALL"
-                ? "All Sections"
-                : gridSectionPicker.component}
-              )
-            </span>
-            <span className="text-[11px] text-emerald-800 dark:text-emerald-300">
-              {pickerGhosts.length > 0
-                ? isEditMode
-                  ? "Click any highlighted slot to schedule it"
-                  : "Viewing all sections — click any slot for details"
-                : "No scheduled time slots for this component"}
-            </span>
-            {pickerCourse && pickerCourse.requiredComponents.length > 1 && (
-              <div className="flex flex-wrap items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setHoveredPickerCrn(null);
-                    onChangeGridSectionPicker?.({
-                      courseCode: gridSectionPicker.courseCode,
-                      component: "ALL",
-                    });
-                  }}
-                  className={`rounded-md px-2 py-0.5 text-[11px] font-medium transition ${
-                    gridSectionPicker.component === "ALL"
-                      ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-                      : "bg-white/80 text-zinc-800 hover:bg-white dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
-                  }`}
-                >
-                  All
-                </button>
-                {pickerCourse.requiredComponents.map((comp) => {
-                  const dotColor =
-                    comp === "LAB"
-                      ? "bg-orange-500"
-                      : comp === "TUT"
-                        ? "bg-yellow-500"
-                        : "bg-emerald-500";
-                  return (
-                    <button
-                      key={comp}
-                      type="button"
-                      onClick={() => {
-                        setHoveredPickerCrn(null);
-                        onChangeGridSectionPicker?.({
-                          courseCode: gridSectionPicker.courseCode,
-                          component: comp,
-                        });
-                      }}
-                      className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium transition ${
-                        gridSectionPicker.component === comp
-                          ? "bg-emerald-700 text-white dark:bg-emerald-600"
-                          : "bg-white/80 text-emerald-900 hover:bg-white dark:bg-zinc-900 dark:text-emerald-200 dark:hover:bg-zinc-800"
-                      }`}
-                    >
-                      <span className={`h-1.5 w-1.5 rounded-full ${dotColor}`} />
-                      <span>{comp}</span>
-                    </button>
-                  );
-                })}
+      {/* Click-to-Schedule / Compare All Sections Banners (one green row per course) */}
+      {hasGridPickers && (
+        <div className="divide-y divide-emerald-200/80 border-b border-emerald-200 bg-emerald-50/75 text-xs dark:divide-emerald-900/50 dark:border-emerald-900/60 dark:bg-emerald-950/35">
+          {gridSectionPickers.map((target, targetIdx) => {
+            const targetCourse = courseMap?.get(target.courseCode) ?? null;
+            const coursePalette = isMultiCoursePicker
+              ? MULTI_COURSE_GHOST_PALETTE[
+                  targetIdx % MULTI_COURSE_GHOST_PALETTE.length
+                ]
+              : null;
+            const targetScheduledCount = pickerGhosts.filter(
+              (g) => g.courseCode === target.courseCode,
+            ).length;
+            const targetAsyncSections = targetCourse
+              ? targetCourse.sections.filter(
+                  (s) =>
+                    (target.component === "ALL" ||
+                      s.component === target.component) &&
+                    s.meetings.length === 0,
+                )
+              : [];
+
+            return (
+              <div
+                key={target.courseCode}
+                className="flex flex-wrap items-center justify-between gap-2 px-4 py-2"
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="inline-flex items-center gap-1.5 font-semibold text-emerald-950 dark:text-emerald-100">
+                    {coursePalette && (
+                      <span
+                        className={`h-2.5 w-2.5 shrink-0 rounded-full ${coursePalette.dot}`}
+                      />
+                    )}
+                    <span>
+                      {target.courseCode} (
+                      {target.component === "ALL"
+                        ? "All Sections"
+                        : target.component}
+                      )
+                    </span>
+                  </span>
+                  {targetIdx === 0 && (
+                    <span className="text-[11px] text-emerald-800 dark:text-emerald-300">
+                      {targetScheduledCount > 0
+                        ? isEditMode
+                          ? "Click any highlighted slot to schedule it"
+                          : "Viewing sections — click any slot for details"
+                        : "No scheduled time slots for this selection"}
+                    </span>
+                  )}
+                  {targetCourse &&
+                    targetCourse.requiredComponents.length > 1 && (
+                      <div className="flex flex-wrap items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setHoveredPickerCrn(null);
+                            onChangeGridSectionPickers?.((prev) =>
+                              prev.map((item) =>
+                                item.courseCode === target.courseCode
+                                  ? { ...item, component: "ALL" }
+                                  : item,
+                              ),
+                            );
+                          }}
+                          className={`rounded-md px-2 py-0.5 text-[11px] font-medium transition ${
+                            target.component === "ALL"
+                              ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+                              : "bg-white/80 text-zinc-800 hover:bg-white dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                          }`}
+                        >
+                          All
+                        </button>
+                        {targetCourse.requiredComponents.map((comp) => {
+                          const dotColor = coursePalette
+                            ? coursePalette.dot
+                            : comp === "LAB"
+                              ? "bg-orange-500"
+                              : comp === "TUT"
+                                ? "bg-yellow-500"
+                                : "bg-emerald-500";
+                          return (
+                            <button
+                              key={comp}
+                              type="button"
+                              onClick={() => {
+                                setHoveredPickerCrn(null);
+                                onChangeGridSectionPickers?.((prev) =>
+                                  prev.map((item) =>
+                                    item.courseCode === target.courseCode
+                                      ? { ...item, component: comp }
+                                      : item,
+                                  ),
+                                );
+                              }}
+                              className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium transition ${
+                                target.component === comp
+                                  ? "bg-emerald-700 text-white dark:bg-emerald-600"
+                                  : "bg-white/80 text-emerald-900 hover:bg-white dark:bg-zinc-900 dark:text-emerald-200 dark:hover:bg-zinc-800"
+                              }`}
+                            >
+                              <span
+                                className={`h-1.5 w-1.5 rounded-full ${dotColor}`}
+                              />
+                              <span>{comp}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  {targetAsyncSections.map((sec) =>
+                    isEditMode ? (
+                      <button
+                        key={sec.crn}
+                        type="button"
+                        onClick={() => {
+                          onSelectSection?.(
+                            target.courseCode,
+                            sec.component,
+                            sec.crn,
+                          );
+                        }}
+                        className="rounded-md border border-teal-400 bg-white px-2 py-0.5 text-[11px] font-medium text-teal-900 hover:bg-teal-50 dark:border-teal-700 dark:bg-zinc-900 dark:text-teal-200"
+                      >
+                        Schedule {sec.component} CRN {sec.crn} (Async)
+                      </button>
+                    ) : (
+                      <span
+                        key={sec.crn}
+                        className="rounded-md border border-teal-300/80 bg-white/80 px-2 py-0.5 text-[11px] font-medium text-teal-900 dark:border-teal-800 dark:bg-zinc-900 dark:text-teal-200"
+                      >
+                        {sec.component} CRN {sec.crn} (Async)
+                      </span>
+                    ),
+                  )}
+                </div>
+
+                <div className="flex shrink-0 items-center gap-2">
+                  {isMultiCoursePicker && targetIdx === 0 && (
+                    <span className="hidden text-[10.5px] text-emerald-700/80 sm:inline dark:text-emerald-300/80">
+                      Esc clears all
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setHoveredPickerCrn(null);
+                      onChangeGridSectionPickers?.((prev) =>
+                        prev.filter(
+                          (item) => item.courseCode !== target.courseCode,
+                        ),
+                      );
+                    }}
+                    className="shrink-0 rounded-md border border-emerald-300 bg-white px-2.5 py-1 text-[11px] font-medium text-emerald-900 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-zinc-900 dark:text-emerald-200 dark:hover:bg-zinc-800"
+                    title={`Remove ${target.courseCode} from grid view (press Esc to clear all)`}
+                  >
+                    {isMultiCoursePicker ? "Cancel" : "Cancel (Esc)"}
+                  </button>
+                </div>
               </div>
-            )}
-            {pickerAsyncSections.map((sec) =>
-              isEditMode ? (
-                <button
-                  key={sec.crn}
-                  type="button"
-                  onClick={() => {
-                    onSelectSection?.(
-                      gridSectionPicker.courseCode,
-                      sec.component,
-                      sec.crn,
-                    );
-                    setHoveredPickerCrn(null);
-                    onChangeGridSectionPicker?.(null);
-                  }}
-                  className="rounded-md border border-teal-400 bg-white px-2 py-0.5 text-[11px] font-medium text-teal-900 hover:bg-teal-50 dark:border-teal-700 dark:bg-zinc-900 dark:text-teal-200"
-                >
-                  Schedule {sec.component} CRN {sec.crn} (Async)
-                </button>
-              ) : (
-                <span
-                  key={sec.crn}
-                  className="rounded-md border border-teal-300/80 bg-white/80 px-2 py-0.5 text-[11px] font-medium text-teal-900 dark:border-teal-800 dark:bg-zinc-900 dark:text-teal-200"
-                >
-                  {sec.component} CRN {sec.crn} (Async)
-                </span>
-              ),
-            )}
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              setHoveredPickerCrn(null);
-              onChangeGridSectionPicker?.(null);
-            }}
-            className="shrink-0 rounded-md border border-emerald-300 bg-white px-2.5 py-1 text-[11px] font-medium text-emerald-900 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-zinc-900 dark:text-emerald-200 dark:hover:bg-zinc-800"
-          >
-            Cancel (Esc)
-          </button>
+            );
+          })}
         </div>
       )}
 
@@ -1296,23 +1433,30 @@ export function WeekScheduleGrid({
                       const blockComp =
                         block.component ??
                         (block.type as CourseComponentType | undefined);
+                      const matchedOverlayTarget = dragCourse
+                        ? dragCourse.sourceBlock.courseCode === block.courseCode
+                          ? {
+                              courseCode: dragCourse.sourceBlock.courseCode,
+                              component: dragCourse.component,
+                            }
+                          : undefined
+                        : pickerByCourseCode.get(block.courseCode);
                       const isCurrentOverlayBlock =
                         isDraggingAny &&
                         hasActiveGhosts &&
-                        Boolean(activeOverlayCourseCode) &&
+                        Boolean(matchedOverlayTarget) &&
                         !block.isCustom &&
                         block.mode !== "preview" &&
-                        block.courseCode === activeOverlayCourseCode &&
-                        (activeOverlayComponent === "ALL" ||
-                          blockComp === activeOverlayComponent);
+                        (matchedOverlayTarget!.component === "ALL" ||
+                          blockComp === matchedOverlayTarget!.component);
                       const isCorrelatedComponent =
                         isDraggingAny &&
-                        Boolean(activeOverlayCourseCode) &&
+                        !isMultiCoursePicker &&
+                        Boolean(matchedOverlayTarget) &&
                         !block.isCustom &&
                         block.mode !== "preview" &&
-                        block.courseCode === activeOverlayCourseCode &&
-                        activeOverlayComponent !== "ALL" &&
-                        blockComp !== activeOverlayComponent;
+                        matchedOverlayTarget!.component !== "ALL" &&
+                        blockComp !== matchedOverlayTarget!.component;
 
                       return (
                         <div
@@ -1433,7 +1577,7 @@ export function WeekScheduleGrid({
                   </div>
 
                   {/* Ghost Snap Target Slots during Course Block Drag or Click-to-Schedule */}
-                  {(dragCourse || gridSectionPicker) && dayGhosts.length > 0 && (
+                  {(dragCourse || hasGridPickers) && dayGhosts.length > 0 && (
                     <div
                       className={`${
                         isPickerOverlay
@@ -1459,17 +1603,15 @@ export function WeekScheduleGrid({
                         const isHovered = dragCourse
                           ? dragCourse.hoveredCrn === g.crn
                           : hoveredPickerCrn === g.crn;
+                        const showComponentInHeader =
+                          isMultiCoursePicker ||
+                          pickerByCourseCode.get(g.courseCode)?.component ===
+                            "ALL";
 
                         const handleGhostActivate = () => {
-                          if (!gridSectionPicker) return;
+                          if (!hasGridPickers) return;
                           if (canPickOnGrid) {
-                            onSelectSection?.(
-                              gridSectionPicker.courseCode,
-                              g.component,
-                              g.crn,
-                            );
-                            setHoveredPickerCrn(null);
-                            onChangeGridSectionPicker?.(null);
+                            onSelectSection?.(g.courseCode, g.component, g.crn);
                             return;
                           }
                           setSelectedCourse({
@@ -1560,6 +1702,7 @@ export function WeekScheduleGrid({
                                   ? getFittingGhostClasses(
                                       g.component,
                                       isHovered,
+                                      g.multiColorIndex,
                                     )
                                   : isHovered
                                     ? "z-50 border-rose-600 bg-rose-500/35 text-rose-950 ring-2 ring-rose-500 shadow-md dark:border-rose-400 dark:bg-rose-900/80 dark:text-rose-50"
@@ -1568,9 +1711,11 @@ export function WeekScheduleGrid({
                           >
                             <div className="flex items-center justify-between gap-1 font-semibold">
                               <span className="truncate">
-                                {gridSectionPicker?.component === "ALL"
-                                  ? `${g.component} ${g.crn}`
-                                  : `CRN ${g.crn}`}
+                                {isMultiCoursePicker
+                                  ? `${g.courseCode} ${g.component}`
+                                  : showComponentInHeader
+                                    ? `${g.component} ${g.crn}`
+                                    : `CRN ${g.crn}`}
                               </span>
                               {g.weekPattern !== "both" && (
                                 <span className="shrink-0 rounded bg-black/15 px-1 text-[8px] uppercase">
@@ -1725,9 +1870,9 @@ export function WeekScheduleGrid({
                       Add Officially
                     </button>
                   )}
-                {!gridSectionPicker &&
+                {!hasGridPickers &&
                   !selectedCourse.isCustom &&
-                  onChangeGridSectionPicker &&
+                  onChangeGridSectionPickers &&
                   courseMap?.has(selectedCourse.courseCode) && (
                     <button
                       type="button"
@@ -1738,10 +1883,12 @@ export function WeekScheduleGrid({
                             | CourseComponentType
                             | undefined);
                         if (!comp) return;
-                        onChangeGridSectionPicker({
-                          courseCode: selectedCourse.courseCode,
-                          component: comp,
-                        });
+                        onChangeGridSectionPickers([
+                          {
+                            courseCode: selectedCourse.courseCode,
+                            component: comp,
+                          },
+                        ]);
                         setSelectedCourse(null);
                       }}
                       className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-800 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-200 dark:hover:bg-emerald-900/60"
