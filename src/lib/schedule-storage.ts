@@ -306,6 +306,8 @@ export interface DegreePlanImportOption {
   totalCourseCount: number;
   termCourseCodes: string[];
   completedPriorCourseCodes: string[];
+  fallTermCourseCodes: string[];
+  winterTermCourseCodes: string[];
 }
 
 function buildDegreePlanImportOption(
@@ -319,9 +321,12 @@ function buildDegreePlanImportOption(
   },
   termInfo: ScheduleTermInfo,
 ): DegreePlanImportOption {
-  const targetChrono = termChronoKey(termInfo.season, termInfo.year);
+  const academicCycleStartChrono = termChronoKey("Fall", 2026);
   const termCourseCodesSet = new Set<string>();
-  const completedSet = new Set<string>();
+  const summerPrevYearSet = new Set<string>();
+  const fallTermCourseCodesSet = new Set<string>();
+  const winterTermCourseCodesSet = new Set<string>();
+  const priorRawSet = new Set<string>();
   let totalCourseCount = 0;
 
   for (const t of params.terms) {
@@ -330,10 +335,31 @@ function buildDegreePlanImportOption(
     const calYear = termCalendarYear(params.startYear, t.year, t.season);
     if (t.season === termInfo.season && calYear === termInfo.year) {
       for (const c of slots) termCourseCodesSet.add(c);
-    } else if (termChronoKey(t.season, calYear) < targetChrono) {
-      for (const c of slots) completedSet.add(c);
+    } else if (
+      termInfo.season === "Summer" &&
+      t.season === "Summer" &&
+      calYear === termInfo.year - 1
+    ) {
+      for (const c of slots) summerPrevYearSet.add(c);
+    }
+    if (t.season === "Fall" && calYear === 2026) {
+      for (const c of slots) fallTermCourseCodesSet.add(c);
+    }
+    if (t.season === "Winter" && calYear === 2027) {
+      for (const c of slots) winterTermCourseCodesSet.add(c);
+    }
+    if (termChronoKey(t.season, calYear) < academicCycleStartChrono) {
+      for (const c of slots) priorRawSet.add(c);
     }
   }
+
+  if (termInfo.season === "Summer" && termCourseCodesSet.size === 0) {
+    for (const c of summerPrevYearSet) termCourseCodesSet.add(c);
+  }
+
+  const completedPriorCourseCodes = [...priorRawSet].filter(
+    (c) => !termCourseCodesSet.has(c),
+  );
 
   return {
     id: params.id,
@@ -343,7 +369,9 @@ function buildDegreePlanImportOption(
     startYear: params.startYear,
     totalCourseCount,
     termCourseCodes: [...termCourseCodesSet],
-    completedPriorCourseCodes: [...completedSet],
+    completedPriorCourseCodes,
+    fallTermCourseCodes: [...fallTermCourseCodesSet],
+    winterTermCourseCodes: [...winterTermCourseCodesSet],
   };
 }
 

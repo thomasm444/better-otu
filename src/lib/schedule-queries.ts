@@ -559,10 +559,25 @@ export async function getTermScheduleCatalog(
 
   courses.sort((a, b) => a.courseCode.localeCompare(b.courseCode, "en"));
 
+  const allCatalogMap = new Map<string, string>();
+  for (const c of catalogCourses) {
+    const code = c.code.trim().toUpperCase();
+    if (code) allCatalogMap.set(code, c.title || code);
+  }
+  for (const c of courses) {
+    if (!allCatalogMap.has(c.courseCode)) {
+      allCatalogMap.set(c.courseCode, c.title || c.courseCode);
+    }
+  }
+  const allCatalogCourses = [...allCatalogMap.entries()]
+    .map(([code, title]) => ({ code, title }))
+    .sort((a, b) => a.code.localeCompare(b.code, "en"));
+
   return {
     term: termInfo.code,
     termLabel: termInfo.label,
     courses,
+    allCatalogCourses,
     subjects: [...subjectsSet].sort((a, b) => a.localeCompare(b, "en")),
     instructors: [...instructorsSet].sort((a, b) => a.localeCompare(b, "en")),
     deliveryStats: {

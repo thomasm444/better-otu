@@ -54,6 +54,7 @@ interface ScheduleContainerProps {
 }
 
 const WEEKDAY_KEYS = DAYS_OF_WEEK.slice(0, 5);
+const ACTIVE_DEGREE_PLAN_STORAGE_KEY = "otu-schedule-active-plan-id";
 
 const TIME_BLOCK_PRESETS: Array<{
   id: string;
@@ -126,6 +127,7 @@ export function ScheduleContainer({
   const [authReady, setAuthReady] = useState(false);
 
   const [viewMode, setViewMode] = useState<ScheduleViewMode>("combined");
+  const [showRmp, setShowRmp] = useState(false);
   const [mobileTab, setMobileTab] = useState<"schedule" | "lookup">("schedule");
   const [isEditMode, setIsEditMode] = useState(false);
 
@@ -149,11 +151,34 @@ export function ScheduleContainer({
   const [gridSectionPickers, setGridSectionPickers] = useState<
     SectionGridPickerTarget[]
   >([]);
+  const [hiddenUnplannedCodes, setHiddenUnplannedCodes] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [focusedCourseCode, setFocusedCourseCode] = useState<string | null>(
     null,
   );
+  const [termPlannedCodesMap, setTermPlannedCodesMap] = useState<
+    Record<string, string[]>
+  >({});
+  const [dismissedTempCompleted, setDismissedTempCompleted] = useState<
+    Set<string>
+  >(() => new Set());
 
   const [isBlockingMode, setIsBlockingMode] = useState(false);
+  const [isCustomBlockDragMode, setIsCustomBlockDragMode] = useState(false);
+  const [customBlockDraft, setCustomBlockDraft] = useState<{
+    courseCode: string;
+    title: string;
+    room?: string;
+    weekPattern: "both" | "week1" | "week2";
+    color: ColorTheme;
+  }>({
+    courseCode: "CUSTOM",
+    title: "Custom Block",
+    room: undefined,
+    weekPattern: "both",
+    color: "teal",
+  });
   const [blockMenuOpen, setBlockMenuOpen] = useState(false);
   const [blkDay, setBlkDay] = useState<DayOfWeek>("monday");
   const [blkStart, setBlkStart] = useState("12:00");
@@ -278,24 +303,40 @@ export function ScheduleContainer({
     async function hydrate() {
       userDirtyRef.current = false;
       const local = loadLocalTermSchedule(activeTerm);
+      const fallLocal = loadLocalTermSchedule("202609");
+      const winterLocal = loadLocalTermSchedule("202701");
+      const summerLocal = loadLocalTermSchedule("202605");
 
       let remotePlans: Awaited<ReturnType<typeof fetchAllDegreePlans>> = [];
       let dbState: Awaited<
         ReturnType<typeof loadUserTermScheduleFromDb>
       > | null = null;
       let dbCompleted: string[] = [];
+      let dbFallCodes: string[] = [];
+      let dbWinterCodes: string[] = [];
 
       if (user?.email) {
         try {
-          const [plansRes, schedRes, completedRes] = await Promise.all([
-            fetchAllDegreePlans(supabase, user.email),
-            loadUserTermScheduleFromDb(supabase, user.id, activeTerm, courseMap),
-            supabase
-              .from("student_courses")
-              .select("course_code")
-              .eq("user_id", user.id)
-              .eq("status", "completed"),
-          ]);
+          const [plansRes, schedRes, completedRes, priorTermRowsRes] =
+            await Promise.all([
+              fetchAllDegreePlans(supabase, user.email),
+              loadUserTermScheduleFromDb(
+                supabase,
+                user.id,
+                activeTerm,
+                courseMap,
+              ),
+              supabase
+                .from("student_courses")
+                .select("course_code")
+                .eq("user_id", user.id)
+                .eq("status", "completed"),
+              supabase
+                .from("student_courses")
+                .select("course_code, semester, status")
+                .eq("user_id", user.id)
+                .in("semester", ["202609", "202701"]),
+            ]);
           remotePlans = plansRes;
           dbState = schedRes;
           dbCompleted = (completedRes.data ?? [])
@@ -303,6 +344,29 @@ export function ScheduleContainer({
               r.course_code.trim().toUpperCase(),
             )
             .filter((c: string) => c && !c.startsWith("__"));
+          const priorRows = (priorTermRowsRes.data ?? []) as Array<{
+            course_code: string;
+            semester: string;
+            status: string;
+          }>;
+          dbFallCodes = priorRows
+            .filter(
+              (r) =>
+                r.semester === "202609" &&
+                r.status !== "dropped" &&
+                !r.course_code.startsWith("__"),
+            )
+            .map((r) => r.course_code.trim().toUpperCase())
+            .filter(Boolean);
+          dbWinterCodes = priorRows
+            .filter(
+              (r) =>
+                r.semester === "202701" &&
+                r.status !== "dropped" &&
+                !r.course_code.startsWith("__"),
+            )
+            .map((r) => r.course_code.trim().toUpperCase())
+            .filter(Boolean);
         } catch (err) {
           console.error("Failed to hydrate remote student schedule:", err);
         }
@@ -312,8 +376,22 @@ export function ScheduleContainer({
 
       const planOptions = extractAllDegreePlansForTerm(remotePlans, termInfo);
       setDegreePlanOptions(planOptions);
+      const savedPlanId =
+        typeof window !== "undefined"
+          ? window.localStorage.getItem(ACTIVE_DEGREE_PLAN_STORAGE_KEY)
+          : null;
       const primaryPlanForPrereqs =
+        (savedPlanId
+          ? planOptions.find(
+              (p) => p.id === savedPlanId || p.programId === savedPlanId,
+            )
+          : undefined) ??
         planOptions.find((p) => p.termCourseCodes.length > 0) ??
+        planOptions.find(
+          (p) =>
+            p.fallTermCourseCodes.length > 0 ||
+            p.winterTermCourseCodes.length > 0,
+        ) ??
         planOptions.find((p) => p.completedPriorCourseCodes.length > 0);
 
       // Optionally load program elective buckets from the active Degree Plan
@@ -349,9 +427,45 @@ export function ScheduleContainer({
           .catch(() => {});
       }
 
+      const fallLocalCodes = (fallLocal?.plannedCourses ?? [])
+        .map((c) => c.courseCode.trim().toUpperCase())
+        .filter(Boolean);
+      const winterLocalCodes = (winterLocal?.plannedCourses ?? [])
+        .map((c) => c.courseCode.trim().toUpperCase())
+        .filter(Boolean);
+
+      const fallCodes = [
+        ...new Set([
+          ...dbFallCodes,
+          ...fallLocalCodes,
+          ...(primaryPlanForPrereqs?.fallTermCourseCodes ?? []),
+        ]),
+      ];
+      const winterCodes = [
+        ...new Set([
+          ...dbWinterCodes,
+          ...winterLocalCodes,
+          ...(primaryPlanForPrereqs?.winterTermCourseCodes ?? []),
+        ]),
+      ];
+
+      setTermPlannedCodesMap((prev) => ({
+        ...prev,
+        "202609": [...new Set([...(prev["202609"] ?? []), ...fallCodes])],
+        "202701": [...new Set([...(prev["202701"] ?? []), ...winterCodes])],
+      }));
+
+      const fallWinterSet = new Set([...fallCodes, ...winterCodes]);
       const mergedCompleted = [
         ...new Set([
-          ...(local?.completedCourses ?? []),
+          ...[
+            ...(local?.completedCourses ?? []),
+            ...(fallLocal?.completedCourses ?? []),
+            ...(winterLocal?.completedCourses ?? []),
+            ...(summerLocal?.completedCourses ?? []),
+          ]
+            .map((c) => c.trim().toUpperCase())
+            .filter((c) => c && !fallWinterSet.has(c)),
           ...(primaryPlanForPrereqs?.completedPriorCourseCodes ?? []),
           ...dbCompleted,
         ]),
@@ -477,7 +591,47 @@ export function ScheduleContainer({
     if (nextTerm === activeTerm) return;
     setHoverPreviewSection(null);
     setGridSectionPickers([]);
+    setHiddenUnplannedCodes(new Set());
+    setDismissedTempCompleted(new Set());
     setImportMenuOpen(false);
+
+    const activePlannedCodes = plannedCourses
+      .map((c) => c.courseCode.trim().toUpperCase())
+      .filter(Boolean);
+    setTermPlannedCodesMap((prev) => ({
+      ...prev,
+      [activeTerm]: [
+        ...new Set([...(prev[activeTerm] ?? []), ...activePlannedCodes]),
+      ],
+    }));
+
+    if (userDirtyRef.current) {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+      saveLocalTermSchedule(activeTerm, {
+        plannedCourses,
+        blockedSlots,
+        customBlocks,
+        completedCourses,
+      });
+      if (user) {
+        try {
+          await syncUserTermScheduleToDb(
+            supabase,
+            user.id,
+            activeTerm,
+            plannedCourses,
+            blockedSlots,
+            customBlocks,
+          );
+        } catch (err) {
+          console.error("Failed to flush schedule before term change:", err);
+        }
+      }
+    }
+
     const cached = catalogCacheRef.current.get(nextTerm);
     if (cached) {
       setCatalog(cached);
@@ -502,9 +656,51 @@ export function ScheduleContainer({
     }
   };
 
+  const temporaryPriorCourseCodes = useMemo(() => {
+    const activePlannedCodes = plannedCourses
+      .map((c) => c.courseCode.trim().toUpperCase())
+      .filter(Boolean);
+    const fallCodes =
+      activeTerm === "202609"
+        ? [
+            ...new Set([
+              ...(termPlannedCodesMap["202609"] ?? []),
+              ...activePlannedCodes,
+            ]),
+          ]
+        : (termPlannedCodesMap["202609"] ?? []);
+    const winterCodes =
+      activeTerm === "202701"
+        ? [
+            ...new Set([
+              ...(termPlannedCodesMap["202701"] ?? []),
+              ...activePlannedCodes,
+            ]),
+          ]
+        : (termPlannedCodesMap["202701"] ?? []);
+
+    let raw: string[] = [];
+    if (activeTerm === "202701") {
+      raw = fallCodes;
+    } else if (activeTerm === "202605") {
+      raw = [...new Set([...fallCodes, ...winterCodes])];
+    }
+    return raw.filter((c) => !dismissedTempCompleted.has(c));
+  }, [activeTerm, plannedCourses, termPlannedCodesMap, dismissedTempCompleted]);
+
+  const effectiveCompletedCourses = useMemo(
+    () =>
+      [
+        ...new Set([...completedCourses, ...temporaryPriorCourseCodes]),
+      ].sort(),
+    [completedCourses, temporaryPriorCourseCodes],
+  );
+
   // Expanded completed courses set (including formerly_codes equivalence)
   const expandedCompletedSet = useMemo(() => {
-    const base = new Set(completedCourses.map((c) => c.trim().toUpperCase()));
+    const base = new Set(
+      effectiveCompletedCourses.map((c) => c.trim().toUpperCase()),
+    );
     const equivAdj = new Map<string, Set<string>>();
     for (const c of catalog.courses) {
       for (const f of c.formerlyCodes) {
@@ -523,7 +719,7 @@ export function ScheduleContainer({
       }
     }
     return expanded;
-  }, [completedCourses, catalog.courses]);
+  }, [effectiveCompletedCourses, catalog.courses]);
 
   // Build active schedule blocks + async sections summary
   const {
@@ -614,6 +810,52 @@ export function ScheduleContainer({
     hoverPreviewSection,
   ]);
 
+  const hiddenCourseCodes = useMemo(() => {
+    const set = new Set<string>(hiddenUnplannedCodes);
+    for (const entry of plannedCourses) {
+      if (entry.hidden) set.add(entry.courseCode);
+    }
+    return set;
+  }, [plannedCourses, hiddenUnplannedCodes]);
+
+  const handleChangeGridSectionPickers = useCallback(
+    (
+      updater:
+        | SectionGridPickerTarget[]
+        | ((prev: SectionGridPickerTarget[]) => SectionGridPickerTarget[]),
+      switchMobileOnAdd = false,
+    ) => {
+      setHoverPreviewSection(null);
+      const next =
+        typeof updater === "function" ? updater(gridSectionPickers) : updater;
+      const nextCodes = new Set(next.map((t) => t.courseCode));
+      setHiddenUnplannedCodes((prev) => {
+        if (prev.size === 0) return prev;
+        let changed = false;
+        const filtered = new Set<string>();
+        for (const code of prev) {
+          if (nextCodes.has(code)) filtered.add(code);
+          else changed = true;
+        }
+        return changed ? filtered : prev;
+      });
+      if (switchMobileOnAdd && next.length > gridSectionPickers.length) {
+        setMobileTab("schedule");
+      }
+      setGridSectionPickers(next);
+    },
+    [gridSectionPickers],
+  );
+
+  const clearUnplannedHidden = useCallback((courseCode: string) => {
+    setHiddenUnplannedCodes((prev) => {
+      if (!prev.has(courseCode)) return prev;
+      const next = new Set(prev);
+      next.delete(courseCode);
+      return next;
+    });
+  }, []);
+
   const markDirty = useCallback(() => {
     userDirtyRef.current = true;
     setSyncStatus(user ? "saving" : "local");
@@ -634,6 +876,7 @@ export function ScheduleContainer({
       };
 
       markDirty();
+      clearUnplannedHidden(courseCode);
       setPlannedCourses((prev) => {
         const existingIdx = prev.findIndex((p) => p.courseCode === courseCode);
         if (existingIdx >= 0) {
@@ -668,13 +911,14 @@ export function ScheduleContainer({
           : `Added ${courseCode} to your schedule`,
       );
     },
-    [courseMap, markDirty, showToast],
+    [courseMap, markDirty, clearUnplannedHidden, showToast],
   );
 
   const handleSelectSection = useCallback(
     (courseCode: string, component: CourseComponentType, crn: string) => {
       if (!isEditMode) return;
       markDirty();
+      clearUnplannedHidden(courseCode);
       setHoverPreviewSection(null);
       setPlannedCourses((prev) => {
         const existing = prev.find((entry) => entry.courseCode === courseCode);
@@ -704,7 +948,7 @@ export function ScheduleContainer({
         ];
       });
     },
-    [courseMap, isEditMode, markDirty],
+    [courseMap, isEditMode, markDirty, clearUnplannedHidden],
   );
 
   const handleRemoveCourse = useCallback(
@@ -713,11 +957,12 @@ export function ScheduleContainer({
       setGridSectionPickers((prev) =>
         prev.filter((t) => t.courseCode !== courseCode),
       );
+      clearUnplannedHidden(courseCode);
       setPlannedCourses((prev) =>
         prev.filter((entry) => entry.courseCode !== courseCode),
       );
     },
-    [markDirty],
+    [markDirty, clearUnplannedHidden],
   );
 
   const handleSetCourseMode = useCallback(
@@ -739,17 +984,40 @@ export function ScheduleContainer({
 
   const handleToggleCourseVisibility = useCallback(
     (courseCode: string) => {
-      markDirty();
-      setPlannedCourses((prev) =>
-        prev.map((entry) =>
-          entry.courseCode === courseCode
-            ? { ...entry, hidden: !entry.hidden }
-            : entry,
-        ),
+      setHoverPreviewSection(null);
+      const isPlanned = plannedCourses.some(
+        (entry) => entry.courseCode === courseCode,
       );
+      if (isPlanned) {
+        if (isEditMode) markDirty();
+        setPlannedCourses((prev) =>
+          prev.map((entry) =>
+            entry.courseCode === courseCode
+              ? { ...entry, hidden: !entry.hidden }
+              : entry,
+          ),
+        );
+        return;
+      }
+      setHiddenUnplannedCodes((prev) => {
+        const next = new Set(prev);
+        if (next.has(courseCode)) next.delete(courseCode);
+        else next.add(courseCode);
+        return next;
+      });
     },
-    [markDirty],
+    [plannedCourses, isEditMode, markDirty],
   );
+
+  const handleToggleAllCoursesVisibility = useCallback(() => {
+    if (plannedCourses.length === 0) return;
+    setHoverPreviewSection(null);
+    if (isEditMode) markDirty();
+    const allHidden = plannedCourses.every((c) => c.hidden);
+    setPlannedCourses((prev) =>
+      prev.map((entry) => ({ ...entry, hidden: !allHidden })),
+    );
+  }, [plannedCourses, isEditMode, markDirty]);
 
   const handleChangeCourseColor = useCallback(
     (courseCode: string, color: ColorTheme) => {
@@ -829,6 +1097,45 @@ export function ScheduleContainer({
     [markDirty],
   );
 
+  const handleClearCustomBlocks = useCallback(() => {
+    markDirty();
+    setCustomBlocks([]);
+  }, [markDirty]);
+
+  const handleUpdateCustomBlocks = useCallback(
+    (updater: (prev: ScheduleBlock[]) => ScheduleBlock[]) => {
+      markDirty();
+      setCustomBlocks((prev) => updater(prev));
+    },
+    [markDirty],
+  );
+
+  const handleCreateCustomBlocksFromDrag = useCallback(
+    (days: DayOfWeek[], startTime: string, endTime: string) => {
+      markDirty();
+      const code = customBlockDraft.courseCode.trim().toUpperCase() || "CUSTOM";
+      const title = customBlockDraft.title.trim() || code;
+      const room = customBlockDraft.room?.trim() || undefined;
+      const now = Date.now();
+      const created: ScheduleBlock[] = days.map((day, idx) => ({
+        id: `custom-${day}-${startTime}-${now}-${idx}-${Math.random().toString(36).slice(2, 5)}`,
+        courseCode: code,
+        title,
+        type: "CUSTOM",
+        day,
+        startTime,
+        endTime,
+        room,
+        weekPattern: customBlockDraft.weekPattern,
+        mode: "planned",
+        color: customBlockDraft.color,
+        isCustom: true,
+      }));
+      setCustomBlocks((prev) => [...prev, ...created]);
+    },
+    [customBlockDraft, markDirty],
+  );
+
   const handleUpdateBlockedSlots = useCallback(
     (updater: (prev: BlockedTimeSlot[]) => BlockedTimeSlot[]) => {
       markDirty();
@@ -888,8 +1195,11 @@ export function ScheduleContainer({
     setBlockedSlots([]);
     setHoverPreviewSection(null);
     setGridSectionPickers([]);
+    setHiddenUnplannedCodes(new Set());
+    setDismissedTempCompleted(new Set());
+    setTermPlannedCodesMap((prev) => ({ ...prev, [activeTerm]: [] }));
     showToast("Cleared schedule and blocked times.");
-  }, [markDirty, showToast]);
+  }, [activeTerm, markDirty, showToast]);
 
   const handleClearPlanner = useCallback(() => {
     markDirty();
@@ -897,14 +1207,41 @@ export function ScheduleContainer({
     setCustomBlocks([]);
     setHoverPreviewSection(null);
     setGridSectionPickers([]);
+    setHiddenUnplannedCodes(new Set());
+    setDismissedTempCompleted(new Set());
+    setTermPlannedCodesMap((prev) => ({ ...prev, [activeTerm]: [] }));
     showToast("Cleared all courses from planner.");
-  }, [markDirty, showToast]);
+  }, [activeTerm, markDirty, showToast]);
 
   const handleImportFromDegreePlan = (plan: DegreePlanImportOption) => {
     setImportMenuOpen(false);
+    markDirty();
+    if (typeof window !== "undefined") {
+      try {
+        window.localStorage.setItem(ACTIVE_DEGREE_PLAN_STORAGE_KEY, plan.id);
+      } catch {
+        // Ignore storage quota errors
+      }
+    }
+
+    if (plan.completedPriorCourseCodes.length > 0) {
+      setCompletedCourses((prev) =>
+        [...new Set([...prev, ...plan.completedPriorCourseCodes])].sort(),
+      );
+    }
+    setTermPlannedCodesMap((prev) => ({
+      ...prev,
+      "202609": [
+        ...new Set([...(prev["202609"] ?? []), ...plan.fallTermCourseCodes]),
+      ],
+      "202701": [
+        ...new Set([...(prev["202701"] ?? []), ...plan.winterTermCourseCodes]),
+      ],
+    }));
+
     if (plan.termCourseCodes.length === 0) {
       showToast(
-        `"${plan.label}" has no courses scheduled for ${catalog.termLabel}.`,
+        `Imported completed prerequisite courses from ${plan.label} (no courses scheduled for ${catalog.termLabel}).`,
       );
       return;
     }
@@ -921,29 +1258,28 @@ export function ScheduleContainer({
     if (imported.length === 0) {
       showToast(
         newCodes.length === 0
-          ? `All courses from "${plan.label}" for ${catalog.termLabel} are already added.`
-          : `None of the courses in "${plan.label}" are offered in ${catalog.termLabel}.`,
+          ? `Synced prerequisite courses from "${plan.label}" (all ${catalog.termLabel} courses already added).`
+          : `Synced prerequisite courses from "${plan.label}" (no matching offerings in ${catalog.termLabel}).`,
       );
       return;
     }
 
-    markDirty();
     setPlannedCourses((prev) => [...prev, ...imported]);
 
-    if (plan.completedPriorCourseCodes.length > 0) {
-      setCompletedCourses((prev) =>
-        [...new Set([...prev, ...plan.completedPriorCourseCodes])].sort(),
-      );
-    }
-
     showToast(
-      `Imported ${imported.length} course${imported.length === 1 ? "" : "s"} from ${plan.label}`,
+      `Imported ${imported.length} course${imported.length === 1 ? "" : "s"} and prerequisites from ${plan.label}`,
     );
   };
 
   const handleAddCompletedCourse = useCallback(
     (code: string) => {
       markDirty();
+      setDismissedTempCompleted((prev) => {
+        if (!prev.has(code)) return prev;
+        const next = new Set(prev);
+        next.delete(code);
+        return next;
+      });
       setCompletedCourses((prev) =>
         prev.includes(code) ? prev : [...prev, code].sort(),
       );
@@ -954,9 +1290,12 @@ export function ScheduleContainer({
   const handleRemoveCompletedCourse = useCallback(
     (code: string) => {
       markDirty();
+      if (temporaryPriorCourseCodes.includes(code)) {
+        setDismissedTempCompleted((prev) => new Set(prev).add(code));
+      }
       setCompletedCourses((prev) => prev.filter((c) => c !== code));
     },
-    [markDirty],
+    [markDirty, temporaryPriorCourseCodes],
   );
 
   return (
@@ -1036,6 +1375,37 @@ export function ScheduleContainer({
                   </button>
                 ))}
               </div>
+
+              {/* RateMyProfessors Star Toggle (off by default) */}
+              <button
+                type="button"
+                onClick={() => setShowRmp((v) => !v)}
+                aria-pressed={showRmp}
+                title={
+                  showRmp
+                    ? "Hide RateMyProfessors ratings"
+                    : "Show RateMyProfessors ratings"
+                }
+                aria-label="Toggle RateMyProfessors ratings"
+                className={`inline-flex cursor-pointer items-center justify-center rounded-lg border px-2.5 py-1.5 text-xs font-medium shadow-xs transition ${
+                  showRmp
+                    ? "border-amber-400 bg-amber-50 text-amber-800 hover:bg-amber-100 dark:border-amber-600 dark:bg-amber-950/70 dark:text-amber-200"
+                    : "border-zinc-300 bg-white text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+                }`}
+              >
+                <svg
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                  aria-hidden="true"
+                  className={`h-3.5 w-3.5 shrink-0 transition-colors ${
+                    showRmp
+                      ? "text-amber-500 dark:text-amber-400"
+                      : "text-zinc-400 dark:text-zinc-500"
+                  }`}
+                >
+                  <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                </svg>
+              </button>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
@@ -1047,6 +1417,7 @@ export function ScheduleContainer({
                     const next = !prev;
                     if (!next) {
                       setIsBlockingMode(false);
+                      setIsCustomBlockDragMode(false);
                       setBlockMenuOpen(false);
                       setImportMenuOpen(false);
                     }
@@ -1087,7 +1458,7 @@ export function ScheduleContainer({
                     </button>
 
                     {blockMenuOpen && (
-                      <div className="absolute right-0 z-40 mt-2 w-72 rounded-xl border border-zinc-200 bg-white p-3 text-xs shadow-xl dark:border-zinc-800 dark:bg-zinc-900">
+                      <div className="absolute left-0 z-40 mt-2 w-72 max-w-[calc(100vw-2rem)] rounded-xl border border-zinc-200 bg-white p-3 text-xs shadow-xl dark:border-zinc-800 dark:bg-zinc-900">
                         <div className="flex items-center justify-between border-b border-zinc-100 pb-2 dark:border-zinc-800">
                           <span className="font-semibold text-zinc-900 dark:text-zinc-100">
                             Block Off Unavailable Times
@@ -1110,7 +1481,11 @@ export function ScheduleContainer({
                         <button
                           type="button"
                           onClick={() => {
-                            setIsBlockingMode((v) => !v);
+                            setIsBlockingMode((v) => {
+                              const next = !v;
+                              if (next) setIsCustomBlockDragMode(false);
+                              return next;
+                            });
                             setBlockMenuOpen(false);
                           }}
                           className={`mt-2 w-full rounded-lg border px-2.5 py-1.5 text-left font-medium transition ${
@@ -1212,6 +1587,16 @@ export function ScheduleContainer({
                       className="rounded-lg bg-rose-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-rose-700"
                     >
                       Done Blocking
+                    </button>
+                  )}
+
+                  {isCustomBlockDragMode && (
+                    <button
+                      type="button"
+                      onClick={() => setIsCustomBlockDragMode(false)}
+                      className="rounded-lg bg-teal-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-teal-700"
+                    >
+                      Done Custom Block
                     </button>
                   )}
 
@@ -1416,11 +1801,13 @@ export function ScheduleContainer({
             blockedSlots={blockedSlots}
             courseMap={courseMap}
             gridSectionPickers={gridSectionPickers}
-            onChangeGridSectionPickers={(updater) => {
-              setHoverPreviewSection(null);
-              setGridSectionPickers(updater);
-            }}
+            onChangeGridSectionPickers={(updater) =>
+              handleChangeGridSectionPickers(updater, false)
+            }
+            hiddenCourseCodes={hiddenCourseCodes}
+            onToggleCourseVisibility={handleToggleCourseVisibility}
             isEditMode={isEditMode}
+            showRmp={showRmp}
             fitToHeight={true}
             isBlockingMode={isBlockingMode}
             onCreateBlockedSlot={(d, s, e, l) =>
@@ -1428,6 +1815,10 @@ export function ScheduleContainer({
             }
             onUpdateBlockedSlots={handleUpdateBlockedSlots}
             onRemoveBlockedSlot={handleRemoveBlockedSlot}
+            onUpdateCustomBlocks={handleUpdateCustomBlocks}
+            isCustomBlockDragMode={isCustomBlockDragMode}
+            customBlockDraft={customBlockDraft}
+            onCreateCustomBlocksFromDrag={handleCreateCustomBlocksFromDrag}
             onRemoveBlock={handleRemoveBlockFromGrid}
             onSelectSection={handleSelectSection}
             onPromoteCourse={(code) => handleSetCourseMode(code, "planned")}
@@ -1480,23 +1871,15 @@ export function ScheduleContainer({
             activeBlocks={rawScheduleBlocks}
             customBlocks={customBlocks}
             blockedSlots={blockedSlots}
-            completedCourses={completedCourses}
+            completedCourses={effectiveCompletedCourses}
             expandedCompletedSet={expandedCompletedSet}
             programElectives={programElectives}
             focusedCourseCode={focusedCourseCode}
             hydratedKey={hydratedKey}
             gridSectionPickers={gridSectionPickers}
-            onChangeGridSectionPickers={(updater) => {
-              setHoverPreviewSection(null);
-              setGridSectionPickers((prev) => {
-                const next =
-                  typeof updater === "function" ? updater(prev) : updater;
-                if (next.length > prev.length) {
-                  setMobileTab("schedule");
-                }
-                return next;
-              });
-            }}
+            onChangeGridSectionPickers={(updater) =>
+              handleChangeGridSectionPickers(updater, true)
+            }
             isEditMode={isEditMode}
             onEnableEditMode={() => setIsEditMode(true)}
             onClearPlanner={handleClearPlanner}
@@ -1506,13 +1889,25 @@ export function ScheduleContainer({
             onRemoveCourse={handleRemoveCourse}
             onSetCourseMode={handleSetCourseMode}
             onToggleCourseVisibility={handleToggleCourseVisibility}
+            onToggleAllCoursesVisibility={handleToggleAllCoursesVisibility}
             onChangeCourseColor={handleChangeCourseColor}
             onAutoFitAll={handleAutoFitAll}
             onAddCustomBlock={handleAddCustomBlock}
             onRemoveCustomBlock={handleRemoveCustomBlock}
+            onClearCustomBlocks={handleClearCustomBlocks}
+            isCustomBlockDragMode={isCustomBlockDragMode}
+            onToggleCustomBlockDragMode={() => {
+              setIsCustomBlockDragMode((v) => {
+                const next = !v;
+                if (next) setIsBlockingMode(false);
+                return next;
+              });
+            }}
+            onCustomBlockDraftChange={setCustomBlockDraft}
             onAddCompletedCourse={handleAddCompletedCourse}
             onRemoveCompletedCourse={handleRemoveCompletedCourse}
             onHoverSection={setHoverPreviewSection}
+            showRmp={showRmp}
           />
         </div>
       </div>

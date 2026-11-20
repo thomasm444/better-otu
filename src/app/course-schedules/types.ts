@@ -59,13 +59,13 @@ export interface ScheduleTermInfo {
 export const SCHEDULE_TERMS: ScheduleTermInfo[] = [
   { code: "202609", label: "Fall 2026", season: "Fall", year: 2026 },
   { code: "202701", label: "Winter 2027", season: "Winter", year: 2027 },
-  { code: "202605", label: "Spring/Summer 2026", season: "Summer", year: 2026 },
+  { code: "202605", label: "Spring/Summer 2027", season: "Summer", year: 2027 },
 ];
 
 export function getDefaultScheduleTerm(now: Date = new Date()): string {
   const { date } = getTorontoNowParts(now);
   if (date >= "2027-01-01" && date <= "2027-04-30") return "202701";
-  if (date >= "2026-05-01" && date <= "2026-08-20") return "202605";
+  if (date >= "2027-05-01" && date <= "2027-08-20") return "202605";
   return "202609";
 }
 
@@ -307,6 +307,7 @@ export interface TermScheduleCatalog {
   term: string;
   termLabel: string;
   courses: ScheduleCourseGroup[];
+  allCatalogCourses?: Array<{ code: string; title: string }>;
   subjects: string[];
   instructors: string[];
   deliveryStats: {
@@ -404,8 +405,14 @@ export interface WeekScheduleProps {
       | SectionGridPickerTarget[]
       | ((prev: SectionGridPickerTarget[]) => SectionGridPickerTarget[]),
   ) => void;
+  /** Set of course codes currently hidden from the timetable grid */
+  hiddenCourseCodes?: Set<string>;
+  /** Callback to toggle a course's visibility (Hide / Show) on the grid */
+  onToggleCourseVisibility?: (courseCode: string) => void;
   /** Whether edit mode is active */
   isEditMode?: boolean;
+  /** Whether RateMyProfessors ratings are shown (default: false) */
+  showRmp?: boolean;
   /** Earliest start hour on the grid (default: 8 = 8:00 AM) */
   startHour?: number;
   /** Latest end hour on the grid (default: 22 = 10:00 PM) */
@@ -436,6 +443,26 @@ export interface WeekScheduleProps {
     startTime: string,
     endTime: string,
     label?: string,
+  ) => void;
+  /** Callback to update custom blocks (drag move/resize) */
+  onUpdateCustomBlocks?: (
+    updater: (prev: ScheduleBlock[]) => ScheduleBlock[],
+  ) => void;
+  /** Whether grid drag-to-create-custom-block mode is active */
+  isCustomBlockDragMode?: boolean;
+  /** Template metadata for custom blocks created via grid drag */
+  customBlockDraft?: {
+    courseCode: string;
+    title: string;
+    room?: string;
+    weekPattern: WeekPattern;
+    color: ColorTheme;
+  };
+  /** Callback when user drags across the grid to create custom block(s) across one or more days */
+  onCreateCustomBlocksFromDrag?: (
+    days: DayOfWeek[],
+    startTime: string,
+    endTime: string,
   ) => void;
   /** Accent color for header badge */
   accentColor?: "blue" | "purple" | "emerald" | "amber" | "rose" | "red";

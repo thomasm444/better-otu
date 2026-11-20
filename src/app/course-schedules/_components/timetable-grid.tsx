@@ -485,7 +485,10 @@ export function WeekScheduleGrid({
   courseMap,
   gridSectionPickers = [],
   onChangeGridSectionPickers,
+  hiddenCourseCodes,
+  onToggleCourseVisibility,
   isEditMode = false,
+  showRmp = false,
   startHour = 8,
   endHour = 22,
   onRemoveBlock,
@@ -496,6 +499,10 @@ export function WeekScheduleGrid({
   onUpdateBlockedSlots,
   isBlockingMode = false,
   onCreateBlockedSlot,
+  onUpdateCustomBlocks,
+  isCustomBlockDragMode = false,
+  customBlockDraft,
+  onCreateCustomBlocksFromDrag,
   accentColor = viewMode === "week2" ? "purple" : "blue",
   badgeLabel,
   fitToHeight = true,
@@ -505,9 +512,14 @@ export function WeekScheduleGrid({
   );
   const [dragCourse, setDragCourse] = useState<CourseDragState | null>(null);
   const [hoveredPickerCrn, setHoveredPickerCrn] = useState<string | null>(null);
-  const [dragBlockedPreview, setDragBlockedPreview] =
-    useState<BlockedTimeSlot | null>(null);
+  const [dragBlockedPreviews, setDragBlockedPreviews] = useState<
+    BlockedTimeSlot[]
+  >([]);
+  const [dragCustomPreviews, setDragCustomPreviews] = useState<ScheduleBlock[]>(
+    [],
+  );
   const [hiddenBlockedId, setHiddenBlockedId] = useState<string | null>(null);
+  const [hiddenCustomId, setHiddenCustomId] = useState<string | null>(null);
 
   const gridBodyRef = useRef<HTMLDivElement>(null);
   const cleanupDragRef = useRef<(() => void) | null>(null);
@@ -586,7 +598,11 @@ export function WeekScheduleGrid({
       sunday: [],
     };
     for (const c of courses) {
+      if (c.isCustom && c.id === hiddenCustomId) continue;
       if (grouped[c.day]) grouped[c.day].push(c);
+    }
+    for (const preview of dragCustomPreviews) {
+      if (grouped[preview.day]) grouped[preview.day].push(preview);
     }
     return {
       monday: layoutDayBlocks(grouped.monday, viewMode),
@@ -597,7 +613,7 @@ export function WeekScheduleGrid({
       saturday: layoutDayBlocks(grouped.saturday, viewMode),
       sunday: layoutDayBlocks(grouped.sunday, viewMode),
     };
-  }, [courses, viewMode]);
+  }, [courses, hiddenCustomId, dragCustomPreviews, viewMode]);
 
   const blockedByDay = useMemo(() => {
     const grouped: Record<DayOfWeek, BlockedTimeSlot[]> = {
@@ -613,11 +629,11 @@ export function WeekScheduleGrid({
       if (slot.id === hiddenBlockedId) continue;
       if (grouped[slot.day]) grouped[slot.day].push(slot);
     }
-    if (dragBlockedPreview && grouped[dragBlockedPreview.day]) {
-      grouped[dragBlockedPreview.day].push(dragBlockedPreview);
+    for (const preview of dragBlockedPreviews) {
+      if (grouped[preview.day]) grouped[preview.day].push(preview);
     }
     return grouped;
-  }, [blockedSlots, hiddenBlockedId, dragBlockedPreview]);
+  }, [blockedSlots, hiddenBlockedId, dragBlockedPreviews]);
 
   const isMultiCoursePicker = gridSectionPickers.length >= 2;
 
@@ -626,6 +642,7 @@ export function WeekScheduleGrid({
     const allGhosts: GhostTargetSlot[] = [];
 
     gridSectionPickers.forEach((target, targetIdx) => {
+      if (hiddenCourseCodes?.has(target.courseCode)) return;
       const course = courseMap.get(target.courseCode);
       if (!course) return;
       const targetComponents =
@@ -656,7 +673,14 @@ export function WeekScheduleGrid({
     });
 
     return allGhosts;
-  }, [gridSectionPickers, isMultiCoursePicker, courseMap, courses, blockedSlots]);
+  }, [
+    gridSectionPickers,
+    hiddenCourseCodes,
+    isMultiCoursePicker,
+    courseMap,
+    courses,
+    blockedSlots,
+  ]);
 
   const ghostsByDay = useMemo(() => {
     const grouped: Record<DayOfWeek, GhostTargetSlot[]> = {
@@ -847,38 +871,139 @@ export function WeekScheduleGrid({
     window.addEventListener("pointercancel", onUp);
   };
 
+  const buildDraftCustomPreviews = (
+    days: DayOfWeek[],
+    startStr: string,
+    endStr: string,
+  ): ScheduleBlock[] => {
+    const code = customBlockDraft?.courseCode.trim().toUpperCase() || "CUSTOM";
+    const title = customBlockDraft?.title.trim() || code;
+    const room = customBlockDraft?.room?.trim() || undefined;
+    const weekPattern = customBlockDraft?.weekPattern ?? "both";
+    const color = customBlockDraft?.color ?? "teal";
+    return days.map((day) => ({
+      id: `__draft_custom__-${day}`,
+      courseCode: code,
+      title,
+      type: "CUSTOM",
+      day,
+      startTime: startStr,
+      endTime: endStr,
+      room,
+      weekPattern,
+      mode: "planned",
+      color,
+      isCustom: true,
+    }));
+  };
+
+  const buildDraftBlockedPreviews = (
+    days: DayOfWeek[],
+    startStr: string,
+    endStr: string,
+  ): BlockedTimeSlot[] =>
+    days.map((day) => ({
+      id: `__draft_block__-${day}`,
+      day,
+      startTime: startStr,
+      endTime: endStr,
+      label: "Blocked",
+    }));
+
+  const computeMovedOrResizedRange = (
+    mode: "move" | "resize-top" | "resize-bottom",
+    origDay: DayOfWeek,
+    origStart: number,
+    origEnd: number,
+    offsetMins: number,
+    coords: { day: DayOfWeek; rawMinutes: number; snapped30: number },
+  ) => {
+    const duration = Math.max(30, origEnd - origStart);
+    if (mode === "move") {
+      const snappedStart =
+        Math.round((coords.rawMinutes - offsetMins) / 30) * 30;
+      const clampedStart = Math.max(
+        startMinutes,
+        Math.min(endMinutesLimit - duration, snappedStart),
+      );
+      return {
+        day: coords.day,
+        startTime: minutesToTimeString(clampedStart),
+        endTime: minutesToTimeString(clampedStart + duration),
+      };
+    }
+    if (mode === "resize-top") {
+      const clampedStart = Math.max(
+        startMinutes,
+        Math.min(origEnd - 30, coords.snapped30),
+      );
+      return {
+        day: origDay,
+        startTime: minutesToTimeString(clampedStart),
+        endTime: minutesToTimeString(origEnd),
+      };
+    }
+    const clampedEnd = Math.max(
+      origStart + 30,
+      Math.min(endMinutesLimit, coords.snapped30),
+    );
+    return {
+      day: origDay,
+      startTime: minutesToTimeString(origStart),
+      endTime: minutesToTimeString(clampedEnd),
+    };
+  };
+
   const startCreateBlockedDrag = (e: React.PointerEvent<HTMLDivElement>) => {
+    const creatingCustom = isCustomBlockDragMode && !isBlockingMode;
     if (
       !isEditMode ||
-      !isBlockingMode ||
+      (!isBlockingMode && !isCustomBlockDragMode) ||
       gridSectionPickers.length > 0 ||
       e.button !== 0
     )
       return;
-    if ((e.target as HTMLElement).closest("[data-blocked-slot='true']")) return;
+    if (
+      (e.target as HTMLElement).closest(
+        "[data-blocked-slot='true'], [data-custom-block='true']",
+      )
+    )
+      return;
 
     const initial = getPointerGridCoords(e.clientX, e.clientY);
     if (!initial) return;
-    const anchorDay = initial.day;
+    const anchorColIdx = DAYS_OF_WEEK.findIndex((d) => d.key === initial.day);
     const anchorStart = Math.max(
       startMinutes,
       Math.min(endMinutesLimit - 30, Math.floor(initial.rawMinutes / 30) * 30),
     );
 
+    let selectedDays: DayOfWeek[] = [initial.day];
     let latestStart = anchorStart;
     let latestEnd = Math.min(endMinutesLimit, anchorStart + 60);
 
-    setDragBlockedPreview({
-      id: "__draft_block__",
-      day: anchorDay,
-      startTime: minutesToTimeString(latestStart),
-      endTime: minutesToTimeString(latestEnd),
-      label: "Blocked",
-    });
+    const updatePreviews = (days: DayOfWeek[], sMin: number, eMin: number) => {
+      const startStr = minutesToTimeString(sMin);
+      const endStr = minutesToTimeString(eMin);
+      if (creatingCustom) {
+        setDragCustomPreviews(buildDraftCustomPreviews(days, startStr, endStr));
+      } else {
+        setDragBlockedPreviews(
+          buildDraftBlockedPreviews(days, startStr, endStr),
+        );
+      }
+    };
+
+    updatePreviews(selectedDays, latestStart, latestEnd);
 
     const onMove = (ev: PointerEvent) => {
       const coords = getPointerGridCoords(ev.clientX, ev.clientY);
       if (!coords) return;
+      const curColIdx = DAYS_OF_WEEK.findIndex((d) => d.key === coords.day);
+      const minCol = Math.min(anchorColIdx, curColIdx);
+      const maxCol = Math.max(anchorColIdx, curColIdx);
+      selectedDays = DAYS_OF_WEEK.slice(minCol, maxCol + 1).map((d) => d.key);
+
       const curSlot = Math.max(
         startMinutes,
         Math.min(endMinutesLimit - 30, Math.floor(coords.rawMinutes / 30) * 30),
@@ -888,13 +1013,7 @@ export function WeekScheduleGrid({
         endMinutesLimit,
         Math.max(anchorStart, curSlot) + 30,
       );
-      setDragBlockedPreview({
-        id: "__draft_block__",
-        day: anchorDay,
-        startTime: minutesToTimeString(latestStart),
-        endTime: minutesToTimeString(latestEnd),
-        label: "Blocked",
-      });
+      updatePreviews(selectedDays, latestStart, latestEnd);
     };
 
     const cleanup = () => {
@@ -906,24 +1025,32 @@ export function WeekScheduleGrid({
 
     const onUp = () => {
       cleanup();
-      setDragBlockedPreview(null);
+      setDragBlockedPreviews([]);
+      setDragCustomPreviews([]);
       const startStr = minutesToTimeString(latestStart);
       const endStr = minutesToTimeString(latestEnd);
+      if (creatingCustom) {
+        onCreateCustomBlocksFromDrag?.(selectedDays, startStr, endStr);
+        return;
+      }
       if (onUpdateBlockedSlots) {
+        const now = Date.now();
         onUpdateBlockedSlots((prev) =>
           mergeBlockedSlots([
             ...prev,
-            {
-              id: `blk-${anchorDay}-${startStr}-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
-              day: anchorDay,
+            ...selectedDays.map((day, idx) => ({
+              id: `blk-${day}-${startStr}-${now}-${idx}-${Math.random().toString(36).slice(2, 5)}`,
+              day,
               startTime: startStr,
               endTime: endStr,
               label: "Blocked",
-            },
+            })),
           ]),
         );
       } else {
-        onCreateBlockedSlot?.(anchorDay, startStr, endStr, "Blocked");
+        for (const day of selectedDays) {
+          onCreateBlockedSlot?.(day, startStr, endStr, "Blocked");
+        }
       }
     };
 
@@ -943,7 +1070,7 @@ export function WeekScheduleGrid({
       !isEditMode ||
       gridSectionPickers.length > 0 ||
       e.button !== 0 ||
-      slot.id === "__draft_block__"
+      slot.id.startsWith("__draft_block__")
     )
       return;
     if ((e.target as HTMLElement).closest("[data-no-drag='true']")) return;
@@ -972,42 +1099,16 @@ export function WeekScheduleGrid({
       const coords = getPointerGridCoords(ev.clientX, ev.clientY);
       if (!coords) return;
 
-      if (mode === "move") {
-        const snappedStart =
-          Math.round((coords.rawMinutes - offsetMins) / 30) * 30;
-        const clampedStart = Math.max(
-          startMinutes,
-          Math.min(endMinutesLimit - duration, snappedStart),
-        );
-        nextSlot = {
-          ...slot,
-          day: coords.day,
-          startTime: minutesToTimeString(clampedStart),
-          endTime: minutesToTimeString(clampedStart + duration),
-        };
-      } else if (mode === "resize-top") {
-        const clampedStart = Math.max(
-          startMinutes,
-          Math.min(origEnd - 30, coords.snapped30),
-        );
-        nextSlot = {
-          ...slot,
-          startTime: minutesToTimeString(clampedStart),
-          endTime: slot.endTime,
-        };
-      } else {
-        const clampedEnd = Math.max(
-          origStart + 30,
-          Math.min(endMinutesLimit, coords.snapped30),
-        );
-        nextSlot = {
-          ...slot,
-          startTime: slot.startTime,
-          endTime: minutesToTimeString(clampedEnd),
-        };
-      }
-
-      setDragBlockedPreview(nextSlot);
+      const updated = computeMovedOrResizedRange(
+        mode,
+        slot.day,
+        origStart,
+        origEnd,
+        offsetMins,
+        coords,
+      );
+      nextSlot = { ...slot, ...updated };
+      setDragBlockedPreviews([nextSlot]);
     };
 
     const cleanup = () => {
@@ -1020,12 +1121,92 @@ export function WeekScheduleGrid({
     const onUp = () => {
       cleanup();
       setHiddenBlockedId(null);
-      setDragBlockedPreview(null);
+      setDragBlockedPreviews([]);
       if (!isDragging) return;
       onUpdateBlockedSlots?.((prev) =>
         mergeBlockedSlots(
           prev.map((s) => (s.id === slot.id ? nextSlot : s)),
         ),
+      );
+    };
+
+    cleanupDragRef.current?.();
+    cleanupDragRef.current = cleanup;
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+  };
+
+  const startCustomBlockDrag = (
+    e: React.PointerEvent<HTMLDivElement>,
+    block: ScheduleBlock,
+    mode: "move" | "resize-top" | "resize-bottom",
+  ) => {
+    if (
+      !isEditMode ||
+      !block.isCustom ||
+      gridSectionPickers.length > 0 ||
+      e.button !== 0 ||
+      block.id.startsWith("__draft_custom__")
+    )
+      return;
+    if ((e.target as HTMLElement).closest("[data-no-drag='true']")) return;
+    e.stopPropagation();
+
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const initialCoords = getPointerGridCoords(e.clientX, e.clientY);
+    const origStart = parseTimeToMinutes(block.startTime);
+    const origEnd = parseTimeToMinutes(block.endTime);
+    const duration = Math.max(30, origEnd - origStart);
+    const offsetMins = initialCoords
+      ? Math.max(0, Math.min(duration, initialCoords.rawMinutes - origStart))
+      : 0;
+
+    let isDragging = false;
+    let nextBlock: ScheduleBlock = { ...block };
+
+    const onMove = (ev: PointerEvent) => {
+      if (!isDragging) {
+        if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < 4) return;
+        isDragging = true;
+        setHiddenCustomId(block.id);
+      }
+
+      const coords = getPointerGridCoords(ev.clientX, ev.clientY);
+      if (!coords) return;
+
+      const updated = computeMovedOrResizedRange(
+        mode,
+        block.day,
+        origStart,
+        origEnd,
+        offsetMins,
+        coords,
+      );
+      nextBlock = { ...block, ...updated };
+      setDragCustomPreviews([{ ...nextBlock, id: `__draft_custom__-${block.id}` }]);
+    };
+
+    const cleanup = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+      cleanupDragRef.current = null;
+    };
+
+    const onUp = () => {
+      cleanup();
+      setHiddenCustomId(null);
+      setDragCustomPreviews([]);
+      if (!isDragging) {
+        if (mode === "move") {
+          setSelectedCourse(block);
+        }
+        return;
+      }
+      onUpdateCustomBlocks?.((prev) =>
+        prev.map((b) => (b.id === block.id ? nextBlock : b)),
       );
     };
 
@@ -1095,6 +1276,11 @@ export function WeekScheduleGrid({
               Drag on grid to block time
             </span>
           )}
+          {isEditMode && isCustomBlockDragMode && (
+            <span className="rounded-full bg-teal-100 px-2.5 py-0.5 text-[11px] font-medium text-teal-800 dark:bg-teal-950/60 dark:text-teal-200">
+              Drag on grid to add custom block
+            </span>
+          )}
           {dragCourse && (
             <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-[11px] font-medium text-blue-800 dark:bg-blue-950/60 dark:text-blue-200">
               {dragCourse.ghosts.some((g) => !g.isCurrent)
@@ -1113,29 +1299,38 @@ export function WeekScheduleGrid({
         <div className="divide-y divide-emerald-200/80 border-b border-emerald-200 bg-emerald-50/75 text-xs dark:divide-emerald-900/50 dark:border-emerald-900/60 dark:bg-emerald-950/35">
           {gridSectionPickers.map((target, targetIdx) => {
             const targetCourse = courseMap?.get(target.courseCode) ?? null;
+            const isCourseHidden = Boolean(
+              hiddenCourseCodes?.has(target.courseCode),
+            );
             const coursePalette = isMultiCoursePicker
               ? MULTI_COURSE_GHOST_PALETTE[
                   targetIdx % MULTI_COURSE_GHOST_PALETTE.length
                 ]
               : null;
-            const targetScheduledCount = pickerGhosts.filter(
-              (g) => g.courseCode === target.courseCode,
-            ).length;
-            const targetAsyncSections = targetCourse
-              ? targetCourse.sections.filter(
-                  (s) =>
-                    (target.component === "ALL" ||
-                      s.component === target.component) &&
-                    s.meetings.length === 0,
-                )
-              : [];
+            const targetScheduledCount = isCourseHidden
+              ? 0
+              : pickerGhosts.filter((g) => g.courseCode === target.courseCode)
+                  .length;
+            const targetAsyncSections =
+              !isCourseHidden && targetCourse
+                ? targetCourse.sections.filter(
+                    (s) =>
+                      (target.component === "ALL" ||
+                        s.component === target.component) &&
+                      s.meetings.length === 0,
+                  )
+                : [];
 
             return (
               <div
                 key={target.courseCode}
                 className="flex flex-wrap items-center justify-between gap-2 px-4 py-2"
               >
-                <div className="flex flex-wrap items-center gap-2">
+                <div
+                  className={`flex flex-wrap items-center gap-2 transition-opacity ${
+                    isCourseHidden ? "opacity-75" : ""
+                  }`}
+                >
                   <span className="inline-flex items-center gap-1.5 font-semibold text-emerald-950 dark:text-emerald-100">
                     {coursePalette && (
                       <span
@@ -1149,14 +1344,21 @@ export function WeekScheduleGrid({
                         : target.component}
                       )
                     </span>
+                    {isCourseHidden && (
+                      <span className="rounded bg-amber-200/80 px-1.5 py-0.5 text-[10px] font-semibold uppercase text-amber-950 dark:bg-amber-900/70 dark:text-amber-100">
+                        Hidden
+                      </span>
+                    )}
                   </span>
                   {targetIdx === 0 && (
                     <span className="text-[11px] text-emerald-800 dark:text-emerald-300">
-                      {targetScheduledCount > 0
-                        ? isEditMode
-                          ? "Click any highlighted slot to schedule it"
-                          : "Viewing sections — click any slot for details"
-                        : "No scheduled time slots for this selection"}
+                      {isCourseHidden
+                        ? "Hidden from grid"
+                        : targetScheduledCount > 0
+                          ? isEditMode
+                            ? "Click any highlighted slot to schedule it"
+                            : "Viewing sections — click any slot for details"
+                          : "No scheduled time slots for this selection"}
                     </span>
                   )}
                   {targetCourse &&
@@ -1252,6 +1454,47 @@ export function WeekScheduleGrid({
                       Esc clears all
                     </span>
                   )}
+                  {onToggleCourseVisibility && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setHoveredPickerCrn(null);
+                        onToggleCourseVisibility(target.courseCode);
+                      }}
+                      className={`shrink-0 cursor-pointer rounded-md border px-2.5 py-1 text-[11px] font-medium transition ${
+                        isCourseHidden
+                          ? "border-amber-400 bg-amber-100 text-amber-900 hover:bg-amber-200 dark:border-amber-700 dark:bg-amber-950/70 dark:text-amber-200 dark:hover:bg-amber-900/70"
+                          : "border-emerald-300 bg-white text-emerald-900 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-zinc-900 dark:text-emerald-200 dark:hover:bg-zinc-800"
+                      }`}
+                      title={
+                        isCourseHidden
+                          ? `Show ${target.courseCode} on grid`
+                          : `Hide ${target.courseCode} from grid`
+                      }
+                    >
+                      {isCourseHidden ? (
+                        <span className="inline-grid place-items-center">
+                          <span className="col-start-1 row-start-1">Show</span>
+                          <span
+                            className="invisible col-start-1 row-start-1"
+                            aria-hidden="true"
+                          >
+                            Hide
+                          </span>
+                        </span>
+                      ) : (
+                        <span className="inline-grid place-items-center">
+                          <span className="col-start-1 row-start-1">Hide</span>
+                          <span
+                            className="invisible col-start-1 row-start-1"
+                            aria-hidden="true"
+                          >
+                            Show
+                          </span>
+                        </span>
+                      )}
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => {
@@ -1317,7 +1560,9 @@ export function WeekScheduleGrid({
                         className={`flex-1 border-b border-zinc-100 dark:border-zinc-900/70 ${
                           isEditMode && isBlockingMode
                             ? "cursor-crosshair hover:bg-rose-500/10"
-                            : "pointer-events-none"
+                            : isEditMode && isCustomBlockDragMode
+                              ? "cursor-crosshair hover:bg-teal-500/10"
+                              : "pointer-events-none"
                         }`}
                       />
                     ))}
@@ -1336,6 +1581,7 @@ export function WeekScheduleGrid({
                         ((clampedStart - startMinutes) / totalMinutes) * 100;
                       const heightPercent =
                         ((clampedEnd - clampedStart) / totalMinutes) * 100;
+                      const isDraftBlocked = slot.id.startsWith("__draft_block__");
 
                       return (
                         <div
@@ -1357,9 +1603,9 @@ export function WeekScheduleGrid({
                               : "border-rose-300/90 text-rose-800 dark:border-rose-700/70 dark:text-rose-200"
                           } ${
                             isEditMode ? "cursor-grab active:cursor-grabbing" : ""
-                          } ${slot.id === "__draft_block__" ? "ring-2 ring-rose-500" : ""}`}
+                          } ${isDraftBlocked ? "ring-2 ring-rose-500" : ""}`}
                         >
-                          {isEditMode && slot.id !== "__draft_block__" && (
+                          {isEditMode && !isDraftBlocked && (
                             <div
                               data-resize-handle="top"
                               onPointerDown={(ev) =>
@@ -1375,7 +1621,7 @@ export function WeekScheduleGrid({
                               {slot.label || "Blocked"}
                             </span>
                             {isEditMode &&
-                              slot.id !== "__draft_block__" &&
+                              !isDraftBlocked &&
                               onRemoveBlockedSlot && (
                                 <button
                                   type="button"
@@ -1396,7 +1642,7 @@ export function WeekScheduleGrid({
                             {formatTimeDisplay(slot.endTime)}
                           </span>
 
-                          {isEditMode && slot.id !== "__draft_block__" && (
+                          {isEditMode && !isDraftBlocked && (
                             <div
                               data-resize-handle="bottom"
                               onPointerDown={(ev) =>
@@ -1427,6 +1673,8 @@ export function WeekScheduleGrid({
 
                       const style = THEME_STYLES[block.color || "blue"];
                       const isPreview = block.mode === "preview";
+                      const isDraftCustom =
+                        block.id.startsWith("__draft_custom__");
                       const isExploring = block.mode === "exploring";
                       const isConflict = Boolean(block.isConflict);
                       const isHalfWidth = widthPercent <= 55;
@@ -1461,8 +1709,11 @@ export function WeekScheduleGrid({
                       return (
                         <div
                           key={block.id}
+                          data-custom-block={block.isCustom ? "true" : undefined}
                           onPointerDown={(ev) =>
-                            startCoursePointerDown(ev, block)
+                            block.isCustom && isEditMode
+                              ? startCustomBlockDrag(ev, block, "move")
+                              : startCoursePointerDown(ev, block)
                           }
                           style={{
                             top: `${topPercent}%`,
@@ -1484,11 +1735,9 @@ export function WeekScheduleGrid({
                                   : isExploring
                                     ? `border-2 border-dashed ${style.border} ${style.bg} ${style.text} opacity-90 hover:z-30 hover:opacity-100 hover:shadow-md`
                                     : `border ${style.bg} ${style.border} ${style.text} ${style.hoverBg} hover:z-30 hover:shadow-md`
-                          } ${
+                          } ${isDraftCustom ? "z-40 ring-2 ring-teal-500" : ""} ${
                             isEditMode && !isPreview
-                              ? !block.isCustom
-                                ? "cursor-grab active:cursor-grabbing"
-                                : "cursor-pointer"
+                              ? "cursor-grab active:cursor-grabbing"
                               : !isPreview
                                 ? "cursor-pointer"
                                 : ""
@@ -1505,6 +1754,17 @@ export function WeekScheduleGrid({
                               : ""
                           }`}
                         >
+                          {isEditMode && block.isCustom && !isDraftCustom && (
+                            <div
+                              data-resize-handle="top"
+                              onPointerDown={(ev) =>
+                                startCustomBlockDrag(ev, block, "resize-top")
+                              }
+                              className="absolute inset-x-0 top-0 z-10 h-1.5 cursor-ns-resize"
+                              title="Drag to adjust start time"
+                            />
+                          )}
+
                           <div className="flex h-full flex-col justify-between leading-tight">
                             <div>
                               <div className="flex items-start justify-between gap-0.5">
@@ -1532,6 +1792,7 @@ export function WeekScheduleGrid({
                                   )}
                                   {isEditMode &&
                                     !isPreview &&
+                                    !isDraftCustom &&
                                     onRemoveBlock && (
                                       <button
                                         type="button"
@@ -1562,15 +1823,28 @@ export function WeekScheduleGrid({
                                 {block.room || "TBA"}
                               </span>
                               <div className="flex shrink-0 items-center gap-1">
-                                {!isHalfWidth && !block.rmp && (
+                                {!isHalfWidth && (!showRmp || !block.rmp) && (
                                   <span className="shrink-0 tabular-nums opacity-75">
                                     {formatTimeDisplay(block.startTime)}
                                   </span>
                                 )}
-                                <RmpStarBadge rmp={block.rmp} compact />
+                                {showRmp && (
+                                  <RmpStarBadge rmp={block.rmp} compact />
+                                )}
                               </div>
                             </div>
                           </div>
+
+                          {isEditMode && block.isCustom && !isDraftCustom && (
+                            <div
+                              data-resize-handle="bottom"
+                              onPointerDown={(ev) =>
+                                startCustomBlockDrag(ev, block, "resize-bottom")
+                              }
+                              className="absolute inset-x-0 bottom-0 z-10 h-1.5 cursor-ns-resize"
+                              title="Drag to adjust end time"
+                            />
+                          )}
                         </div>
                       );
                     })}
@@ -1826,7 +2100,7 @@ export function WeekScheduleGrid({
                     <span className="font-medium text-zinc-800 dark:text-zinc-200">
                       {selectedCourse.instructor}
                     </span>
-                    <RmpStarBadge rmp={selectedCourse.rmp} />
+                    {showRmp && <RmpStarBadge rmp={selectedCourse.rmp} />}
                   </div>
                 </div>
               )}

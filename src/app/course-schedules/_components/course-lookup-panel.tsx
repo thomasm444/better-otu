@@ -60,13 +60,53 @@ interface CourseLookupPanelProps {
   onRemoveCourse: (courseCode: string) => void;
   onSetCourseMode: (courseCode: string, mode: "planned" | "exploring") => void;
   onToggleCourseVisibility: (courseCode: string) => void;
+  onToggleAllCoursesVisibility?: () => void;
   onChangeCourseColor: (courseCode: string, color: ColorTheme) => void;
   onAutoFitAll: () => void;
   onAddCustomBlock: (block: ScheduleBlock) => void;
   onRemoveCustomBlock: (id: string) => void;
+  onClearCustomBlocks?: () => void;
+  isCustomBlockDragMode?: boolean;
+  onToggleCustomBlockDragMode?: () => void;
+  onCustomBlockDraftChange?: (draft: {
+    courseCode: string;
+    title: string;
+    room?: string;
+    weekPattern: "both" | "week1" | "week2";
+    color: ColorTheme;
+  }) => void;
   onAddCompletedCourse: (code: string) => void;
   onRemoveCompletedCourse: (code: string) => void;
   onHoverSection: (section: ScheduleSection | null) => void;
+  showRmp?: boolean;
+}
+
+function FixedWidthSwapLabel({
+  label,
+  first,
+  second,
+}: {
+  label: string;
+  first: string;
+  second: string;
+}) {
+  return (
+    <span className="inline-grid place-items-center">
+      <span className="col-start-1 row-start-1 whitespace-nowrap">{label}</span>
+      <span
+        className="invisible col-start-1 row-start-1 whitespace-nowrap"
+        aria-hidden="true"
+      >
+        {first}
+      </span>
+      <span
+        className="invisible col-start-1 row-start-1 whitespace-nowrap"
+        aria-hidden="true"
+      >
+        {second}
+      </span>
+    </span>
+  );
 }
 
 const COMPONENT_LABELS: Record<CourseComponentType, string> = {
@@ -163,13 +203,19 @@ export function CourseLookupPanel({
   onRemoveCourse,
   onSetCourseMode,
   onToggleCourseVisibility,
+  onToggleAllCoursesVisibility,
   onChangeCourseColor,
   onAutoFitAll,
   onAddCustomBlock,
   onRemoveCustomBlock,
+  onClearCustomBlocks,
+  isCustomBlockDragMode = false,
+  onToggleCustomBlockDragMode,
+  onCustomBlockDraftChange,
   onAddCompletedCourse,
   onRemoveCompletedCourse,
   onHoverSection,
+  showRmp = false,
 }: CourseLookupPanelProps) {
   const [panelTab, setPanelTab] = useState<"search" | "planned">("planned");
   const lastAutoTabKeyRef = useRef<string | null>(null);
@@ -201,6 +247,7 @@ export function CourseLookupPanel({
   // Completed courses editor popover
   const [completedOpen, setCompletedOpen] = useState(false);
   const [completedInput, setCompletedInput] = useState("");
+  const [completedActiveIdx, setCompletedActiveIdx] = useState(0);
 
   // Custom block form
   const [customOpen, setCustomOpen] = useState(false);
@@ -212,6 +259,16 @@ export function CourseLookupPanel({
   const [cxRoom, setCxRoom] = useState("");
   const [cxWeek, setCxWeek] = useState<"both" | "week1" | "week2">("both");
   const [cxColor, setCxColor] = useState<ColorTheme>("teal");
+
+  useEffect(() => {
+    onCustomBlockDraftChange?.({
+      courseCode: cxCode,
+      title: cxTitle,
+      room: cxRoom || undefined,
+      weekPattern: cxWeek,
+      color: cxColor,
+    });
+  }, [cxCode, cxTitle, cxRoom, cxWeek, cxColor, onCustomBlockDraftChange]);
 
   // Auto-select Course Lookup when hydrated with no courses; otherwise keep My Courses first
   useEffect(() => {
@@ -241,6 +298,54 @@ export function CourseLookupPanel({
   const plannedByCode = useMemo(
     () => new Map(plannedCourses.map((p) => [p.courseCode, p])),
     [plannedCourses],
+  );
+
+  const { catalogLookupList, titleByCode } = useMemo(() => {
+    const items =
+      catalog.allCatalogCourses && catalog.allCatalogCourses.length > 0
+        ? catalog.allCatalogCourses
+        : catalog.courses.map((c) => ({ code: c.courseCode, title: c.title }));
+    const map = new Map<string, string>();
+    for (const item of items) {
+      map.set(item.code.toUpperCase(), item.title);
+    }
+    return { catalogLookupList: items, titleByCode: map };
+  }, [catalog.allCatalogCourses, catalog.courses]);
+
+  const completedSuggestions = useMemo(() => {
+    const q = completedInput.trim().toLowerCase();
+    if (!q) return [];
+    const compactQ = q.replace(/\s+/g, "");
+    const existing = new Set(
+      completedCourses.map((c) => c.trim().toUpperCase()),
+    );
+
+    const prefixMatches: Array<{ code: string; title: string }> = [];
+    const codeMatches: Array<{ code: string; title: string }> = [];
+    const titleMatches: Array<{ code: string; title: string }> = [];
+
+    for (const item of catalogLookupList) {
+      const upperCode = item.code.toUpperCase();
+      if (existing.has(upperCode)) continue;
+      const codeLower = upperCode.toLowerCase();
+      const compactCode = codeLower.replace(/\s+/g, "");
+      const titleLower = item.title.toLowerCase();
+
+      if (codeLower.startsWith(q) || compactCode.startsWith(compactQ)) {
+        prefixMatches.push(item);
+      } else if (codeLower.includes(q) || compactCode.includes(compactQ)) {
+        codeMatches.push(item);
+      } else if (titleLower.includes(q)) {
+        titleMatches.push(item);
+      }
+    }
+
+    return [...prefixMatches, ...codeMatches, ...titleMatches].slice(0, 8);
+  }, [completedInput, catalogLookupList, completedCourses]);
+
+  const safeCompletedIdx = Math.min(
+    completedActiveIdx,
+    Math.max(0, completedSuggestions.length - 1),
   );
 
   const allElectiveOptions = useMemo(() => {
@@ -458,13 +563,35 @@ export function CourseLookupPanel({
     }
   };
 
+  const selectCompletedCourse = (code: string) => {
+    onAddCompletedCourse(code.trim().toUpperCase().replace(/\s+/g, " "));
+    setCompletedInput("");
+    setCompletedActiveIdx(0);
+  };
+
   const handleAddCompletedSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const raw = completedInput.trim().toUpperCase();
     if (!raw) return;
-    const normalized = raw.replace(/\s+/g, " ");
-    onAddCompletedCourse(normalized);
-    setCompletedInput("");
+    const normalized = raw
+      .replace(/\s+/g, " ")
+      .replace(/^([A-Z]{2,6})(\d.*)$/, "$1 $2");
+    if (completedSuggestions.length > 0) {
+      const looksLikeCourseCode = /^[A-Z]{2,6}\s?\d{3,4}[A-Z]?$/.test(raw);
+      if (
+        !looksLikeCourseCode ||
+        safeCompletedIdx > 0 ||
+        completedSuggestions[0]?.code.toUpperCase() === normalized
+      ) {
+        selectCompletedCourse(completedSuggestions[safeCompletedIdx].code);
+        return;
+      }
+      if (!titleByCode.has(normalized)) {
+        selectCompletedCourse(completedSuggestions[safeCompletedIdx].code);
+        return;
+      }
+    }
+    selectCompletedCourse(normalized);
   };
 
   const handleCreateCustomSubmit = (e: React.FormEvent) => {
@@ -745,7 +872,9 @@ export function CourseLookupPanel({
                       </strong>
                       /{sec.maximumEnrollment ?? "—"}
                     </span>
-                    <RmpStarBadge rmp={sec.rmp} interactive={false} />
+                    {showRmp && (
+                      <RmpStarBadge rmp={sec.rmp} interactive={false} />
+                    )}
                   </div>
                 </div>
 
@@ -818,8 +947,29 @@ export function CourseLookupPanel({
     });
   };
 
+  const renderCourseVisibilityButton = (entry: PlannedCourseEntry) => (
+    <button
+      type="button"
+      onClick={() => onToggleCourseVisibility(entry.courseCode)}
+      className={`cursor-pointer rounded px-1.5 py-0.5 text-[11px] font-medium transition ${
+        entry.hidden
+          ? "bg-amber-100 text-amber-800 hover:bg-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:hover:bg-amber-900/60"
+          : "text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+      }`}
+      title={entry.hidden ? "Show on grid" : "Hide from grid"}
+    >
+      <FixedWidthSwapLabel
+        label={entry.hidden ? "Show" : "Hide"}
+        first="Show"
+        second="Hide"
+      />
+    </button>
+  );
+
   const plannedOfficial = plannedCourses.filter((c) => c.mode === "planned");
   const exploringOnly = plannedCourses.filter((c) => c.mode === "exploring");
+  const allCoursesHidden =
+    plannedCourses.length > 0 && plannedCourses.every((c) => c.hidden);
 
   const activeFilterCount = [
     electiveId !== "all",
@@ -1068,8 +1218,26 @@ export function CourseLookupPanel({
                   <input
                     type="text"
                     value={completedInput}
-                    onChange={(e) => setCompletedInput(e.target.value)}
-                    placeholder="e.g. CSCI 1030U"
+                    onChange={(e) => {
+                      setCompletedInput(e.target.value);
+                      setCompletedActiveIdx(0);
+                    }}
+                    onKeyDown={(e) => {
+                      if (completedSuggestions.length === 0) return;
+                      if (e.key === "ArrowDown") {
+                        e.preventDefault();
+                        setCompletedActiveIdx((i) =>
+                          Math.min(completedSuggestions.length - 1, i + 1),
+                        );
+                      } else if (e.key === "ArrowUp") {
+                        e.preventDefault();
+                        setCompletedActiveIdx((i) => Math.max(0, i - 1));
+                      } else if (e.key === "Escape") {
+                        e.preventDefault();
+                        setCompletedInput("");
+                      }
+                    }}
+                    placeholder="Search course code or name (e.g. CSCI 1030U or Calculus)..."
                     className="flex-1 rounded border border-zinc-300 bg-white px-2 py-1 text-xs text-zinc-900 focus:border-blue-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
                   />
                   <button
@@ -1079,6 +1247,30 @@ export function CourseLookupPanel({
                     Add
                   </button>
                 </form>
+                {completedSuggestions.length > 0 && (
+                  <div className="mt-1 max-h-40 divide-y divide-zinc-100 overflow-y-auto rounded-md border border-zinc-200 bg-white shadow-md dark:divide-zinc-800 dark:border-zinc-700 dark:bg-zinc-950">
+                    {completedSuggestions.map((item, idx) => (
+                      <button
+                        key={item.code}
+                        type="button"
+                        onClick={() => selectCompletedCourse(item.code)}
+                        onMouseEnter={() => setCompletedActiveIdx(idx)}
+                        className={`flex w-full cursor-pointer items-center justify-between gap-2 px-2.5 py-1.5 text-left text-[11px] transition ${
+                          idx === safeCompletedIdx
+                            ? "bg-blue-50 text-blue-900 dark:bg-blue-950/60 dark:text-blue-100"
+                            : "text-zinc-700 hover:bg-zinc-50 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                        }`}
+                      >
+                        <span className="shrink-0 font-mono font-semibold">
+                          {item.code}
+                        </span>
+                        <span className="truncate text-[10.5px] text-zinc-500 dark:text-zinc-400">
+                          {item.title}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <div className="mt-2 flex max-h-24 flex-wrap gap-1 overflow-y-auto">
                   {completedCourses.length === 0 ? (
                     <span className="text-[11px] text-zinc-500">
@@ -1086,22 +1278,26 @@ export function CourseLookupPanel({
                       or add courses above.
                     </span>
                   ) : (
-                    completedCourses.map((code) => (
-                      <span
-                        key={code}
-                        className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-[10px] font-medium text-zinc-700 border border-zinc-200 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
-                      >
-                        {code}
-                        <button
-                          type="button"
-                          onClick={() => onRemoveCompletedCourse(code)}
-                          className="text-zinc-400 hover:text-rose-500"
-                          title={`Remove ${code}`}
+                    completedCourses.map((code) => {
+                      const courseTitle = titleByCode.get(code.toUpperCase());
+                      return (
+                        <span
+                          key={code}
+                          title={courseTitle ? `${code} — ${courseTitle}` : code}
+                          className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-white px-2 py-0.5 text-[10px] font-medium text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
                         >
-                          &times;
-                        </button>
-                      </span>
-                    ))
+                          {code}
+                          <button
+                            type="button"
+                            onClick={() => onRemoveCompletedCourse(code)}
+                            className="text-zinc-400 hover:text-rose-500"
+                            title={`Remove ${code}`}
+                          >
+                            &times;
+                          </button>
+                        </span>
+                      );
+                    })
                   )}
                 </div>
               </div>
@@ -1319,9 +1515,11 @@ export function CourseLookupPanel({
                                 ? "Hide Sections ▲"
                                 : `Sections (${course.sections.length}) ▾`}
                             </button>
-                            <RmpStarBadge
-                              rmp={getCourseCardRmp(course, entry, true)}
-                            />
+                            {showRmp && (
+                              <RmpStarBadge
+                                rmp={getCourseCardRmp(course, entry, true)}
+                              />
+                            )}
                           </div>
                         </div>
 
@@ -1346,45 +1544,119 @@ export function CourseLookupPanel({
       ) : (
         /* My Courses Tab (Necessary Planned + Exploring + Custom Blocks) */
         <div className="flex min-h-0 flex-1 flex-col">
-          {isEditMode && (
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200 p-3 dark:border-zinc-800">
-              <div className="flex flex-wrap items-center gap-1.5">
+          {isEditMode ? (
+            <div className="flex flex-wrap items-center gap-1 border-b border-zinc-200 p-2.5 dark:border-zinc-800">
+              <button
+                type="button"
+                onClick={onAutoFitAll}
+                disabled={plannedCourses.length === 0}
+                className="whitespace-nowrap rounded-lg bg-emerald-600 px-2 py-1.5 text-[11px] font-medium text-white shadow-xs transition hover:bg-emerald-700 disabled:opacity-40"
+                title="Automatically pick conflict-free Lecture, Lab, and Tutorial times across all active courses"
+              >
+                Auto-Fit Sections
+              </button>
+              <button
+                type="button"
+                onClick={() => setCustomOpen((v) => !v)}
+                className={`whitespace-nowrap rounded-lg border px-2 py-1.5 text-[11px] font-medium transition ${
+                  customOpen || isCustomBlockDragMode
+                    ? "border-teal-400 bg-teal-50 text-teal-800 dark:border-teal-800 dark:bg-teal-950/50 dark:text-teal-200"
+                    : "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
+                }`}
+              >
+                + Custom Block
+              </button>
+              {onToggleAllCoursesVisibility && (
                 <button
                   type="button"
-                  onClick={onAutoFitAll}
+                  onClick={onToggleAllCoursesVisibility}
                   disabled={plannedCourses.length === 0}
-                  className="rounded-lg bg-emerald-600 px-2.5 py-1.5 text-xs font-medium text-white shadow-xs transition hover:bg-emerald-700 disabled:opacity-40"
-                  title="Automatically pick conflict-free Lecture, Lab, and Tutorial times across all active courses"
+                  className="cursor-pointer whitespace-nowrap rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-[11px] font-medium text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                  title={
+                    allCoursesHidden
+                      ? "Show all courses on the grid"
+                      : "Hide all courses from the grid"
+                  }
                 >
-                  Auto-Fit Sections
+                  <FixedWidthSwapLabel
+                    label={allCoursesHidden ? "Show All" : "Hide All"}
+                    first="Show All"
+                    second="Hide All"
+                  />
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setCustomOpen((v) => !v)}
-                  className="rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
-                >
-                  + Custom Block
-                </button>
-              </div>
+              )}
               <button
                 type="button"
                 onClick={onClearPlanner}
                 disabled={
                   plannedCourses.length === 0 && customBlocks.length === 0
                 }
-                className="rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-medium text-rose-700 transition hover:bg-rose-100 disabled:opacity-40 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300"
+                className="ml-auto whitespace-nowrap rounded-lg border border-rose-200 bg-rose-50 px-2 py-1.5 text-[11px] font-medium text-rose-700 transition hover:bg-rose-100 disabled:opacity-40 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300"
                 title="Clear all planned and exploring courses from the planner"
               >
                 Clear Planner
               </button>
             </div>
+          ) : (
+            plannedCourses.length > 0 &&
+            onToggleAllCoursesVisibility && (
+              <div className="flex items-center justify-end border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
+                <button
+                  type="button"
+                  onClick={onToggleAllCoursesVisibility}
+                  className="cursor-pointer whitespace-nowrap rounded-lg border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                  title={
+                    allCoursesHidden
+                      ? "Show all courses on the grid"
+                      : "Hide all courses from the grid"
+                  }
+                >
+                  <FixedWidthSwapLabel
+                    label={allCoursesHidden ? "Show All" : "Hide All"}
+                    first="Show All"
+                    second="Hide All"
+                  />
+                </button>
+              </div>
+            )
           )}
 
-          {isEditMode && customOpen && (
+          {isEditMode && (customOpen || isCustomBlockDragMode) && (
             <form
               onSubmit={handleCreateCustomSubmit}
               className="space-y-2 border-b border-zinc-200 bg-zinc-50 p-3 text-xs dark:border-zinc-800 dark:bg-zinc-900/60"
             >
+              <div className="flex items-center justify-between border-b border-zinc-200/70 pb-1.5 dark:border-zinc-800">
+                <span className="font-semibold text-zinc-900 dark:text-zinc-100">
+                  Add Custom Time Block
+                </span>
+                {customBlocks.length > 0 && onClearCustomBlocks && (
+                  <button
+                    type="button"
+                    onClick={onClearCustomBlocks}
+                    className="text-[11px] text-rose-600 hover:underline dark:text-rose-400"
+                  >
+                    Clear all
+                  </button>
+                )}
+              </div>
+
+              {onToggleCustomBlockDragMode && (
+                <button
+                  type="button"
+                  onClick={() => onToggleCustomBlockDragMode()}
+                  className={`w-full cursor-pointer rounded-lg border px-2.5 py-1.5 text-left font-medium transition ${
+                    isCustomBlockDragMode
+                      ? "border-teal-500 bg-teal-50 text-teal-800 dark:bg-teal-950/70 dark:text-teal-200"
+                      : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+                  }`}
+                >
+                  {isCustomBlockDragMode
+                    ? "✓ Drag-to-Create Custom Block Active (drag across hours & days)"
+                    : "🖱 Drag on Grid to Add Custom Block"}
+                </button>
+              )}
+
               <div className="grid grid-cols-2 gap-2">
                 <input
                   type="text"
@@ -1467,7 +1739,12 @@ export function CourseLookupPanel({
                 <div className="flex gap-1.5">
                   <button
                     type="button"
-                    onClick={() => setCustomOpen(false)}
+                    onClick={() => {
+                      setCustomOpen(false);
+                      if (isCustomBlockDragMode) {
+                        onToggleCustomBlockDragMode?.();
+                      }
+                    }}
                     className="rounded px-2 py-1 text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-800"
                   >
                     Cancel
@@ -1542,22 +1819,9 @@ export function CourseLookupPanel({
                                 {course?.title ?? "Course not offered this term"}
                               </p>
                             </div>
-                            {isEditMode && (
-                              <div className="flex shrink-0 items-center gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    onToggleCourseVisibility(entry.courseCode)
-                                  }
-                                  className="rounded px-1.5 py-0.5 text-[11px] text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                                  title={
-                                    entry.hidden
-                                      ? "Show on grid"
-                                      : "Hide from grid"
-                                  }
-                                >
-                                  {entry.hidden ? "Show" : "Hide"}
-                                </button>
+                            <div className="flex shrink-0 items-center gap-1">
+                              {renderCourseVisibilityButton(entry)}
+                              {isEditMode && (
                                 <button
                                   type="button"
                                   onClick={() =>
@@ -1567,8 +1831,8 @@ export function CourseLookupPanel({
                                 >
                                   &times;
                                 </button>
-                              </div>
-                            )}
+                              )}
+                            </div>
                           </div>
 
                           {/* Component summary pills */}
@@ -1617,7 +1881,7 @@ export function CourseLookupPanel({
                                       ? "Choose Times"
                                       : "Sections"}
                                 </button>
-                                <RmpStarBadge rmp={selectedRmp} />
+                                {showRmp && <RmpStarBadge rmp={selectedRmp} />}
                               </div>
                             </div>
                           )}
@@ -1672,7 +1936,9 @@ export function CourseLookupPanel({
                       return (
                         <div
                           key={entry.courseCode}
-                          className="rounded-xl border border-dashed border-amber-300 bg-amber-50/30 p-3 dark:border-amber-800/80 dark:bg-amber-950/20"
+                          className={`rounded-xl border border-dashed border-amber-300 bg-amber-50/30 p-3 dark:border-amber-800/80 dark:bg-amber-950/20 ${
+                            entry.hidden ? "opacity-60" : ""
+                          }`}
                         >
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
@@ -1683,28 +1949,34 @@ export function CourseLookupPanel({
                                 {course?.title ?? entry.courseCode}
                               </p>
                             </div>
-                            {isEditMode && (
-                              <div className="flex shrink-0 items-center gap-1">
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    onSetCourseMode(entry.courseCode, "planned")
-                                  }
-                                  className="rounded bg-blue-600 px-2 py-0.5 text-[10.5px] font-medium text-white hover:bg-blue-700"
-                                >
-                                  Add Officially
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    onRemoveCourse(entry.courseCode)
-                                  }
-                                  className="rounded px-1.5 py-0.5 text-[11px] text-rose-600 hover:bg-rose-50 dark:text-rose-400"
-                                >
-                                  &times;
-                                </button>
-                              </div>
-                            )}
+                            <div className="flex shrink-0 items-center gap-1">
+                              {renderCourseVisibilityButton(entry)}
+                              {isEditMode && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      onSetCourseMode(
+                                        entry.courseCode,
+                                        "planned",
+                                      )
+                                    }
+                                    className="rounded bg-blue-600 px-2 py-0.5 text-[10.5px] font-medium text-white hover:bg-blue-700"
+                                  >
+                                    Add Officially
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      onRemoveCourse(entry.courseCode)
+                                    }
+                                    className="rounded px-1.5 py-0.5 text-[11px] text-rose-600 hover:bg-rose-50 dark:text-rose-400"
+                                  >
+                                    &times;
+                                  </button>
+                                </>
+                              )}
+                            </div>
                           </div>
 
                           {course && (
@@ -1751,7 +2023,7 @@ export function CourseLookupPanel({
                                       ? "Choose Times"
                                       : "Sections"}
                                 </button>
-                                <RmpStarBadge rmp={selectedRmp} />
+                                {showRmp && <RmpStarBadge rmp={selectedRmp} />}
                               </div>
                             </div>
                           )}
