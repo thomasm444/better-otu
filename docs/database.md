@@ -3,7 +3,7 @@
 Supabase (Postgres), all in the `public` schema, populated from Banner course-schedule scrapes, Undergraduate Academic Calendar scrapes, campus map/booking feeds, and authenticated student data.
 
 The authoritative DDL lives in [`supabase/migrations/`](../supabase/migrations/) —
-thirteen committed, idempotent migrations. Apply them oldest first:
+fourteen committed, idempotent migrations. Apply them oldest first:
 
 | migration | what it does |
 | --- | --- |
@@ -20,6 +20,7 @@ thirteen committed, idempotent migrations. Apply them oldest first:
 | `20261119000000_campus_map_week_indexes.sql` | adds partial and composite indexes for weekly campus map schedule queries on `course_meetings`, `room_detailed_reservations`, `exam_schedules`, and `campus_spaces` |
 | `20261119120000_course_offerings_summary_cache.sql` | backs `course_offerings_summary` with precomputed `course_offerings_summary_cache`, adds `refresh_course_offerings_summary()`, and indexes `degree_programs (catalog_year desc, name asc, program_id asc)` |
 | `20261119120000_ratemyprof_schema.sql` | creates `rmp_professors` and `rmp_professor_courses`, links `course_faculty` and `exam_schedules` via `rmp_professor_id` FKs + auto-link triggers, and links `rmp_professor_courses` to `catalog_courses` |
+| `20261120000000_degree_plans_minor.sql` | adds `minor_program_id text` to `degree_plans` so an attached minor persists with the saved plan |
 
 ```bash
 # With the Supabase CLI
@@ -431,7 +432,7 @@ Created by `20261112180000_auth_and_student_courses.sql`, `20261112200000_degree
 - `hook_before_user_created(event)` — Supabase Auth hook restricting sign-ups to `@ontariotechu.net`.
 - `profiles` (`id` PK → `auth.users.id`, `email`, `full_name`, `avatar_url`) — auto-populated on signup via `handle_new_user()`. RLS: users can `SELECT`/`UPDATE` their own row.
 - `student_courses` (`id` uuid PK, `user_id` → `auth.users.id`, `course_code`, `selected_crn`, `semester`, `status`, `grade`; unique `(user_id, course_code, semester)`). RLS: user-scoped CRUD.
-- `degree_plans` (`user_email`, `degree_name`, `start_year`, `catalog_year`, `program_id`, `terms` jsonb, `customs` jsonb, `user_id`, `id` uuid PK; unique `(user_email, program_id)`). RLS: user-scoped CRUD matching both `auth.uid()` and JWT `email`.
+- `degree_plans` (`user_email`, `degree_name`, `start_year`, `catalog_year`, `program_id`, `minor_program_id`, `terms` jsonb, `customs` jsonb, `user_id`, `id` uuid PK; unique `(user_email, program_id)`). RLS: user-scoped CRUD matching both `auth.uid()` and JWT `email`.
 
 ## Example queries
 

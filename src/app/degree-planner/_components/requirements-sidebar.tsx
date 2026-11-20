@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useMemo, useState } from "react";
 
 import {
   collectWarnings,
@@ -10,8 +10,12 @@ import {
   findEquivalentInSet,
   isOffered,
   matchesBucket,
+  MAX_SLOTS_PER_TERM,
+  offeredIn,
   placedCodes,
   placedTermIndex,
+  seasonsOf,
+  termCalendarYear,
 } from "@/lib/degree-planner";
 import type {
   CatalogCourse,
@@ -21,6 +25,7 @@ import type {
   OfferingContext,
   OfferingEntry,
   PlannerTerm,
+  ProgramSummary,
   RequirementModel,
   UnscheduledItem,
 } from "@/lib/degree-types";
@@ -41,7 +46,37 @@ type RequirementsSidebarProps = {
   onOpenTransferPicker: () => void;
   onPlaceTransfer: (code: string) => void;
   onRemoveTransfer: (code: string) => void;
+  activeTab: "major" | "minor";
+  onTabChange: (tab: "major" | "minor") => void;
+  minorProgram: DegreeProgramDetail | null;
+  minorModel: RequirementModel | null;
+  minorOptions: ProgramSummary[];
+  loadingMinor?: boolean;
+  onSelectMinor: (summary: ProgramSummary) => void;
+  onRemoveMinor: () => void;
+  onPickMinorBucket: (bucketKey: string) => void;
+  onPlaceCourseInTerm: (termIndex: number, code: string) => void;
+  onOpenMinorSearch: (initialQuery?: string) => void;
 };
+
+function parseSectionNotes(raw: string | null): string[] {
+  if (!raw) return [];
+  const trimmed = raw.trim();
+  if (!trimmed || trimmed === "[]") return [];
+  if (trimmed.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(trimmed) as unknown;
+      if (Array.isArray(parsed)) {
+        return parsed
+          .map((item) => (typeof item === "string" ? item.trim() : ""))
+          .filter(Boolean);
+      }
+    } catch {
+      // Fall through to plain text
+    }
+  }
+  return [trimmed];
+}
 
 export function RequirementsSidebar({
   program,
@@ -59,7 +94,144 @@ export function RequirementsSidebar({
   onOpenTransferPicker,
   onPlaceTransfer,
   onRemoveTransfer,
+  activeTab,
+  onTabChange,
+  minorProgram,
+  minorModel,
+  minorOptions,
+  loadingMinor = false,
+  onSelectMinor,
+  onRemoveMinor,
+  onPickMinorBucket,
+  onPlaceCourseInTerm,
+  onOpenMinorSearch,
 }: RequirementsSidebarProps) {
+  const [minorQuery, setMinorQuery] = useState("");
+  const [changingMinor, setChangingMinor] = useState(false);
+  const [pendingAddKey, setPendingAddKey] = useState<string | null>(null);
+  const [selectedTermIndex, setSelectedTermIndex] = useState<number>(0);
+
+  const openInlineTermChooser = (rowKey: string, code: string) => {
+    if (pendingAddKey === rowKey) {
+      setPendingAddKey(null);
+      return;
+    }
+    const course = courseOf(code, catalogMap, customs);
+    const targetYear = course?.level
+      ? Math.max(1, Math.min(4, Math.floor(course.level / 1000)))
+      : 1;
+
+    // Pick a sensible default term: non-full, offered, near the course's level
+    let bestIndex = -1;
+    let bestScore = -1;
+    for (let i = 0; i < terms.length; i++) {
+      const t = terms[i];
+      const usedCount = t.slots.filter(Boolean).length;
+      if (usedCount >= MAX_SLOTS_PER_TERM) continue;
+      const calYear = termCalendarYear(startYear, t.year, t.season);
+      const runs = offeredIn(code, t.season, offeringsMap, customs, {
+        calendarYear: calYear,
+        context: offeringContext,
+      });
+      const hasEmpty = t.slots.includes(null);
+      const levelMatch = t.year >= targetYear ? 2 : 0;
+      const score = (runs ? 4 : 0) + (hasEmpty ? 2 : 0) + levelMatch;
+      if (score > bestScore) {
+        bestScore = score;
+        bestIndex = i;
+      }
+    }
+
+    setSelectedTermIndex(bestIndex >= 0 ? bestIndex : 0);
+    setPendingAddKey(rowKey);
+  };
+
+  const renderInlineTermChooser = (rowKey: string, code: string) => {
+    if (pendingAddKey !== rowKey) return null;
+    const course = courseOf(code, catalogMap, customs);
+    const targetTerm = terms[selectedTermIndex];
+    const targetFull =
+      !targetTerm ||
+      targetTerm.slots.filter(Boolean).length >= MAX_SLOTS_PER_TERM;
+    const offeredSeasons = seasonsOf(code, offeringsMap, customs, {
+      academicBaseYear: targetTerm
+        ? startYear + (targetTerm.year - 1)
+        : startYear,
+      context: offeringContext,
+    });
+
+    return (
+      <div className="mt-1.5 rounded-xl border border-violet-200/90 bg-violet-50/75 p-2.5 shadow-[0_1px_4px_rgba(124,58,237,0.06)] dark:border-violet-800/70 dark:bg-violet-950/35">
+        <div className="text-[11px] font-medium text-slate-800 dark:text-slate-200">
+          Add <span className="font-mono font-semibold text-violet-700 dark:text-violet-300">{code}</span>
+          {course?.title ? ` — ${course.title}` : ""}
+        </div>
+        <div className="mt-0.5 text-[10.5px] text-slate-500 dark:text-slate-400">
+          {creditsOf(code, catalogMap, customs)} cr
+          {offeredSeasons.length > 0
+            ? ` · Usually offered: ${offeredSeasons.join(", ")}`
+            : ""}
+        </div>
+
+        {terms.length === 0 ? (
+          <div className="mt-1.5 text-[11px] text-amber-700 dark:text-amber-400">
+            Add a year to your degree plan first.
+          </div>
+        ) : (
+          <div className="mt-2 flex flex-col gap-1.5">
+            <label className="text-[10.5px] font-medium text-slate-600 dark:text-slate-300">
+              Choose year &amp; term:
+              <select
+                value={selectedTermIndex}
+                onChange={(e) => setSelectedTermIndex(Number(e.target.value))}
+                className="mt-1 w-full rounded-lg border border-violet-200/90 bg-white px-2 py-1 text-xs font-medium text-slate-900 focus:border-violet-400 focus:ring-2 focus:ring-violet-400/20 focus:outline-none dark:border-violet-800/80 dark:bg-slate-900 dark:text-slate-100"
+              >
+                {terms.map((t, idx) => {
+                  const usedCount = t.slots.filter(Boolean).length;
+                  const isFull = usedCount >= MAX_SLOTS_PER_TERM;
+                  const calYear = termCalendarYear(startYear, t.year, t.season);
+                  const runs = offeredIn(code, t.season, offeringsMap, customs, {
+                    calendarYear: calYear,
+                    context: offeringContext,
+                  });
+                  return (
+                    <option key={`${t.year}-${t.season}-${idx}`} value={idx} disabled={isFull}>
+                      Year {t.year} · {t.season} {calYear} ({usedCount}/
+                      {MAX_SLOTS_PER_TERM}
+                      {isFull ? " full" : ""}
+                      {runs ? " · offered" : ""})
+                    </option>
+                  );
+                })}
+              </select>
+            </label>
+
+            <div className="flex items-center justify-end gap-1.5">
+              <button
+                type="button"
+                onClick={() => setPendingAddKey(null)}
+                className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-medium text-slate-600 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={targetFull}
+                onClick={() => {
+                  onPlaceCourseInTerm(selectedTermIndex, code);
+                  setPendingAddKey(null);
+                }}
+                className="rounded-lg bg-violet-600 px-2.5 py-1 text-[11px] font-semibold text-white shadow-xs transition-colors hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Add to plan
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const placed = placedCodes(terms);
   const doneRequired = model.required.filter((r) =>
     Boolean(findEquivalentInSet(r.code, placed, equivMap)),
@@ -71,6 +243,93 @@ export function RequirementsSidebar({
   }
   const fixedWithEquiv = expandWithEquivalents(fixed, equivMap);
   const freeCodes = [...placed].filter((code) => !fixedWithEquiv.has(code));
+
+  const minorStats = useMemo(() => {
+    if (!minorProgram || !minorModel) return null;
+
+    const doneReq = minorModel.required.filter((r) =>
+      Boolean(findEquivalentInSet(r.code, placed, equivMap)),
+    );
+    const minorFixed = new Set(minorModel.required.map((r) => r.code));
+    for (const g of minorModel.chooseGroups) {
+      for (const code of g.options) minorFixed.add(code);
+    }
+    const minorFixedEquiv = expandWithEquivalents(minorFixed, equivMap);
+    const minorFree = [...placed].filter((code) => !minorFixedEquiv.has(code));
+
+    let completedSteps = doneReq.length;
+    let totalSteps = minorModel.required.length;
+    let placedCredits = doneReq.reduce(
+      (sum, r) => sum + creditsOf(r.code, catalogMap, customs),
+      0,
+    );
+
+    for (const g of minorModel.chooseGroups) {
+      const hits = g.options.filter((c) =>
+        Boolean(findEquivalentInSet(c, placed, equivMap)),
+      );
+      const taken = Math.min(hits.length, g.required);
+      completedSteps += taken;
+      totalSteps += g.required;
+      for (const c of hits.slice(0, g.required)) {
+        placedCredits += creditsOf(c, catalogMap, customs);
+      }
+    }
+
+    for (const b of minorModel.buckets) {
+      const bCredits = minorFree.reduce(
+        (sum, code) =>
+          sum +
+          (matchesBucket(courseOf(code, catalogMap, customs), b.match)
+            ? creditsOf(code, catalogMap, customs)
+            : 0),
+        0,
+      );
+      placedCredits += Math.min(bCredits, b.credits);
+    }
+
+    const subjectCounts = new Map<string, number>();
+    for (const code of minorFixed) {
+      const subj = code.split(/\s+/)[0];
+      if (subj) subjectCounts.set(subj, (subjectCounts.get(subj) ?? 0) + 1);
+    }
+    const primarySubject =
+      [...subjectCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? "";
+
+    const notes = minorProgram.sections
+      .filter((s) => s.role === "info")
+      .map((s) => ({
+        id: s.section_id,
+        title: s.title_clean || s.title || "",
+        lines: parseSectionNotes(s.description),
+      }))
+      .filter(
+        (entry) =>
+          entry.lines.length > 0 &&
+          !/admission|academic requirements to major\/minor/i.test(entry.title),
+      );
+
+    return {
+      doneReq,
+      minorFree,
+      completedSteps,
+      totalSteps,
+      placedCredits,
+      primarySubject,
+      notes,
+    };
+  }, [minorProgram, minorModel, placed, equivMap, catalogMap, customs]);
+
+  const filteredMinors = useMemo(() => {
+    const q = minorQuery.trim().toLowerCase();
+    return minorOptions.filter(
+      (m) =>
+        !q ||
+        `${m.name} ${m.degree ?? ""} ${m.faculty ?? ""}`
+          .toLowerCase()
+          .includes(q),
+    );
+  }, [minorOptions, minorQuery]);
 
   const transfers = [...customs.values()].filter((c) => c.transfer);
   const warnings = collectWarnings(
@@ -87,8 +346,13 @@ export function RequirementsSidebar({
     .filter(Boolean)
     .join(" · ");
 
-  const renderBucket = (bucket: ElectiveBucket) => {
-    const credits = freeCodes.reduce(
+  const renderBucket = (
+    bucket: ElectiveBucket,
+    bucketFreeCodes: string[],
+    onFindCourse: (bucketKey: string) => void,
+    accent: "major" | "minor" = "major",
+  ) => {
+    const credits = bucketFreeCodes.reduce(
       (sum, code) =>
         sum +
         (matchesBucket(courseOf(code, catalogMap, customs), bucket.match)
@@ -105,32 +369,36 @@ export function RequirementsSidebar({
     return (
       <div
         key={bucket.key}
-        className="rounded-lg px-2 py-2 pl-5 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+        className="rounded-xl px-2 py-2 pl-5 transition-colors hover:bg-slate-50/90 dark:hover:bg-slate-800/50"
       >
         <div className="flex items-baseline gap-2 text-[12.5px]">
-          <span className="min-w-0 flex-1 text-zinc-800 dark:text-zinc-200">
+          <span className="min-w-0 flex-1 text-slate-800 dark:text-slate-200">
             {bucket.label}
           </span>
           <span
             className={`tabular-nums text-[11.5px] ${
               done
                 ? "font-semibold text-emerald-700 dark:text-emerald-400"
-                : "text-zinc-500 dark:text-zinc-400"
+                : "text-slate-500 dark:text-slate-400"
             }`}
           >
             {credits}/{bucket.credits}
           </span>
         </div>
-        <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-zinc-200 dark:bg-zinc-800">
+        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-200/80 dark:bg-slate-800">
           <div
-            className={`h-full transition-all ${
-              done ? "bg-emerald-600" : "bg-blue-600"
+            className={`h-full rounded-full transition-all duration-300 ${
+              done
+                ? "bg-gradient-to-r from-emerald-400 to-teal-400"
+                : accent === "minor"
+                  ? "bg-gradient-to-r from-violet-400 to-purple-400"
+                  : "bg-gradient-to-r from-sky-400 to-teal-400"
             }`}
             style={{ width: `${pct}%` }}
           />
         </div>
         {bucket.subs.map((sub) => {
-          const subCredits = freeCodes.reduce(
+          const subCredits = bucketFreeCodes.reduce(
             (sum, code) =>
               sum +
               (matchesBucket(courseOf(code, catalogMap, customs), sub.match)
@@ -145,7 +413,7 @@ export function RequirementsSidebar({
               className={`mt-1 ml-3 text-[11.5px] ${
                 subDone
                   ? "text-emerald-700 dark:text-emerald-400"
-                  : "text-zinc-500 dark:text-zinc-400"
+                  : "text-slate-500 dark:text-slate-400"
               }`}
             >
               ↳ {sub.label}: {subCredits}/{sub.credits} cr
@@ -155,8 +423,12 @@ export function RequirementsSidebar({
         <div className="mt-1">
           <button
             type="button"
-            onClick={() => onPickBucket(bucket.key)}
-            className="text-[11.5px] font-medium text-blue-600 hover:underline dark:text-blue-400"
+            onClick={() => onFindCourse(bucket.key)}
+            className={`text-[11.5px] font-medium hover:underline ${
+              accent === "minor"
+                ? "text-violet-600 dark:text-violet-400"
+                : "text-sky-600 dark:text-sky-400"
+            }`}
           >
             Find a course
           </button>
@@ -166,29 +438,79 @@ export function RequirementsSidebar({
   };
 
   return (
-    <aside className="rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 lg:max-h-[calc(100vh-170px)] lg:overflow-auto">
-      <div className="sticky top-0 z-10 border-b border-zinc-200 bg-white px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900">
-        <h2 className="text-xs font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
-          What you need
-        </h2>
-        <div className="mt-0.5 text-xs text-zinc-600 dark:text-zinc-400">
-          {subheader || "—"}
+    <aside className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white/92 shadow-[0_2px_12px_rgba(15,23,42,0.04)] backdrop-blur-sm dark:border-slate-800/80 dark:bg-slate-900/88 lg:max-h-[calc(100vh-170px)] lg:overflow-auto">
+      <div className="sticky top-0 z-10 border-b border-slate-200/75 bg-gradient-to-r from-sky-50/85 via-white/95 to-violet-50/85 px-4 pt-3 pb-2.5 backdrop-blur-md dark:border-slate-800 dark:from-sky-950/35 dark:via-slate-900/95 dark:to-violet-950/35">
+        <div className="flex items-center justify-between gap-2">
+          <h2 className="text-xs font-semibold tracking-wider text-slate-600 uppercase dark:text-slate-300">
+            What you need
+          </h2>
+          <span className="truncate text-[11px] text-slate-400 dark:text-slate-500">
+            {activeTab === "major"
+              ? subheader || "—"
+              : minorProgram?.name || "No minor selected"}
+          </span>
+        </div>
+
+        {/* Major | Minor Switcher Tabs */}
+        <div className="mt-2.5 grid grid-cols-2 gap-1 rounded-xl bg-slate-100/90 p-1 dark:bg-slate-800/80">
+          <button
+            type="button"
+            onClick={() => onTabChange("major")}
+            className={`flex items-center justify-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-all ${
+              activeTab === "major"
+                ? "bg-white text-sky-900 shadow-xs ring-1 ring-sky-200/75 dark:bg-slate-900 dark:text-sky-200 dark:ring-sky-800/60"
+                : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
+            }`}
+          >
+            <span>Major</span>
+            <span
+              className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums ${
+                activeTab === "major"
+                  ? "bg-sky-100/85 text-sky-700 dark:bg-sky-950/75 dark:text-sky-300"
+                  : "bg-slate-200/75 text-slate-600 dark:bg-slate-700 dark:text-slate-300"
+              }`}
+            >
+              {doneRequired.length}/{model.required.length}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => onTabChange("minor")}
+            className={`flex items-center justify-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-all ${
+              activeTab === "minor"
+                ? "bg-white text-violet-900 shadow-xs ring-1 ring-violet-200/75 dark:bg-slate-900 dark:text-violet-200 dark:ring-violet-800/60"
+                : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
+            }`}
+          >
+            <span>Minor</span>
+            {minorProgram && minorStats ? (
+              <span className="rounded-full bg-violet-100/90 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-violet-700 dark:bg-violet-950/75 dark:text-violet-300">
+                {minorStats.completedSteps}/{minorStats.totalSteps}
+              </span>
+            ) : (
+              <span className="rounded-full bg-violet-100/70 px-1.5 py-0.5 text-[10px] font-medium text-violet-700 dark:bg-violet-950/60 dark:text-violet-300">
+                + Add
+              </span>
+            )}
+          </button>
         </div>
       </div>
 
-      <div className="space-y-1 p-2 pb-4">
+      {activeTab === "major" ? (
+      <div className="space-y-1 p-2.5 pb-4">
         {/* Required courses */}
         <details className="group" open>
-          <summary className="flex cursor-pointer list-none items-center gap-2 rounded-lg px-2 py-2 text-[13px] font-semibold text-zinc-900 hover:bg-zinc-50 dark:text-zinc-100 dark:hover:bg-zinc-800/60">
-            <span className="text-[10px] text-zinc-400 transition-transform group-open:rotate-90">
+          <summary className="flex cursor-pointer list-none items-center gap-2 rounded-xl px-2 py-2 text-[13px] font-semibold text-slate-800 transition-colors hover:bg-slate-50/90 dark:text-slate-100 dark:hover:bg-slate-800/60">
+            <span className="text-[10px] text-slate-400 transition-transform group-open:rotate-90">
               ▸
             </span>
             <span>Required courses</span>
             <span
-              className={`ml-auto tabular-nums text-[11.5px] ${
+              className={`ml-auto rounded-full px-2 py-0.5 tabular-nums text-[11px] font-semibold ${
                 doneRequired.length === model.required.length
-                  ? "font-semibold text-emerald-700 dark:text-emerald-400"
-                  : "text-amber-700 dark:text-amber-400"
+                  ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400"
+                  : "bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400"
               }`}
             >
               {doneRequired.length}/{model.required.length}
@@ -210,19 +532,19 @@ export function RequirementsSidebar({
                     className={`w-3.5 shrink-0 text-center text-[11px] ${
                       done
                         ? "text-emerald-600 dark:text-emerald-400"
-                        : "text-zinc-300 dark:text-zinc-600"
+                        : "text-slate-300 dark:text-slate-600"
                     }`}
                   >
                     {done ? "✓" : "○"}
                   </span>
-                  <span className="shrink-0 font-mono text-[11.5px] text-blue-800 dark:text-blue-300">
+                  <span className="shrink-0 font-mono text-[11.5px] font-medium text-sky-700 dark:text-sky-300">
                     {r.code}
                   </span>
                   <span
                     className={`truncate ${
                       done
-                        ? "text-zinc-400 dark:text-zinc-500"
-                        : "text-zinc-600 dark:text-zinc-300"
+                        ? "text-slate-400 dark:text-slate-500"
+                        : "text-slate-600 dark:text-slate-300"
                     }`}
                     title={
                       viaEquiv
@@ -233,7 +555,7 @@ export function RequirementsSidebar({
                     {course?.title ?? ""}
                   </span>
                   {viaEquiv && (
-                    <span className="shrink-0 rounded bg-emerald-50 px-1 py-0.5 font-mono text-[10px] text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
+                    <span className="shrink-0 rounded-full bg-emerald-50 px-1.5 py-0.5 font-mono text-[10px] text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
                       via {viaEquiv}
                     </span>
                   )}
@@ -246,8 +568,8 @@ export function RequirementsSidebar({
         {/* Choice groups */}
         {model.chooseGroups.length > 0 && (
           <details className="group">
-            <summary className="flex cursor-pointer list-none items-center gap-2 rounded-lg px-2 py-2 text-[13px] font-semibold text-zinc-900 hover:bg-zinc-50 dark:text-zinc-100 dark:hover:bg-zinc-800/60">
-              <span className="text-[10px] text-zinc-400 transition-transform group-open:rotate-90">
+            <summary className="flex cursor-pointer list-none items-center gap-2 rounded-xl px-2 py-2 text-[13px] font-semibold text-slate-800 transition-colors hover:bg-slate-50/90 dark:text-slate-100 dark:hover:bg-slate-800/60">
+              <span className="text-[10px] text-slate-400 transition-transform group-open:rotate-90">
                 ▸
               </span>
               <span>Choice groups</span>
@@ -260,10 +582,10 @@ export function RequirementsSidebar({
                 ).length;
                 return (
                   <span
-                    className={`ml-auto tabular-nums text-[11.5px] ${
+                    className={`ml-auto rounded-full px-2 py-0.5 tabular-nums text-[11px] font-semibold ${
                       doneGroups === model.chooseGroups.length
-                        ? "font-semibold text-emerald-700 dark:text-emerald-400"
-                        : "text-amber-700 dark:text-amber-400"
+                        ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400"
+                        : "bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400"
                     }`}
                   >
                     {doneGroups}/{model.chooseGroups.length}
@@ -284,23 +606,23 @@ export function RequirementsSidebar({
                 return (
                   <div
                     key={group.id}
-                    className="rounded-lg px-2 py-1.5 pl-5 hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+                    className="rounded-xl px-2 py-1.5 pl-5 hover:bg-slate-50/90 dark:hover:bg-slate-800/50"
                   >
                     <div className="flex items-baseline gap-2 text-[12.5px]">
-                      <span className="min-w-0 flex-1 text-zinc-800 dark:text-zinc-200">
+                      <span className="min-w-0 flex-1 text-slate-800 dark:text-slate-200">
                         {group.label || "Choose"}
                       </span>
                       <span
                         className={`tabular-nums text-[11.5px] ${
                           ok
                             ? "font-semibold text-emerald-700 dark:text-emerald-400"
-                            : "text-zinc-500 dark:text-zinc-400"
+                            : "text-slate-500 dark:text-slate-400"
                         }`}
                       >
                         {Math.min(hits.length, group.required)}/{group.required}
                       </span>
                     </div>
-                    <div className="mt-0.5 ml-3 text-[11.5px] text-zinc-500 dark:text-zinc-400">
+                    <div className="mt-0.5 ml-3 text-[11.5px] text-slate-500 dark:text-slate-400">
                       {available.slice(0, 6).join(" · ")}
                       {available.length > 6 ? " …" : ""}
                       {hidden > 0 && (
@@ -323,24 +645,28 @@ export function RequirementsSidebar({
         {/* Electives */}
         {model.buckets.length > 0 && (
           <details className="group" open>
-            <summary className="flex cursor-pointer list-none items-center gap-2 rounded-lg px-2 py-2 text-[13px] font-semibold text-zinc-900 hover:bg-zinc-50 dark:text-zinc-100 dark:hover:bg-zinc-800/60">
-              <span className="text-[10px] text-zinc-400 transition-transform group-open:rotate-90">
+            <summary className="flex cursor-pointer list-none items-center gap-2 rounded-xl px-2 py-2 text-[13px] font-semibold text-slate-800 transition-colors hover:bg-slate-50/90 dark:text-slate-100 dark:hover:bg-slate-800/60">
+              <span className="text-[10px] text-slate-400 transition-transform group-open:rotate-90">
                 ▸
               </span>
               <span>Electives</span>
-              <span className="ml-auto tabular-nums text-[11.5px] text-zinc-500 dark:text-zinc-400">
+              <span className="ml-auto rounded-full bg-slate-100 px-2 py-0.5 tabular-nums text-[11px] font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-400">
                 {model.buckets.length}
               </span>
             </summary>
-            <div className="space-y-1">{model.buckets.map(renderBucket)}</div>
+            <div className="space-y-1">
+              {model.buckets.map((b) =>
+                renderBucket(b, freeCodes, onPickBucket, "major"),
+              )}
+            </div>
           </details>
         )}
 
         {/* Breadth requirements */}
         {model.breadth.length > 0 && (
           <details className="group" open>
-            <summary className="flex cursor-pointer list-none items-center gap-2 rounded-lg px-2 py-2 text-[13px] font-semibold text-zinc-900 hover:bg-zinc-50 dark:text-zinc-100 dark:hover:bg-zinc-800/60">
-              <span className="text-[10px] text-zinc-400 transition-transform group-open:rotate-90">
+            <summary className="flex cursor-pointer list-none items-center gap-2 rounded-xl px-2 py-2 text-[13px] font-semibold text-slate-800 transition-colors hover:bg-slate-50/90 dark:text-slate-100 dark:hover:bg-slate-800/60">
+              <span className="text-[10px] text-slate-400 transition-transform group-open:rotate-90">
                 ▸
               </span>
               <span>Breadth requirements</span>
@@ -361,10 +687,10 @@ export function RequirementsSidebar({
                 }).length;
                 return (
                   <span
-                    className={`ml-auto tabular-nums text-[11.5px] ${
+                    className={`ml-auto rounded-full px-2 py-0.5 tabular-nums text-[11px] font-semibold ${
                       done === model.breadth.length
-                        ? "font-semibold text-emerald-700 dark:text-emerald-400"
-                        : "text-amber-700 dark:text-amber-400"
+                        ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400"
+                        : "bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400"
                     }`}
                   >
                     {done}/{model.breadth.length}
@@ -372,26 +698,30 @@ export function RequirementsSidebar({
                 );
               })()}
             </summary>
-            <p className="px-2 pb-1 pl-5 text-[11.5px] text-zinc-500 dark:text-zinc-400">
+            <p className="px-2 pb-1 pl-5 text-[11.5px] text-slate-500 dark:text-slate-400">
               These overlap with the electives above — one course can satisfy
               several.
             </p>
-            <div className="space-y-1">{model.breadth.map(renderBucket)}</div>
+            <div className="space-y-1">
+              {model.breadth.map((b) =>
+                renderBucket(b, freeCodes, onPickBucket, "major"),
+              )}
+            </div>
           </details>
         )}
 
         {/* Transfer credits */}
         <details className="group" open={transfers.length > 0}>
-          <summary className="flex cursor-pointer list-none items-center gap-2 rounded-lg px-2 py-2 text-[13px] font-semibold text-zinc-900 hover:bg-zinc-50 dark:text-zinc-100 dark:hover:bg-zinc-800/60">
-            <span className="text-[10px] text-zinc-400 transition-transform group-open:rotate-90">
+          <summary className="flex cursor-pointer list-none items-center gap-2 rounded-xl px-2 py-2 text-[13px] font-semibold text-slate-800 transition-colors hover:bg-slate-50/90 dark:text-slate-100 dark:hover:bg-slate-800/60">
+            <span className="text-[10px] text-slate-400 transition-transform group-open:rotate-90">
               ▸
             </span>
             <span>Transfer credits</span>
             <span
-              className={`ml-auto tabular-nums text-[11.5px] ${
+              className={`ml-auto rounded-full px-2 py-0.5 tabular-nums text-[11px] font-semibold ${
                 transfers.length > 0
-                  ? "font-semibold text-emerald-700 dark:text-emerald-400"
-                  : "text-zinc-500 dark:text-zinc-400"
+                  ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400"
+                  : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
               }`}
             >
               {transfers.length}
@@ -399,12 +729,12 @@ export function RequirementsSidebar({
           </summary>
           <div className="px-2 pb-2 pt-1">
             {transfers.length === 0 ? (
-              <p className="px-1 py-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+              <p className="px-1 py-1.5 text-xs text-slate-500 dark:text-slate-400">
                 Credit earned at another institution? Add it here and it counts
                 toward your electives.
               </p>
             ) : (
-              <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+              <div className="divide-y divide-slate-100 dark:divide-slate-800">
                 {transfers.map((course) => {
                   const at = placedTermIndex(terms, course.code);
                   const where =
@@ -416,14 +746,14 @@ export function RequirementsSidebar({
                       key={course.code}
                       className="flex items-center gap-2 py-1.5"
                     >
-                      <span className="w-24 shrink-0 font-mono text-[11.5px] text-blue-800 dark:text-blue-300">
+                      <span className="w-24 shrink-0 font-mono text-[11.5px] font-medium text-indigo-700 dark:text-indigo-300">
                         {course.code}
                       </span>
                       <div className="min-w-0 flex-1">
-                        <div className="truncate text-[12.5px] text-zinc-800 dark:text-zinc-200">
+                        <div className="truncate text-[12.5px] text-slate-800 dark:text-slate-200">
                           {course.title}
                         </div>
-                        <div className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                        <div className="text-[11px] text-slate-500 dark:text-slate-400">
                           {course.credit_hours} cr · {course.subject}{" "}
                           {course.level} · {where}
                         </div>
@@ -432,7 +762,7 @@ export function RequirementsSidebar({
                         type="button"
                         disabled={at >= 0}
                         onClick={() => onPlaceTransfer(course.code)}
-                        className="shrink-0 rounded-md border border-zinc-200 bg-white px-2 py-0.5 text-[11.5px] text-zinc-600 hover:border-blue-500 hover:text-blue-600 disabled:cursor-default disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+                        className="shrink-0 rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-[11.5px] text-slate-600 transition-colors hover:border-sky-400 hover:text-sky-700 disabled:cursor-default disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
                       >
                         {at >= 0 ? "in plan" : "place"}
                       </button>
@@ -440,7 +770,7 @@ export function RequirementsSidebar({
                         type="button"
                         onClick={() => onRemoveTransfer(course.code)}
                         title="Remove"
-                        className="shrink-0 rounded-md border border-zinc-200 bg-white px-2 py-0.5 text-[11.5px] text-zinc-500 hover:border-red-500 hover:text-red-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400"
+                        className="shrink-0 rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-[11.5px] text-slate-500 transition-colors hover:border-rose-400 hover:text-rose-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400"
                       >
                         ×
                       </button>
@@ -452,7 +782,7 @@ export function RequirementsSidebar({
             <button
               type="button"
               onClick={onOpenTransferPicker}
-              className="mt-2 w-full rounded-lg border border-dashed border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-blue-600 transition-colors hover:border-blue-500 hover:bg-blue-50/50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-blue-400 dark:hover:bg-blue-950/30"
+              className="mt-2 w-full rounded-xl border border-dashed border-indigo-200/90 bg-indigo-50/40 px-3 py-1.5 text-xs font-medium text-indigo-700 transition-colors hover:border-indigo-400 hover:bg-indigo-50/80 dark:border-indigo-800/70 dark:bg-indigo-950/25 dark:text-indigo-300 dark:hover:bg-indigo-950/45"
             >
               ＋ Add a transfer credit
             </button>
@@ -461,11 +791,11 @@ export function RequirementsSidebar({
 
         {/* Warnings */}
         {warnings.length > 0 && (
-          <div className="mx-1 mt-2 rounded-xl border border-amber-200 bg-amber-50/80 px-3 py-2.5 text-[12.5px] dark:border-amber-900/60 dark:bg-amber-950/30">
-            <h4 className="mb-1.5 text-[11.5px] font-semibold tracking-wider text-amber-800 uppercase dark:text-amber-400">
+          <div className="mx-1 mt-2 rounded-2xl border border-amber-200/90 bg-amber-50/80 px-3.5 py-2.5 text-[12.5px] dark:border-amber-900/60 dark:bg-amber-950/30">
+            <h4 className="mb-1.5 text-[11px] font-semibold tracking-wider text-amber-800 uppercase dark:text-amber-400">
               {warnings.length} thing{warnings.length > 1 ? "s" : ""} to check
             </h4>
-            <ul className="list-disc space-y-1 pl-4 text-zinc-700 dark:text-zinc-300">
+            <ul className="list-disc space-y-1 pl-4 text-slate-700 dark:text-slate-300">
               {warnings.slice(0, 8).map((w) => (
                 <li key={w.id}>{w.text}</li>
               ))}
@@ -473,6 +803,412 @@ export function RequirementsSidebar({
           </div>
         )}
       </div>
+      ) : (
+      <div className="space-y-3 p-3 pb-4">
+        {loadingMinor ? (
+          <div className="py-8 text-center text-xs text-slate-500 dark:text-slate-400">
+            Loading minor requirements…
+          </div>
+        ) : !minorProgram || !minorModel || !minorStats || changingMinor ? (
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <div className="text-xs font-semibold text-slate-900 dark:text-slate-100">
+                  {minorProgram ? "Switch minor" : "Add a minor to your degree"}
+                </div>
+                <p className="mt-0.5 text-[11.5px] text-slate-500 dark:text-slate-400">
+                  Minor courses share the same term grid and count automatically.
+                </p>
+              </div>
+              {minorProgram && (
+                <button
+                  type="button"
+                  onClick={() => setChangingMinor(false)}
+                  className="shrink-0 rounded-lg border border-slate-200 px-2 py-1 text-[11px] font-medium text-slate-600 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300"
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
+
+            <input
+              type="text"
+              value={minorQuery}
+              onChange={(e) => setMinorQuery(e.target.value)}
+              placeholder={`Search ${minorOptions.length} minors (${program.catalog_year})…`}
+              className="w-full rounded-xl border border-slate-200/90 bg-slate-50/70 px-3 py-1.5 text-xs text-slate-900 focus:border-violet-400 focus:bg-white focus:ring-2 focus:ring-violet-400/20 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+            />
+
+            <div className="max-h-72 divide-y divide-slate-100 overflow-auto rounded-xl border border-slate-200/80 bg-slate-50/40 dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-950/40">
+              {filteredMinors.length === 0 ? (
+                <div className="p-4 text-center text-xs text-slate-500">
+                  No minors match for {program.catalog_year}.
+                </div>
+              ) : (
+                filteredMinors.map((m) => {
+                  const isSelected = minorProgram?.program_id === m.program_id;
+                  return (
+                    <button
+                      key={m.program_id}
+                      type="button"
+                      onClick={() => {
+                        setChangingMinor(false);
+                        setMinorQuery("");
+                        onSelectMinor(m);
+                      }}
+                      className={`block w-full px-3 py-2 text-left transition-colors ${
+                        isSelected
+                          ? "bg-violet-50/90 dark:bg-violet-950/45"
+                          : "hover:bg-white dark:hover:bg-slate-800/60"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-medium text-slate-900 dark:text-slate-100">
+                          {m.name}
+                        </span>
+                        {m.total_credit_hours && (
+                          <span className="shrink-0 text-[10.5px] text-slate-500 tabular-nums dark:text-slate-400">
+                            {m.total_credit_hours} cr
+                          </span>
+                        )}
+                      </div>
+                      {m.degree && (
+                        <span className="block text-[10.5px] text-slate-500 dark:text-slate-400">
+                          {m.degree}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            {/* Active Minor Banner */}
+            <div className="rounded-xl border border-violet-200/85 bg-gradient-to-r from-violet-50/90 via-purple-50/65 to-fuchsia-50/45 px-3 py-2.5 dark:border-violet-800/60 dark:from-violet-950/45 dark:via-purple-950/30 dark:to-slate-900/40">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="truncate text-xs font-semibold text-slate-900 dark:text-slate-100">
+                    {minorProgram.name}
+                  </div>
+                  <div className="mt-0.5 text-[11px] font-medium text-violet-700 tabular-nums dark:text-violet-300">
+                    {minorStats.placedCredits}
+                    {minorProgram.total_credit_hours
+                      ? ` / ${minorProgram.total_credit_hours} cr`
+                      : " cr"}{" "}
+                    · {minorStats.completedSteps}/{minorStats.totalSteps} core
+                    checked
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => setChangingMinor(true)}
+                    className="rounded-lg border border-violet-200/90 bg-white/90 px-2 py-0.5 text-[11px] font-medium text-violet-700 transition-colors hover:bg-violet-100 dark:border-violet-800 dark:bg-slate-900 dark:text-violet-300 dark:hover:bg-violet-950/60"
+                  >
+                    Change
+                  </button>
+                  <button
+                    type="button"
+                    onClick={onRemoveMinor}
+                    title="Remove minor"
+                    aria-label="Remove minor"
+                    className="rounded-lg border border-slate-200/90 bg-white/90 px-1.5 py-0.5 text-[11px] text-slate-500 transition-colors hover:border-rose-300 hover:bg-rose-50 hover:text-rose-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400"
+                  >
+                    ×
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Minor Required Courses */}
+            {minorModel.required.length > 0 && (
+              <details className="group" open>
+                <summary className="flex cursor-pointer list-none items-center gap-2 rounded-xl px-2 py-2 text-[13px] font-semibold text-slate-800 transition-colors hover:bg-slate-50/90 dark:text-slate-100 dark:hover:bg-slate-800/60">
+                  <span className="text-[10px] text-slate-400 transition-transform group-open:rotate-90">
+                    ▸
+                  </span>
+                  <span>Required minor courses</span>
+                  <span
+                    className={`ml-auto rounded-full px-2 py-0.5 tabular-nums text-[11px] font-semibold ${
+                      minorStats.doneReq.length === minorModel.required.length
+                        ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400"
+                        : "bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400"
+                    }`}
+                  >
+                    {minorStats.doneReq.length}/{minorModel.required.length}
+                  </span>
+                </summary>
+                <ul className="mb-1.5 space-y-1 pl-4 pr-1">
+                  {minorModel.required.map((r) => {
+                    const matchedCode = findEquivalentInSet(
+                      r.code,
+                      placed,
+                      equivMap,
+                    );
+                    const done = Boolean(matchedCode);
+                    const atIdx = matchedCode
+                      ? placedTermIndex(terms, matchedCode)
+                      : -1;
+                    const placedTerm = atIdx >= 0 ? terms[atIdx] : null;
+                    const course = courseOf(r.code, catalogMap, customs);
+                    const rowKey = `req:${r.code}`;
+                    const isAdding = pendingAddKey === rowKey;
+                    return (
+                      <li key={r.code} className="py-0.5 text-[12px]">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className={`w-3.5 shrink-0 text-center text-[11px] ${
+                              done
+                                ? "text-emerald-600 dark:text-emerald-400"
+                                : "text-slate-300 dark:text-slate-600"
+                            }`}
+                          >
+                            {done ? "✓" : "○"}
+                          </span>
+                          <span className="shrink-0 font-mono text-[11px] font-medium text-violet-700 dark:text-violet-300">
+                            {r.code}
+                          </span>
+                          <span
+                            className={`min-w-0 flex-1 truncate ${
+                              done
+                                ? "text-slate-400 dark:text-slate-500"
+                                : "text-slate-700 dark:text-slate-300"
+                            }`}
+                            title={course?.title ?? ""}
+                          >
+                            {course?.title ?? ""}
+                          </span>
+                          {done && placedTerm ? (
+                            <span className="shrink-0 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
+                              Y{placedTerm.year} {placedTerm.season}
+                            </span>
+                          ) : !done ? (
+                            <button
+                              type="button"
+                              onClick={() => openInlineTermChooser(rowKey, r.code)}
+                              className={`shrink-0 rounded-lg border px-1.5 py-0.5 text-[10.5px] font-medium transition-colors ${
+                                isAdding
+                                  ? "border-violet-500 bg-violet-600 text-white"
+                                  : "border-violet-200 bg-violet-50/75 text-violet-700 hover:bg-violet-100 dark:border-violet-800 dark:bg-violet-950/50 dark:text-violet-300"
+                              }`}
+                            >
+                              {isAdding ? "Close" : "+ Add"}
+                            </button>
+                          ) : null}
+                        </div>
+                        {!done && renderInlineTermChooser(rowKey, r.code)}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </details>
+            )}
+
+            {/* Minor Electives (Choose From) */}
+            {minorModel.chooseGroups.length > 0 && (
+              <details className="group" open>
+                <summary className="flex cursor-pointer list-none items-center gap-2 rounded-xl px-2 py-2 text-[13px] font-semibold text-slate-800 transition-colors hover:bg-slate-50/90 dark:text-slate-100 dark:hover:bg-slate-800/60">
+                  <span className="text-[10px] text-slate-400 transition-transform group-open:rotate-90">
+                    ▸
+                  </span>
+                  <span>Minor electives (choose from)</span>
+                  {(() => {
+                    const doneGroups = minorModel.chooseGroups.filter(
+                      (g) =>
+                        g.options.filter((c) =>
+                          Boolean(findEquivalentInSet(c, placed, equivMap)),
+                        ).length >= g.required,
+                    ).length;
+                    return (
+                      <span
+                        className={`ml-auto rounded-full px-2 py-0.5 tabular-nums text-[11px] font-semibold ${
+                          doneGroups === minorModel.chooseGroups.length
+                            ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400"
+                            : "bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400"
+                        }`}
+                      >
+                        {doneGroups}/{minorModel.chooseGroups.length}
+                      </span>
+                    );
+                  })()}
+                </summary>
+                <div className="space-y-2.5 pl-3 pr-1 pb-1">
+                  {minorModel.chooseGroups.map((group) => {
+                    const hits = group.options.filter((c) =>
+                      Boolean(findEquivalentInSet(c, placed, equivMap)),
+                    );
+                    const ok = hits.length >= group.required;
+                    const available = group.options.filter((c) =>
+                      isOffered(c, offeringsMap, customs),
+                    );
+                    const listCodes =
+                      available.length > 0 ? available : group.options;
+                    return (
+                      <div
+                        key={group.id}
+                        className="rounded-xl border border-slate-200/75 bg-slate-50/65 p-2.5 dark:border-slate-800 dark:bg-slate-950/45"
+                      >
+                        <div className="mb-1.5 flex items-baseline justify-between gap-2 text-[12px]">
+                          <span className="font-medium text-slate-800 dark:text-slate-200">
+                            {group.label || `Choose ${group.required}`}
+                          </span>
+                          <span
+                            className={`tabular-nums text-[11px] ${
+                              ok
+                                ? "font-semibold text-emerald-700 dark:text-emerald-400"
+                                : "text-slate-500 dark:text-slate-400"
+                            }`}
+                          >
+                            {Math.min(hits.length, group.required)}/{group.required}
+                          </span>
+                        </div>
+                        <ul className="space-y-1">
+                          {listCodes.map((code) => {
+                            const matchedCode = findEquivalentInSet(
+                              code,
+                              placed,
+                              equivMap,
+                            );
+                            const picked = Boolean(matchedCode);
+                            const atIdx = matchedCode
+                              ? placedTermIndex(terms, matchedCode)
+                              : -1;
+                            const placedTerm = atIdx >= 0 ? terms[atIdx] : null;
+                            const course = courseOf(code, catalogMap, customs);
+                            const rowKey = `choose:${group.id}:${code}`;
+                            const isAdding = pendingAddKey === rowKey;
+                            return (
+                              <li key={code} className="py-0.5 text-[12px]">
+                                <div className="flex items-center gap-1.5">
+                                  <span
+                                    className={`w-3.5 shrink-0 text-center text-[11px] ${
+                                      picked
+                                        ? "text-emerald-600 dark:text-emerald-400"
+                                        : "text-slate-300 dark:text-slate-600"
+                                    }`}
+                                  >
+                                    {picked ? "✓" : "○"}
+                                  </span>
+                                  <span className="shrink-0 font-mono text-[11px] font-medium text-violet-700 dark:text-violet-300">
+                                    {code}
+                                  </span>
+                                  <span
+                                    className={`min-w-0 flex-1 truncate text-[11.5px] ${
+                                      picked
+                                        ? "text-slate-400 dark:text-slate-500"
+                                        : "text-slate-700 dark:text-slate-300"
+                                    }`}
+                                    title={course?.title ?? code}
+                                  >
+                                    {course?.title ?? "Course title unavailable"}
+                                  </span>
+                                  {picked && placedTerm ? (
+                                    <span className="shrink-0 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
+                                      Y{placedTerm.year} {placedTerm.season}
+                                    </span>
+                                  ) : !picked ? (
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        openInlineTermChooser(rowKey, code)
+                                      }
+                                      className={`shrink-0 rounded-lg border px-1.5 py-0.5 text-[10.5px] font-medium transition-colors ${
+                                        isAdding
+                                          ? "border-violet-500 bg-violet-600 text-white"
+                                          : "border-slate-200 bg-white text-slate-700 hover:border-violet-400 hover:bg-violet-50/70 hover:text-violet-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-violet-500"
+                                      }`}
+                                    >
+                                      {isAdding ? "Close" : "+ Add"}
+                                    </button>
+                                  ) : null}
+                                </div>
+                                {!picked && renderInlineTermChooser(rowKey, code)}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      </div>
+                    );
+                  })}
+                </div>
+              </details>
+            )}
+
+            {/* Minor Elective Buckets */}
+            {minorModel.buckets.length > 0 && (
+              <details className="group" open>
+                <summary className="flex cursor-pointer list-none items-center gap-2 rounded-xl px-2 py-2 text-[13px] font-semibold text-slate-800 transition-colors hover:bg-slate-50/90 dark:text-slate-100 dark:hover:bg-slate-800/60">
+                  <span className="text-[10px] text-slate-400 transition-transform group-open:rotate-90">
+                    ▸
+                  </span>
+                  <span>Minor electives</span>
+                  <span className="ml-auto rounded-full bg-slate-100 px-2 py-0.5 tabular-nums text-[11px] font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                    {minorModel.buckets.length}
+                  </span>
+                </summary>
+                <div className="space-y-1">
+                  {minorModel.buckets.map((b) =>
+                    renderBucket(
+                      b,
+                      minorStats.minorFree,
+                      onPickMinorBucket,
+                      "minor",
+                    ),
+                  )}
+                </div>
+              </details>
+            )}
+
+            {/* Minor Elective Rules & Additional Course Notes (for calendar text minors) */}
+            {minorStats.notes.length > 0 && (
+              <details
+                className="group"
+                open={minorModel.buckets.length === 0}
+              >
+                <summary className="flex cursor-pointer list-none items-center gap-2 rounded-xl px-2 py-2 text-[13px] font-semibold text-slate-800 transition-colors hover:bg-slate-50/90 dark:text-slate-100 dark:hover:bg-slate-800/60">
+                  <span className="text-[10px] text-slate-400 transition-transform group-open:rotate-90">
+                    ▸
+                  </span>
+                  <span>Additional minor courses &amp; notes</span>
+                </summary>
+                <div className="space-y-2 px-3 pb-2 text-[11.5px] leading-relaxed text-slate-600 dark:text-slate-400">
+                  {minorStats.notes.map((n) => (
+                    <div key={n.id}>
+                      {n.title && (
+                        <div className="font-semibold text-slate-800 dark:text-slate-200">
+                          {n.title}
+                        </div>
+                      )}
+                      {n.lines.map((line, i) => (
+                        <p key={i} className="mt-0.5">
+                          {line}
+                        </p>
+                      ))}
+                    </div>
+                  ))}
+                  {minorModel.buckets.length === 0 && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        onOpenMinorSearch(minorStats.primarySubject)
+                      }
+                      className="mt-1 inline-flex items-center gap-1 rounded-xl border border-violet-200/90 bg-violet-50 px-2.5 py-1 text-[11.5px] font-medium text-violet-700 transition-colors hover:bg-violet-100 dark:border-violet-800 dark:bg-violet-950/50 dark:text-violet-300"
+                    >
+                      + Browse{" "}
+                      {minorStats.primarySubject
+                        ? `${minorStats.primarySubject} courses`
+                        : "minor electives"}
+                    </button>
+                  )}
+                </div>
+              </details>
+            )}
+          </div>
+        )}
+      </div>
+      )}
     </aside>
   );
 }

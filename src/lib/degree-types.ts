@@ -231,6 +231,8 @@ export type PickerState = {
   termIndex: number;
   slotIndex: number;
   bucketKey: string | null;
+  modelSource?: "major" | "minor";
+  initialQuery?: string;
 };
 
 export type DegreeBootstrapData = {

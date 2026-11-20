@@ -8,6 +8,7 @@ import {
   findBucket,
   matchesBucket,
   matchingBuckets,
+  MAX_SLOTS_PER_TERM,
   normalizeCode,
   offeredIn,
   offeringOf,
@@ -67,7 +68,10 @@ export function CoursePickerModal({
   onSaveCustom,
   onToast,
 }: CoursePickerModalProps) {
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(() => picker.initialQuery ?? "");
+  const [selectedTermIndex, setSelectedTermIndex] = useState(
+    () => picker.termIndex,
+  );
   const [filterTerm, setFilterTerm] = useState(true);
   const [filterOffered, setFilterOffered] = useState(true);
   const [filterPrereq, setFilterPrereq] = useState(true);
@@ -107,7 +111,14 @@ export function CoursePickerModal({
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [onClose]);
 
-  const term = terms[picker.termIndex];
+  const term = terms[selectedTermIndex] ?? terms[picker.termIndex];
+  const activeSlotIndex = useMemo(() => {
+    if (selectedTermIndex === picker.termIndex) return picker.slotIndex;
+    const t = terms[selectedTermIndex];
+    if (!t) return 0;
+    const emptyIdx = t.slots.indexOf(null);
+    return emptyIdx >= 0 ? emptyIdx : t.slots.length;
+  }, [selectedTermIndex, picker.termIndex, picker.slotIndex, terms]);
   const calYear = term
     ? termCalendarYear(startYear, term.year, term.season)
     : startYear;
@@ -208,8 +219,8 @@ export function CoursePickerModal({
 
   const placed = useMemo(() => placedCodes(terms), [terms]);
   const completed = useMemo(
-    () => completedBefore(terms, picker.termIndex, equivMap),
-    [terms, picker, equivMap],
+    () => completedBefore(terms, selectedTermIndex, equivMap),
+    [terms, selectedTermIndex, equivMap],
   );
 
   const filteredRows = useMemo(() => {
@@ -313,8 +324,8 @@ export function CoursePickerModal({
       return;
     }
     onSaveCustom(customDraft, {
-      termIndex: picker.termIndex,
-      slotIndex: picker.slotIndex,
+      termIndex: selectedTermIndex,
+      slotIndex: activeSlotIndex,
     });
   };
 
@@ -339,8 +350,8 @@ export function CoursePickerModal({
     >
       <div className="flex max-h-[84vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900">
         {/* Header */}
-        <div className="flex items-start justify-between gap-4 border-b border-zinc-200 px-5 py-3.5 dark:border-zinc-800">
-          <div>
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-zinc-200 px-5 py-3.5 dark:border-zinc-800">
+          <div className="min-w-0 flex-1">
             <h3 className="text-[15px] font-semibold text-zinc-900 dark:text-zinc-100">
               {titleText}
             </h3>
@@ -348,14 +359,46 @@ export function CoursePickerModal({
               {subText}
             </p>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            aria-label="Close"
-            className="rounded-lg px-2 py-1 text-base text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
-          >
-            ×
-          </button>
+          <div className="flex items-center gap-2">
+            {!initialTransferMode && terms.length > 0 && (
+              <label className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400">
+                <span>Add to:</span>
+                <select
+                  value={selectedTermIndex}
+                  onChange={(e) => setSelectedTermIndex(Number(e.target.value))}
+                  aria-label="Target year and term"
+                  className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs font-medium text-zinc-900 focus:border-blue-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+                >
+                  {terms.map((t, idx) => {
+                    const usedCount = t.slots.filter(Boolean).length;
+                    const isFull =
+                      usedCount >= MAX_SLOTS_PER_TERM &&
+                      idx !== picker.termIndex;
+                    const yCal = termCalendarYear(startYear, t.year, t.season);
+                    return (
+                      <option
+                        key={`${t.year}-${t.season}-${idx}`}
+                        value={idx}
+                        disabled={isFull}
+                      >
+                        Year {t.year} · {t.season} {yCal} ({usedCount}/
+                        {MAX_SLOTS_PER_TERM}
+                        {isFull ? " full" : ""})
+                      </option>
+                    );
+                  })}
+                </select>
+              </label>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close"
+              className="rounded-lg px-2 py-1 text-base text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+            >
+              ×
+            </button>
+          </div>
         </div>
 
         {/* Search & filter chips */}
@@ -645,8 +688,8 @@ export function CoursePickerModal({
                           type="button"
                           onClick={() =>
                             onPlaceCourse(
-                              picker.termIndex,
-                              picker.slotIndex,
+                              selectedTermIndex,
+                              activeSlotIndex,
                               course.code,
                             )
                           }
