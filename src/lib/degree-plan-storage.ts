@@ -10,6 +10,7 @@ export interface DegreePlanRecord {
   start_year: number | null;
   catalog_year: string | null;
   program_id: string;
+  minor_program_id: string | null;
   terms: PlannerTerm[];
   customs: CustomCourse[];
   created_at: string;
@@ -75,6 +76,7 @@ export async function upsertDegreePlan(
     startYear: number;
     catalogYear?: string | null;
     programId: string;
+    minorProgramId?: string | null;
     terms: PlannerTerm[];
     customs: CustomCourse[];
   },
@@ -89,6 +91,7 @@ export async function upsertDegreePlan(
         start_year: params.startYear,
         catalog_year: params.catalogYear ?? null,
         program_id: params.programId,
+        minor_program_id: params.minorProgramId ?? null,
         terms: params.terms,
         customs: params.customs,
       },
