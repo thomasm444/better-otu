@@ -82,6 +82,15 @@ export interface NormalizedMeetingSlot {
   dates: string[];
 }
 
+export interface SectionRmpInfo {
+  legacyId: number | null;
+  fullName: string;
+  avgRating: number | null;
+  avgDifficulty: number | null;
+  numRatings: number;
+  wouldTakeAgainPercent: number | null;
+}
+
 export interface ScheduleSection {
   crn: string;
   subject: string;
@@ -104,6 +113,7 @@ export interface ScheduleSection {
   openSection: boolean;
   creditHours: number | null;
   instructor: string | null;
+  rmp?: SectionRmpInfo | null;
   weekPattern: WeekPattern;
   meetings: NormalizedMeetingSlot[];
 }
@@ -325,6 +335,8 @@ export interface ScheduleBlock {
   room?: string;
   /** Instructor display name */
   instructor?: string;
+  /** Matched RateMyProfessors summary for the section's instructor */
+  rmp?: SectionRmpInfo | null;
   /** Day of the week */
   day: DayOfWeek;
   /** Start time in 24h format (HH:MM) or ISO time string, e.g. "08:10" or "08:10:00" */
@@ -364,9 +376,11 @@ export interface BlockedTimeSlot {
   label: string;
 }
 
+export type SectionGridPickerComponent = CourseComponentType | "ALL";
+
 export interface SectionGridPickerTarget {
   courseCode: string;
-  component: CourseComponentType;
+  component: SectionGridPickerComponent;
 }
 
 export interface WeekScheduleProps {
@@ -420,7 +434,7 @@ export interface WeekScheduleProps {
     label?: string,
   ) => void;
   /** Accent color for header badge */
-  accentColor?: "blue" | "purple" | "emerald" | "amber";
+  accentColor?: "blue" | "purple" | "emerald" | "amber" | "rose" | "red";
   /** Week label badge text */
   badgeLabel?: string;
   /** Whether the grid stretches to fit without scrolling (default: true) */
@@ -639,6 +653,7 @@ export function convertScheduleSectionToBlocks(
     crn: section.crn,
     room: m.location || (section.isOnline ? "Online" : undefined),
     instructor: section.instructor ?? undefined,
+    rmp: section.rmp ?? null,
     day: m.day,
     startTime: m.startTime,
     endTime: m.endTime,

@@ -13,6 +13,7 @@ import {
   type NormalizedMeetingSlot,
   type ScheduleCourseGroup,
   type ScheduleSection,
+  type SectionRmpInfo,
   type TermScheduleCatalog,
   type WeekPattern,
 } from "@/app/course-schedules/types";
@@ -114,9 +115,20 @@ type RawCourseMeeting = {
   sunday: boolean;
 };
 
+type RawRmpProfessor = {
+  id: string;
+  legacy_id: number | null;
+  full_name: string;
+  avg_rating: number | string | null;
+  avg_difficulty: number | string | null;
+  num_ratings: number | null;
+  would_take_again_percent: number | string | null;
+};
+
 type RawCourseFaculty = {
   display_name: string | null;
   primary_indicator: boolean | null;
+  rmp_professors?: RawRmpProfessor | RawRmpProfessor[] | null;
 };
 
 type RawCourseRow = {
@@ -159,6 +171,41 @@ function normalizeSection(row: RawCourseRow, term: string): ScheduleSection | nu
   const faculty =
     row.course_faculty?.find((f) => f.primary_indicator) ??
     row.course_faculty?.[0];
+
+  const rawRmp = faculty?.rmp_professors
+    ? Array.isArray(faculty.rmp_professors)
+      ? faculty.rmp_professors[0]
+      : faculty.rmp_professors
+    : null;
+  const parsedRating =
+    rawRmp?.avg_rating !== null && rawRmp?.avg_rating !== undefined
+      ? Number(rawRmp.avg_rating)
+      : null;
+  const parsedDiff =
+    rawRmp?.avg_difficulty !== null && rawRmp?.avg_difficulty !== undefined
+      ? Number(rawRmp.avg_difficulty)
+      : null;
+  const parsedWta =
+    rawRmp?.would_take_again_percent !== null &&
+    rawRmp?.would_take_again_percent !== undefined
+      ? Number(rawRmp.would_take_again_percent)
+      : null;
+
+  const rmp: SectionRmpInfo | null =
+    rawRmp && parsedRating !== null && Number.isFinite(parsedRating)
+      ? {
+          legacyId: rawRmp.legacy_id ?? null,
+          fullName: rawRmp.full_name,
+          avgRating: parsedRating,
+          avgDifficulty:
+            parsedDiff !== null && Number.isFinite(parsedDiff)
+              ? parsedDiff
+              : null,
+          numRatings: Number(rawRmp.num_ratings ?? 0),
+          wouldTakeAgainPercent:
+            parsedWta !== null && Number.isFinite(parsedWta) ? parsedWta : null,
+        }
+      : null;
 
   // Group meeting rows by (day, startTime, endTime) so biweekly dates & shared rooms merge cleanly.
   const slotGroups = new Map<
@@ -330,6 +377,7 @@ function normalizeSection(row: RawCourseRow, term: string): ScheduleSection | nu
         ? Number(row.credit_hours)
         : null,
     instructor: faculty?.display_name ?? null,
+    rmp,
     weekPattern: sectionWeekPattern,
     meetings,
   };
@@ -374,7 +422,7 @@ export async function getTermScheduleCatalog(
           open_section,
           link_identifier,
           is_section_linked,
-          course_faculty ( display_name, primary_indicator ),
+          course_faculty ( display_name, primary_indicator, rmp_professors ( id, legacy_id, full_name, avg_rating, avg_difficulty, num_ratings, would_take_again_percent ) ),
           course_meetings ( building, room, begin_time, end_time, start_date, end_date, meeting_schedule_type, monday, tuesday, wednesday, thursday, friday, saturday, sunday )
         `,
         )

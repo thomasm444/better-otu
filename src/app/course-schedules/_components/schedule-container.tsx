@@ -127,7 +127,6 @@ export function ScheduleContainer({
 
   const [viewMode, setViewMode] = useState<ScheduleViewMode>("combined");
   const [mobileTab, setMobileTab] = useState<"schedule" | "lookup">("schedule");
-  const [fitToHeight, setFitToHeight] = useState(true);
   const [isEditMode, setIsEditMode] = useState(false);
 
   const [plannedCourses, setPlannedCourses] = useState<PlannedCourseEntry[]>(
@@ -165,6 +164,7 @@ export function ScheduleContainer({
     "idle" | "saving" | "saved" | "local" | "error"
   >("idle");
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [hydratedKey, setHydratedKey] = useState<string | null>(null);
 
   const hydratedKeyRef = useRef<string | null>(null);
   const userDirtyRef = useRef(false);
@@ -409,6 +409,7 @@ export function ScheduleContainer({
       setBlockedSlots(mergeBlockedSlots(nextBlocked));
       setCustomBlocks(nextCustom);
       hydratedKeyRef.current = hydrationKey;
+      setHydratedKey(hydrationKey);
     }
 
     void hydrate();
@@ -671,8 +672,8 @@ export function ScheduleContainer({
 
   const handleSelectSection = useCallback(
     (courseCode: string, component: CourseComponentType, crn: string) => {
+      if (!isEditMode) return;
       markDirty();
-      setIsEditMode(true);
       setHoverPreviewSection(null);
       setPlannedCourses((prev) => {
         const existing = prev.find((entry) => entry.courseCode === courseCode);
@@ -702,7 +703,7 @@ export function ScheduleContainer({
         ];
       });
     },
-    [courseMap, markDirty],
+    [courseMap, isEditMode, markDirty],
   );
 
   const handleRemoveCourse = useCallback(
@@ -1034,15 +1035,6 @@ export function ScheduleContainer({
                   </button>
                 ))}
               </div>
-
-              {/* Fit vs Expand Toggle */}
-              <button
-                type="button"
-                onClick={() => setFitToHeight((v) => !v)}
-                className="hidden items-center gap-1 rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-xs text-zinc-700 hover:bg-zinc-100 xl:inline-flex dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
-              >
-                {fitToHeight ? "Fit View" : "Expanded"}
-              </button>
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
@@ -1417,7 +1409,8 @@ export function ScheduleContainer({
                   ? "Odd Teaching Weeks"
                   : "Even Teaching Weeks"
             }
-            accentColor={viewMode === "week2" ? "purple" : "blue"}
+            accentColor={viewMode === "combined" ? "purple": viewMode === "week2" ? "red" : "blue"
+            }
             courses={annotatedBlocks}
             blockedSlots={blockedSlots}
             courseMap={courseMap}
@@ -1427,7 +1420,7 @@ export function ScheduleContainer({
               setGridSectionPicker(target);
             }}
             isEditMode={isEditMode}
-            fitToHeight={fitToHeight}
+            fitToHeight={true}
             isBlockingMode={isBlockingMode}
             onCreateBlockedSlot={(d, s, e, l) =>
               handleCreateBlockedSlot(d, s, e, l)
@@ -1490,6 +1483,7 @@ export function ScheduleContainer({
             expandedCompletedSet={expandedCompletedSet}
             programElectives={programElectives}
             focusedCourseCode={focusedCourseCode}
+            hydratedKey={hydratedKey}
             gridSectionPicker={gridSectionPicker}
             onChangeGridSectionPicker={(target) => {
               setHoverPreviewSection(null);

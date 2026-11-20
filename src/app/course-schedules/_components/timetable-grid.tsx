@@ -16,9 +16,11 @@ import {
   type DayOfWeek,
   type ScheduleBlock,
   type ScheduleCourseGroup,
+  type ScheduleSection,
   type WeekPattern,
   type WeekScheduleProps,
 } from "../types";
+import { RmpStarBadge } from "./rmp-badge";
 
 interface PositionedBlock {
   block: ScheduleBlock;
@@ -29,6 +31,8 @@ interface PositionedBlock {
 interface GhostTargetSlot {
   id: string;
   crn: string;
+  component: CourseComponentType;
+  section: ScheduleSection;
   day: DayOfWeek;
   startTime: string;
   endTime: string;
@@ -37,8 +41,28 @@ interface GhostTargetSlot {
   weekPattern: WeekPattern;
   room: string;
   fits: boolean;
+  conflictsWith: string[];
   isCurrent: boolean;
   label: string;
+}
+
+function getFittingGhostClasses(
+  component: CourseComponentType,
+  isHovered: boolean,
+): string {
+  if (component === "LAB") {
+    return isHovered
+      ? "z-50 border-orange-600 bg-orange-500/35 text-orange-950 ring-2 ring-orange-500 shadow-md dark:border-orange-400 dark:bg-orange-900/80 dark:text-orange-50"
+      : "border-orange-500 bg-orange-500/20 text-orange-950 dark:border-orange-400 dark:bg-orange-950/75 dark:text-orange-100";
+  }
+  if (component === "TUT") {
+    return isHovered
+      ? "z-50 border-yellow-600 bg-yellow-400/40 text-yellow-950 ring-2 ring-yellow-500 shadow-md dark:border-yellow-400 dark:bg-yellow-900/80 dark:text-yellow-50"
+      : "border-yellow-500 bg-yellow-400/25 text-yellow-950 dark:border-yellow-400 dark:bg-yellow-950/75 dark:text-yellow-100";
+  }
+  return isHovered
+    ? "z-50 border-emerald-600 bg-emerald-500/35 text-emerald-950 ring-2 ring-emerald-500 shadow-md dark:border-emerald-400 dark:bg-emerald-900/80 dark:text-emerald-50"
+    : "border-emerald-500 bg-emerald-500/20 text-emerald-950 dark:border-emerald-400 dark:bg-emerald-950/75 dark:text-emerald-100";
 }
 
 interface PositionedGhost {
@@ -326,6 +350,8 @@ function buildSectionGhosts(
       ghosts.push({
         id: `ghost-${sec.crn}-${m.day}-${m.startTime}-${mIdx}`,
         crn: sec.crn,
+        component,
+        section: sec,
         day: m.day,
         startTime: m.startTime,
         endTime: m.endTime,
@@ -334,8 +360,9 @@ function buildSectionGhosts(
         weekPattern: m.weekPattern,
         room: m.location || (sec.isOnline ? "Online" : "TBA"),
         fits: fit.fits,
+        conflictsWith: fit.conflictsWith,
         isCurrent: Boolean(currentCrn && sec.crn === currentCrn),
-        label: `${course.courseCode} CRN ${sec.crn}`,
+        label: `${course.courseCode} ${component} CRN ${sec.crn}`,
       });
     });
   }
@@ -416,16 +443,20 @@ export function WeekScheduleGrid({
   }, []);
 
   useEffect(() => {
-    if (!gridSectionPicker) return;
+    if (!gridSectionPicker && !selectedCourse) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        if (selectedCourse) {
+          setSelectedCourse(null);
+          return;
+        }
         setHoveredPickerCrn(null);
         onChangeGridSectionPicker?.(null);
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [gridSectionPicker, onChangeGridSectionPicker]);
+  }, [gridSectionPicker, selectedCourse, onChangeGridSectionPicker]);
 
   const totalHours = endHour - startHour;
   const startMinutes = startHour * 60;
@@ -519,27 +550,40 @@ export function WeekScheduleGrid({
 
   const pickerGhosts = useMemo(() => {
     if (!gridSectionPicker || !pickerCourse) return [];
-    const currentCrn = courses.find(
-      (b) =>
-        b.mode !== "preview" &&
-        !b.isCustom &&
-        b.courseCode === gridSectionPicker.courseCode &&
-        (b.component ?? b.type) === gridSectionPicker.component,
-    )?.crn;
-    return buildSectionGhosts(
-      pickerCourse,
-      gridSectionPicker.component,
-      currentCrn,
-      courses,
-      blockedSlots,
-    );
+    const targetComponents =
+      gridSectionPicker.component === "ALL"
+        ? pickerCourse.requiredComponents
+        : [gridSectionPicker.component];
+
+    const allGhosts: GhostTargetSlot[] = [];
+    for (const comp of targetComponents) {
+      const currentCrn = courses.find(
+        (b) =>
+          b.mode !== "preview" &&
+          !b.isCustom &&
+          b.courseCode === gridSectionPicker.courseCode &&
+          (b.component ?? b.type) === comp,
+      )?.crn;
+      allGhosts.push(
+        ...buildSectionGhosts(
+          pickerCourse,
+          comp,
+          currentCrn,
+          courses,
+          blockedSlots,
+        ),
+      );
+    }
+    return allGhosts;
   }, [gridSectionPicker, pickerCourse, courses, blockedSlots]);
 
   const pickerAsyncSections = useMemo(() => {
     if (!gridSectionPicker || !pickerCourse) return [];
     return pickerCourse.sections.filter(
       (s) =>
-        s.component === gridSectionPicker.component && s.meetings.length === 0,
+        (gridSectionPicker.component === "ALL" ||
+          s.component === gridSectionPicker.component) &&
+        s.meetings.length === 0,
     );
   }, [gridSectionPicker, pickerCourse]);
 
@@ -918,7 +962,9 @@ export function WeekScheduleGrid({
         ? "bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300 border-purple-200 dark:border-purple-800"
         : accentColor === "emerald"
           ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800"
-          : "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border-amber-200 dark:border-amber-800";
+          : accentColor === "red"
+            ? "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300 border-red-200 dark:border-red-800"
+            : "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border-amber-200 dark:border-amber-800"
 
   const resolvedBadge =
     badgeLabel ??
@@ -929,6 +975,7 @@ export function WeekScheduleGrid({
         : "Week 2");
 
   const isPickerOverlay = Boolean(gridSectionPicker) && !dragCourse;
+  const canPickOnGrid = isPickerOverlay && isEditMode;
   const isDraggingAny = Boolean(dragCourse) || Boolean(gridSectionPicker);
   const hasActiveGhosts = dragCourse
     ? dragCourse.ghosts.length > 0
@@ -986,55 +1033,96 @@ export function WeekScheduleGrid({
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-200 bg-emerald-50/75 px-4 py-2 text-xs dark:border-emerald-900/60 dark:bg-emerald-950/35">
           <div className="flex flex-wrap items-center gap-2">
             <span className="font-semibold text-emerald-950 dark:text-emerald-100">
-              {gridSectionPicker.courseCode} ({gridSectionPicker.component})
+              {gridSectionPicker.courseCode} (
+              {gridSectionPicker.component === "ALL"
+                ? "All Sections"
+                : gridSectionPicker.component}
+              )
             </span>
             <span className="text-[11px] text-emerald-800 dark:text-emerald-300">
               {pickerGhosts.length > 0
-                ? "Click any highlighted slot to schedule it"
+                ? isEditMode
+                  ? "Click any highlighted slot to schedule it"
+                  : "Viewing all sections — click any slot for details"
                 : "No scheduled time slots for this component"}
             </span>
             {pickerCourse && pickerCourse.requiredComponents.length > 1 && (
               <div className="flex flex-wrap items-center gap-1">
-                {pickerCourse.requiredComponents.map((comp) => (
-                  <button
-                    key={comp}
-                    type="button"
-                    onClick={() => {
-                      setHoveredPickerCrn(null);
-                      onChangeGridSectionPicker?.({
-                        courseCode: gridSectionPicker.courseCode,
-                        component: comp,
-                      });
-                    }}
-                    className={`rounded-md px-2 py-0.5 text-[11px] font-medium transition ${
-                      gridSectionPicker.component === comp
-                        ? "bg-emerald-700 text-white dark:bg-emerald-600"
-                        : "bg-white/80 text-emerald-900 hover:bg-white dark:bg-zinc-900 dark:text-emerald-200 dark:hover:bg-zinc-800"
-                    }`}
-                  >
-                    {comp}
-                  </button>
-                ))}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHoveredPickerCrn(null);
+                    onChangeGridSectionPicker?.({
+                      courseCode: gridSectionPicker.courseCode,
+                      component: "ALL",
+                    });
+                  }}
+                  className={`rounded-md px-2 py-0.5 text-[11px] font-medium transition ${
+                    gridSectionPicker.component === "ALL"
+                      ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+                      : "bg-white/80 text-zinc-800 hover:bg-white dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                  }`}
+                >
+                  All
+                </button>
+                {pickerCourse.requiredComponents.map((comp) => {
+                  const dotColor =
+                    comp === "LAB"
+                      ? "bg-orange-500"
+                      : comp === "TUT"
+                        ? "bg-yellow-500"
+                        : "bg-emerald-500";
+                  return (
+                    <button
+                      key={comp}
+                      type="button"
+                      onClick={() => {
+                        setHoveredPickerCrn(null);
+                        onChangeGridSectionPicker?.({
+                          courseCode: gridSectionPicker.courseCode,
+                          component: comp,
+                        });
+                      }}
+                      className={`inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium transition ${
+                        gridSectionPicker.component === comp
+                          ? "bg-emerald-700 text-white dark:bg-emerald-600"
+                          : "bg-white/80 text-emerald-900 hover:bg-white dark:bg-zinc-900 dark:text-emerald-200 dark:hover:bg-zinc-800"
+                      }`}
+                    >
+                      <span className={`h-1.5 w-1.5 rounded-full ${dotColor}`} />
+                      <span>{comp}</span>
+                    </button>
+                  );
+                })}
               </div>
             )}
-            {pickerAsyncSections.map((sec) => (
-              <button
-                key={sec.crn}
-                type="button"
-                onClick={() => {
-                  onSelectSection?.(
-                    gridSectionPicker.courseCode,
-                    gridSectionPicker.component,
-                    sec.crn,
-                  );
-                  setHoveredPickerCrn(null);
-                  onChangeGridSectionPicker?.(null);
-                }}
-                className="rounded-md border border-teal-400 bg-white px-2 py-0.5 text-[11px] font-medium text-teal-900 hover:bg-teal-50 dark:border-teal-700 dark:bg-zinc-900 dark:text-teal-200"
-              >
-                Schedule CRN {sec.crn} (Async)
-              </button>
-            ))}
+            {pickerAsyncSections.map((sec) =>
+              isEditMode ? (
+                <button
+                  key={sec.crn}
+                  type="button"
+                  onClick={() => {
+                    onSelectSection?.(
+                      gridSectionPicker.courseCode,
+                      sec.component,
+                      sec.crn,
+                    );
+                    setHoveredPickerCrn(null);
+                    onChangeGridSectionPicker?.(null);
+                  }}
+                  className="rounded-md border border-teal-400 bg-white px-2 py-0.5 text-[11px] font-medium text-teal-900 hover:bg-teal-50 dark:border-teal-700 dark:bg-zinc-900 dark:text-teal-200"
+                >
+                  Schedule {sec.component} CRN {sec.crn} (Async)
+                </button>
+              ) : (
+                <span
+                  key={sec.crn}
+                  className="rounded-md border border-teal-300/80 bg-white/80 px-2 py-0.5 text-[11px] font-medium text-teal-900 dark:border-teal-800 dark:bg-zinc-900 dark:text-teal-200"
+                >
+                  {sec.component} CRN {sec.crn} (Async)
+                </span>
+              ),
+            )}
           </div>
           <button
             type="button"
@@ -1215,13 +1303,15 @@ export function WeekScheduleGrid({
                         !block.isCustom &&
                         block.mode !== "preview" &&
                         block.courseCode === activeOverlayCourseCode &&
-                        blockComp === activeOverlayComponent;
+                        (activeOverlayComponent === "ALL" ||
+                          blockComp === activeOverlayComponent);
                       const isCorrelatedComponent =
                         isDraggingAny &&
                         Boolean(activeOverlayCourseCode) &&
                         !block.isCustom &&
                         block.mode !== "preview" &&
                         block.courseCode === activeOverlayCourseCode &&
+                        activeOverlayComponent !== "ALL" &&
                         blockComp !== activeOverlayComponent;
 
                       return (
@@ -1323,15 +1413,18 @@ export function WeekScheduleGrid({
                               </p>
                             </div>
 
-                            <div className="flex items-center justify-between gap-1 text-[9px] opacity-75">
-                              <span className="truncate">
+                            <div className="flex items-center justify-between gap-1 text-[9px]">
+                              <span className="truncate opacity-75">
                                 {block.room || "TBA"}
                               </span>
-                              {!isHalfWidth && (
-                                <span className="shrink-0 tabular-nums">
-                                  {formatTimeDisplay(block.startTime)}
-                                </span>
-                              )}
+                              <div className="flex shrink-0 items-center gap-1">
+                                {!isHalfWidth && !block.rmp && (
+                                  <span className="shrink-0 tabular-nums opacity-75">
+                                    {formatTimeDisplay(block.startTime)}
+                                  </span>
+                                )}
+                                <RmpStarBadge rmp={block.rmp} compact />
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -1367,6 +1460,47 @@ export function WeekScheduleGrid({
                           ? dragCourse.hoveredCrn === g.crn
                           : hoveredPickerCrn === g.crn;
 
+                        const handleGhostActivate = () => {
+                          if (!gridSectionPicker) return;
+                          if (canPickOnGrid) {
+                            onSelectSection?.(
+                              gridSectionPicker.courseCode,
+                              g.component,
+                              g.crn,
+                            );
+                            setHoveredPickerCrn(null);
+                            onChangeGridSectionPicker?.(null);
+                            return;
+                          }
+                          setSelectedCourse({
+                            id: g.id,
+                            courseCode: g.section.courseCode,
+                            title: g.section.title,
+                            type: g.component,
+                            component: g.component,
+                            crn: g.crn,
+                            room: g.room,
+                            instructor: g.section.instructor ?? undefined,
+                            rmp: g.section.rmp ?? null,
+                            day: g.day,
+                            startTime: g.startTime,
+                            endTime: g.endTime,
+                            weekPattern: g.weekPattern,
+                            deliveryMode: g.section.deliveryMode,
+                            color:
+                              g.component === "LAB"
+                                ? "orange"
+                                : g.component === "TUT"
+                                  ? "amber"
+                                  : "emerald",
+                            isConflict: !g.fits,
+                            conflictWith:
+                              g.conflictsWith.length > 0
+                                ? g.conflictsWith
+                                : undefined,
+                          });
+                        };
+
                         return (
                           <div
                             key={`${g.id}-${idx}`}
@@ -1387,13 +1521,7 @@ export function WeekScheduleGrid({
                               isPickerOverlay
                                 ? (ev) => {
                                     ev.stopPropagation();
-                                    onSelectSection?.(
-                                      gridSectionPicker!.courseCode,
-                                      gridSectionPicker!.component,
-                                      g.crn,
-                                    );
-                                    setHoveredPickerCrn(null);
-                                    onChangeGridSectionPicker?.(null);
+                                    handleGhostActivate();
                                   }
                                 : undefined
                             }
@@ -1403,13 +1531,7 @@ export function WeekScheduleGrid({
                                     if (ev.key === "Enter" || ev.key === " ") {
                                       ev.preventDefault();
                                       ev.stopPropagation();
-                                      onSelectSection?.(
-                                        gridSectionPicker!.courseCode,
-                                        gridSectionPicker!.component,
-                                        g.crn,
-                                      );
-                                      setHoveredPickerCrn(null);
-                                      onChangeGridSectionPicker?.(null);
+                                      handleGhostActivate();
                                     }
                                   }
                                 : undefined
@@ -1422,7 +1544,9 @@ export function WeekScheduleGrid({
                             }}
                             title={
                               isPickerOverlay
-                                ? `Click to schedule ${g.label} (${formatTimeDisplay(g.startTime)}–${formatTimeDisplay(g.endTime)} • ${g.room})`
+                                ? canPickOnGrid
+                                  ? `Click to schedule ${g.label} (${formatTimeDisplay(g.startTime)}–${formatTimeDisplay(g.endTime)} • ${g.room})`
+                                  : `Click to view ${g.label} (${formatTimeDisplay(g.startTime)}–${formatTimeDisplay(g.endTime)} • ${g.room})`
                                 : undefined
                             }
                             className={`absolute flex flex-col justify-between overflow-hidden rounded-md border-2 border-dashed p-1 text-[10px] transition ${
@@ -1433,18 +1557,23 @@ export function WeekScheduleGrid({
                                   ? "z-50 border-blue-600 bg-blue-500/35 text-blue-950 ring-2 ring-blue-500 shadow-md dark:border-blue-400 dark:bg-blue-900/80 dark:text-blue-50"
                                   : "border-blue-500 bg-blue-500/20 text-blue-950 dark:border-blue-400 dark:bg-blue-950/75 dark:text-blue-100"
                                 : g.fits
-                                  ? isHovered
-                                    ? "z-50 border-emerald-600 bg-emerald-500/35 text-emerald-950 ring-2 ring-emerald-500 shadow-md dark:border-emerald-400 dark:bg-emerald-900/80 dark:text-emerald-50"
-                                    : "border-emerald-500 bg-emerald-500/20 text-emerald-950 dark:border-emerald-400 dark:bg-emerald-950/75 dark:text-emerald-100"
+                                  ? getFittingGhostClasses(
+                                      g.component,
+                                      isHovered,
+                                    )
                                   : isHovered
                                     ? "z-50 border-rose-600 bg-rose-500/35 text-rose-950 ring-2 ring-rose-500 shadow-md dark:border-rose-400 dark:bg-rose-900/80 dark:text-rose-50"
                                     : "border-rose-500 bg-rose-500/20 text-rose-950 dark:border-rose-400 dark:bg-rose-950/75 dark:text-rose-100"
                             }`}
                           >
                             <div className="flex items-center justify-between gap-1 font-semibold">
-                              <span className="truncate">CRN {g.crn}</span>
+                              <span className="truncate">
+                                {gridSectionPicker?.component === "ALL"
+                                  ? `${g.component} ${g.crn}`
+                                  : `CRN ${g.crn}`}
+                              </span>
                               {g.weekPattern !== "both" && (
-                                <span className="rounded bg-black/15 px-1 text-[8px] uppercase">
+                                <span className="shrink-0 rounded bg-black/15 px-1 text-[8px] uppercase">
                                   {g.weekPattern === "week1" ? "W1" : "W2"}
                                 </span>
                               )}
@@ -1546,11 +1675,14 @@ export function WeekScheduleGrid({
                 </div>
               )}
               {selectedCourse.instructor && (
-                <div className="flex justify-between gap-4">
+                <div className="flex items-center justify-between gap-4">
                   <span className="text-zinc-500">Instructor</span>
-                  <span className="font-medium text-zinc-800 dark:text-zinc-200">
-                    {selectedCourse.instructor}
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-medium text-zinc-800 dark:text-zinc-200">
+                      {selectedCourse.instructor}
+                    </span>
+                    <RmpStarBadge rmp={selectedCourse.rmp} />
+                  </div>
                 </div>
               )}
               {selectedCourse.crn && (
@@ -1593,7 +1725,8 @@ export function WeekScheduleGrid({
                       Add Officially
                     </button>
                   )}
-                {!selectedCourse.isCustom &&
+                {!gridSectionPicker &&
+                  !selectedCourse.isCustom &&
                   onChangeGridSectionPicker &&
                   courseMap?.has(selectedCourse.courseCode) && (
                     <button
