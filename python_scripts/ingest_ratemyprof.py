@@ -18,7 +18,7 @@ from db import LOCAL_DIR, batches, get_supabase, load_env, utc_now_iso
 
 RMP_GRAPHQL_URL = "https://www.ratemyprofessors.com/graphql"
 ONTARIO_TECH_SCHOOL_ID = "U2Nob29sLTQ3MTQ="
-MATCH_THRESHOLD = 80.0  # Strict > 80.0% required
+MATCH_THRESHOLD = 80.0  # Minimum fuzzy match score (>= 80.0% required)
 WTA_CUTOFF_DATE = "2016-05-25"
 
 SEARCH_BATCH_SIZE = 40
@@ -294,7 +294,7 @@ def search_and_match_professors(
     display_names: list[str],
     section_count_by_name: dict[str, int],
 ) -> dict[str, dict[str, Any]]:
-    """Search RMP for each Ontario Tech instructor and keep matches with score > 80.0%."""
+    """Search top 5 RMP results per instructor; prefer the first match with ratings while score >= 80.0%."""
     matched_by_prof_id: dict[str, dict[str, Any]] = {}
 
     for batch_idx, batch in enumerate(batches(display_names, SEARCH_BATCH_SIZE)):
@@ -324,9 +324,8 @@ def search_and_match_professors(
         for idx, disp in enumerate(batch):
             search_name = search_names[idx]
             edges = ((data.get(f"q{idx}") or {}).get("teachers") or {}).get("edges") or []
-            best_node: dict[str, Any] | None = None
-            best_score = -1.0
-            best_key = (-1.0, -1)
+            chosen_node: dict[str, Any] | None = None
+            chosen_score = -1.0
 
             for edge in edges:
                 node = (edge or {}).get("node") or {}
@@ -334,31 +333,37 @@ def search_and_match_professors(
                 ln = (node.get("lastName") or "").strip()
                 rmp_name = f"{fn} {ln}".strip()
                 score = name_score(search_name, rmp_name)
-                key = (score, int(node.get("numRatings") or 0))
-                if key > best_key:
-                    best_key = key
-                    best_node = node
-                    best_score = score
+                if score < MATCH_THRESHOLD:
+                    break
 
-            if not best_node or best_score <= MATCH_THRESHOLD:
+                if chosen_node is None:
+                    chosen_node = node
+                    chosen_score = score
+
+                if int(node.get("numRatings") or 0) > 0:
+                    chosen_node = node
+                    chosen_score = score
+                    break
+
+            if not chosen_node:
                 continue
 
-            prof_id = str(best_node["id"])
+            prof_id = str(chosen_node["id"])
             existing = matched_by_prof_id.get(prof_id)
             sec_count = section_count_by_name.get(disp, 0)
-            cand_rank = (best_score, sec_count)
+            cand_rank = (chosen_score, sec_count)
             if existing is None:
                 matched_by_prof_id[prof_id] = {
                     "id": prof_id,
-                    "legacy_id": best_node.get("legacyId"),
+                    "legacy_id": chosen_node.get("legacyId"),
                     "matched_display_names": {disp},
                     "best_match_display_name": disp,
-                    "match_score": best_score,
+                    "match_score": chosen_score,
                     "_best_rank": cand_rank,
                 }
             else:
                 existing["matched_display_names"].add(disp)
-                existing["match_score"] = max(existing["match_score"], best_score)
+                existing["match_score"] = max(existing["match_score"], chosen_score)
                 if cand_rank > existing["_best_rank"]:
                     existing["_best_rank"] = cand_rank
                     existing["best_match_display_name"] = disp
