@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { evalPrereq, matchesBucket } from "@/lib/degree-planner";
 import type { ElectiveMatch } from "@/lib/degree-types";
 import {
@@ -18,9 +18,12 @@ import {
   type ScheduleBlock,
   type ScheduleCourseGroup,
   type ScheduleSection,
+  type SectionGridPickerComponent,
   type SectionGridPickerTarget,
+  type SectionRmpInfo,
   type TermScheduleCatalog,
 } from "../types";
+import { RmpStarBadge } from "./rmp-badge";
 
 interface CourseLookupPanelProps {
   catalog: TermScheduleCatalog;
@@ -33,8 +36,13 @@ interface CourseLookupPanelProps {
   expandedCompletedSet: Set<string>;
   programElectives?: Array<{ id: string; label: string; match: ElectiveMatch }>;
   focusedCourseCode: string | null;
-  gridSectionPicker?: SectionGridPickerTarget | null;
-  onChangeGridSectionPicker?: (target: SectionGridPickerTarget | null) => void;
+  hydratedKey?: string | null;
+  gridSectionPickers?: SectionGridPickerTarget[];
+  onChangeGridSectionPickers?: (
+    updater:
+      | SectionGridPickerTarget[]
+      | ((prev: SectionGridPickerTarget[]) => SectionGridPickerTarget[]),
+  ) => void;
   isEditMode: boolean;
   onEnableEditMode: () => void;
   onClearPlanner: () => void;
@@ -52,13 +60,53 @@ interface CourseLookupPanelProps {
   onRemoveCourse: (courseCode: string) => void;
   onSetCourseMode: (courseCode: string, mode: "planned" | "exploring") => void;
   onToggleCourseVisibility: (courseCode: string) => void;
+  onToggleAllCoursesVisibility?: () => void;
   onChangeCourseColor: (courseCode: string, color: ColorTheme) => void;
   onAutoFitAll: () => void;
   onAddCustomBlock: (block: ScheduleBlock) => void;
   onRemoveCustomBlock: (id: string) => void;
+  onClearCustomBlocks?: () => void;
+  isCustomBlockDragMode?: boolean;
+  onToggleCustomBlockDragMode?: () => void;
+  onCustomBlockDraftChange?: (draft: {
+    courseCode: string;
+    title: string;
+    room?: string;
+    weekPattern: "both" | "week1" | "week2";
+    color: ColorTheme;
+  }) => void;
   onAddCompletedCourse: (code: string) => void;
   onRemoveCompletedCourse: (code: string) => void;
   onHoverSection: (section: ScheduleSection | null) => void;
+  showRmp?: boolean;
+}
+
+function FixedWidthSwapLabel({
+  label,
+  first,
+  second,
+}: {
+  label: string;
+  first: string;
+  second: string;
+}) {
+  return (
+    <span className="inline-grid place-items-center">
+      <span className="col-start-1 row-start-1 whitespace-nowrap">{label}</span>
+      <span
+        className="invisible col-start-1 row-start-1 whitespace-nowrap"
+        aria-hidden="true"
+      >
+        {first}
+      </span>
+      <span
+        className="invisible col-start-1 row-start-1 whitespace-nowrap"
+        aria-hidden="true"
+      >
+        {second}
+      </span>
+    </span>
+  );
 }
 
 const COMPONENT_LABELS: Record<CourseComponentType, string> = {
@@ -101,6 +149,38 @@ function describeSectionSlots(sec: ScheduleSection): string {
     .join(" • ");
 }
 
+function getCourseCardRmp(
+  course: ScheduleCourseGroup | undefined,
+  entry?: PlannedCourseEntry,
+  fallbackToCatalog = false,
+): SectionRmpInfo | null {
+  if (!course) return null;
+
+  if (entry) {
+    for (const comp of course.requiredComponents) {
+      const crn = entry.selectedCrns[comp];
+      if (!crn) continue;
+      const sec = course.sections.find((s) => s.crn === crn);
+      if (sec?.rmp?.avgRating != null) return sec.rmp;
+    }
+    for (const crn of Object.values(entry.selectedCrns)) {
+      if (!crn) continue;
+      const sec = course.sections.find((s) => s.crn === crn);
+      if (sec?.rmp?.avgRating != null) return sec.rmp;
+    }
+  }
+
+  if (!fallbackToCatalog) return null;
+
+  const ratedLec = course.sections.find(
+    (s) => s.component === "LEC" && s.rmp?.avgRating != null,
+  );
+  if (ratedLec?.rmp) return ratedLec.rmp;
+
+  const anyRated = course.sections.find((s) => s.rmp?.avgRating != null);
+  return anyRated?.rmp ?? null;
+}
+
 export function CourseLookupPanel({
   catalog,
   courseMap,
@@ -112,10 +192,10 @@ export function CourseLookupPanel({
   expandedCompletedSet,
   programElectives = [],
   focusedCourseCode,
-  gridSectionPicker = null,
-  onChangeGridSectionPicker,
+  hydratedKey = null,
+  gridSectionPickers = [],
+  onChangeGridSectionPickers,
   isEditMode,
-  onEnableEditMode,
   onClearPlanner,
   onClearFocus,
   onAddCourse,
@@ -123,15 +203,22 @@ export function CourseLookupPanel({
   onRemoveCourse,
   onSetCourseMode,
   onToggleCourseVisibility,
+  onToggleAllCoursesVisibility,
   onChangeCourseColor,
   onAutoFitAll,
   onAddCustomBlock,
   onRemoveCustomBlock,
+  onClearCustomBlocks,
+  isCustomBlockDragMode = false,
+  onToggleCustomBlockDragMode,
+  onCustomBlockDraftChange,
   onAddCompletedCourse,
   onRemoveCompletedCourse,
   onHoverSection,
+  showRmp = false,
 }: CourseLookupPanelProps) {
-  const [panelTab, setPanelTab] = useState<"search" | "planned">("search");
+  const [panelTab, setPanelTab] = useState<"search" | "planned">("planned");
+  const lastAutoTabKeyRef = useRef<string | null>(null);
   const [query, setQuery] = useState("");
   const [electiveId, setElectiveId] = useState<string>("all");
   const [subjectFilter, setSubjectFilter] = useState<string>("all");
@@ -160,6 +247,7 @@ export function CourseLookupPanel({
   // Completed courses editor popover
   const [completedOpen, setCompletedOpen] = useState(false);
   const [completedInput, setCompletedInput] = useState("");
+  const [completedActiveIdx, setCompletedActiveIdx] = useState(0);
 
   // Custom block form
   const [customOpen, setCustomOpen] = useState(false);
@@ -172,12 +260,36 @@ export function CourseLookupPanel({
   const [cxWeek, setCxWeek] = useState<"both" | "week1" | "week2">("both");
   const [cxColor, setCxColor] = useState<ColorTheme>("teal");
 
+  useEffect(() => {
+    onCustomBlockDraftChange?.({
+      courseCode: cxCode,
+      title: cxTitle,
+      room: cxRoom || undefined,
+      weekPattern: cxWeek,
+      color: cxColor,
+    });
+  }, [cxCode, cxTitle, cxRoom, cxWeek, cxColor, onCustomBlockDraftChange]);
+
+  // Auto-select Course Lookup when hydrated with no courses; otherwise keep My Courses first
+  useEffect(() => {
+    if (!hydratedKey || lastAutoTabKeyRef.current === hydratedKey) return;
+    lastAutoTabKeyRef.current = hydratedKey;
+    if (plannedCourses.length === 0 && customBlocks.length === 0) {
+      setPanelTab("search");
+    } else {
+      setPanelTab("planned");
+    }
+  }, [hydratedKey, plannedCourses.length, customBlocks.length]);
+
   // React to "Switch Section" click from the timetable grid
   useEffect(() => {
     if (!focusedCourseCode) return;
     const timer = setTimeout(() => {
       setPanelTab("planned");
-      setExpandedCourses((prev) => new Set(prev).add(focusedCourseCode));
+      setExpandedCourses(new Set([focusedCourseCode]));
+      setExpandedDescriptions((prev) =>
+        prev.has(focusedCourseCode) ? prev : new Set(),
+      );
       onClearFocus();
     }, 0);
     return () => clearTimeout(timer);
@@ -186,6 +298,54 @@ export function CourseLookupPanel({
   const plannedByCode = useMemo(
     () => new Map(plannedCourses.map((p) => [p.courseCode, p])),
     [plannedCourses],
+  );
+
+  const { catalogLookupList, titleByCode } = useMemo(() => {
+    const items =
+      catalog.allCatalogCourses && catalog.allCatalogCourses.length > 0
+        ? catalog.allCatalogCourses
+        : catalog.courses.map((c) => ({ code: c.courseCode, title: c.title }));
+    const map = new Map<string, string>();
+    for (const item of items) {
+      map.set(item.code.toUpperCase(), item.title);
+    }
+    return { catalogLookupList: items, titleByCode: map };
+  }, [catalog.allCatalogCourses, catalog.courses]);
+
+  const completedSuggestions = useMemo(() => {
+    const q = completedInput.trim().toLowerCase();
+    if (!q) return [];
+    const compactQ = q.replace(/\s+/g, "");
+    const existing = new Set(
+      completedCourses.map((c) => c.trim().toUpperCase()),
+    );
+
+    const prefixMatches: Array<{ code: string; title: string }> = [];
+    const codeMatches: Array<{ code: string; title: string }> = [];
+    const titleMatches: Array<{ code: string; title: string }> = [];
+
+    for (const item of catalogLookupList) {
+      const upperCode = item.code.toUpperCase();
+      if (existing.has(upperCode)) continue;
+      const codeLower = upperCode.toLowerCase();
+      const compactCode = codeLower.replace(/\s+/g, "");
+      const titleLower = item.title.toLowerCase();
+
+      if (codeLower.startsWith(q) || compactCode.startsWith(compactQ)) {
+        prefixMatches.push(item);
+      } else if (codeLower.includes(q) || compactCode.includes(compactQ)) {
+        codeMatches.push(item);
+      } else if (titleLower.includes(q)) {
+        titleMatches.push(item);
+      }
+    }
+
+    return [...prefixMatches, ...codeMatches, ...titleMatches].slice(0, 8);
+  }, [completedInput, catalogLookupList, completedCourses]);
+
+  const safeCompletedIdx = Math.min(
+    completedActiveIdx,
+    Math.max(0, completedSuggestions.length - 1),
   );
 
   const allElectiveOptions = useMemo(() => {
@@ -346,21 +506,41 @@ export function CourseLookupPanel({
   ]);
 
   const toggleExpandCourse = (code: string) => {
-    setExpandedCourses((prev) => {
-      const next = new Set(prev);
-      if (next.has(code)) next.delete(code);
-      else next.add(code);
-      return next;
-    });
+    setExpandedCourses((prev) =>
+      prev.has(code) ? new Set() : new Set([code]),
+    );
+    setExpandedDescriptions((prev) => (prev.has(code) ? prev : new Set()));
   };
 
   const toggleExpandDescription = (code: string) => {
-    setExpandedDescriptions((prev) => {
-      const next = new Set(prev);
-      if (next.has(code)) next.delete(code);
-      else next.add(code);
-      return next;
-    });
+    setExpandedDescriptions((prev) =>
+      prev.has(code) ? new Set() : new Set([code]),
+    );
+    setExpandedCourses((prev) => (prev.has(code) ? prev : new Set()));
+  };
+
+  const handleComponentPillClick = (
+    course: ScheduleCourseGroup,
+    comp: CourseComponentType,
+    isExpanded: boolean,
+  ) => {
+    const currentComp =
+      activeCompTab[course.courseCode] &&
+      course.requiredComponents.includes(activeCompTab[course.courseCode])
+        ? activeCompTab[course.courseCode]
+        : course.requiredComponents[0];
+    if (isExpanded && currentComp === comp) {
+      setExpandedCourses(new Set());
+      return;
+    }
+    setActiveCompTab((prev) => ({
+      ...prev,
+      [course.courseCode]: comp,
+    }));
+    setExpandedCourses(new Set([course.courseCode]));
+    setExpandedDescriptions((prev) =>
+      prev.has(course.courseCode) ? prev : new Set(),
+    );
   };
 
   const handleAddAndPromptSections = (
@@ -371,22 +551,47 @@ export function CourseLookupPanel({
     const firstMultiComp = course.requiredComponents.find(
       (comp) => course.sections.filter((s) => s.component === comp).length > 1,
     );
+    setExpandedDescriptions(new Set());
     if (firstMultiComp) {
       setActiveCompTab((prev) => ({
         ...prev,
         [course.courseCode]: firstMultiComp,
       }));
-      setExpandedCourses((prev) => new Set(prev).add(course.courseCode));
+      setExpandedCourses(new Set([course.courseCode]));
+    } else {
+      setExpandedCourses(new Set());
     }
+  };
+
+  const selectCompletedCourse = (code: string) => {
+    onAddCompletedCourse(code.trim().toUpperCase().replace(/\s+/g, " "));
+    setCompletedInput("");
+    setCompletedActiveIdx(0);
   };
 
   const handleAddCompletedSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const raw = completedInput.trim().toUpperCase();
     if (!raw) return;
-    const normalized = raw.replace(/\s+/g, " ");
-    onAddCompletedCourse(normalized);
-    setCompletedInput("");
+    const normalized = raw
+      .replace(/\s+/g, " ")
+      .replace(/^([A-Z]{2,6})(\d.*)$/, "$1 $2");
+    if (completedSuggestions.length > 0) {
+      const looksLikeCourseCode = /^[A-Z]{2,6}\s?\d{3,4}[A-Z]?$/.test(raw);
+      if (
+        !looksLikeCourseCode ||
+        safeCompletedIdx > 0 ||
+        completedSuggestions[0]?.code.toUpperCase() === normalized
+      ) {
+        selectCompletedCourse(completedSuggestions[safeCompletedIdx].code);
+        return;
+      }
+      if (!titleByCode.has(normalized)) {
+        selectCompletedCourse(completedSuggestions[safeCompletedIdx].code);
+        return;
+      }
+    }
+    selectCompletedCourse(normalized);
   };
 
   const handleCreateCustomSubmit = (e: React.FormEvent) => {
@@ -412,34 +617,40 @@ export function CourseLookupPanel({
     setCustomOpen(false);
   };
 
-  const getTargetComponentForCourse = (
-    course: ScheduleCourseGroup,
-  ): CourseComponentType | undefined => {
-    const tabComp = activeCompTab[course.courseCode];
-    if (tabComp && course.requiredComponents.includes(tabComp)) {
-      return tabComp;
-    }
-    const firstMulti = course.requiredComponents.find(
-      (comp) => course.sections.filter((s) => s.component === comp).length > 1,
-    );
-    return firstMulti ?? course.requiredComponents[0];
-  };
-
   const toggleGridPickerForCourse = (
     course: ScheduleCourseGroup,
-    explicitComp?: CourseComponentType,
+    explicitComp?: SectionGridPickerComponent,
   ) => {
-    if (!onChangeGridSectionPicker) return;
-    const targetComp = explicitComp ?? getTargetComponentForCourse(course);
-    if (!targetComp) return;
-    const isAlreadyActive =
-      gridSectionPicker?.courseCode === course.courseCode &&
-      gridSectionPicker?.component === targetComp;
-    onChangeGridSectionPicker(
-      isAlreadyActive
-        ? null
-        : { courseCode: course.courseCode, component: targetComp },
-    );
+    if (!onChangeGridSectionPickers) return;
+    if (!explicitComp) {
+      const targetComp: SectionGridPickerComponent | undefined =
+        course.requiredComponents.length > 1
+          ? "ALL"
+          : course.requiredComponents[0];
+      if (!targetComp) return;
+      onChangeGridSectionPickers((prev) => {
+        if (prev.some((t) => t.courseCode === course.courseCode)) {
+          return prev.filter((t) => t.courseCode !== course.courseCode);
+        }
+        return [...prev, { courseCode: course.courseCode, component: targetComp }];
+      });
+      return;
+    }
+
+    onChangeGridSectionPickers((prev) => {
+      const existing = prev.find((t) => t.courseCode === course.courseCode);
+      if (existing?.component === explicitComp) {
+        return prev.filter((t) => t.courseCode !== course.courseCode);
+      }
+      if (existing) {
+        return prev.map((t) =>
+          t.courseCode === course.courseCode
+            ? { ...t, component: explicitComp }
+            : t,
+        );
+      }
+      return [...prev, { courseCode: course.courseCode, component: explicitComp }];
+    });
   };
 
   const renderSectionPicker = (
@@ -462,9 +673,10 @@ export function CourseLookupPanel({
         : components[0];
 
     const sections = course.sections.filter((s) => s.component === activeComp);
-    const isGridActiveForComp =
-      gridSectionPicker?.courseCode === course.courseCode &&
-      gridSectionPicker?.component === activeComp;
+    const activePicker = gridSectionPickers.find(
+      (t) => t.courseCode === course.courseCode,
+    );
+    const isGridActiveForComp = activePicker?.component === activeComp;
 
     return (
       <div className="mt-2.5 rounded-lg border border-zinc-200 bg-zinc-50/80 p-2 dark:border-zinc-800 dark:bg-zinc-900/60">
@@ -485,11 +697,14 @@ export function CourseLookupPanel({
                       ...prev,
                       [course.courseCode]: comp,
                     }));
-                    if (gridSectionPicker?.courseCode === course.courseCode) {
-                      onChangeGridSectionPicker?.({
-                        courseCode: course.courseCode,
-                        component: comp,
-                      });
+                    if (activePicker) {
+                      onChangeGridSectionPickers?.((prev) =>
+                        prev.map((t) =>
+                          t.courseCode === course.courseCode
+                            ? { ...t, component: comp }
+                            : t,
+                        ),
+                      );
                     }
                   }}
                   className={`inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition ${
@@ -510,19 +725,35 @@ export function CourseLookupPanel({
             })}
           </div>
 
-          {onChangeGridSectionPicker && (
-            <button
-              type="button"
-              onClick={() => toggleGridPickerForCourse(course, activeComp)}
-              className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition ${
-                isGridActiveForComp
-                  ? "border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700"
-                  : "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200 dark:hover:bg-emerald-900/50"
-              }`}
-              title="Highlight all sections of this component on the timetable and click one to schedule it"
-            >
-              {isGridActiveForComp ? "Hide Grid" : "See All on Grid"}
-            </button>
+          {onChangeGridSectionPickers && (
+            <div className="flex items-center gap-1">
+              {components.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => toggleGridPickerForCourse(course, "ALL")}
+                  className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition ${
+                    activePicker?.component === "ALL"
+                      ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900"
+                      : "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                  }`}
+                  title="Show all Lectures, Labs, and Tutorials for this course on the timetable at once"
+                >
+                  {activePicker?.component === "ALL" ? "Hide All" : "All on Grid"}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => toggleGridPickerForCourse(course, activeComp)}
+                className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition ${
+                  isGridActiveForComp
+                    ? "border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700"
+                    : "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200 dark:hover:bg-emerald-900/50"
+                }`}
+                title="Highlight all sections of this component on the timetable"
+              >
+                {isGridActiveForComp ? "Hide Grid" : `See ${activeComp} on Grid`}
+              </button>
+            </div>
           )}
         </div>
 
@@ -627,19 +858,24 @@ export function CourseLookupPanel({
 
                 <div className="flex flex-wrap items-center justify-between gap-2 text-[10px] text-zinc-500 dark:text-zinc-400">
                   <span>{sec.instructor || "Instructor TBA"}</span>
-                  <span>
-                    Seats:{" "}
-                    <strong
-                      className={
-                        (sec.seatsAvailable ?? 0) > 0
-                          ? "text-emerald-700 dark:text-emerald-400"
-                          : "text-rose-600 dark:text-rose-400"
-                      }
-                    >
-                      {sec.seatsAvailable ?? "—"}
-                    </strong>
-                    /{sec.maximumEnrollment ?? "—"}
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span>
+                      Seats:{" "}
+                      <strong
+                        className={
+                          (sec.seatsAvailable ?? 0) > 0
+                            ? "text-emerald-700 dark:text-emerald-400"
+                            : "text-rose-600 dark:text-rose-400"
+                        }
+                      >
+                        {sec.seatsAvailable ?? "—"}
+                      </strong>
+                      /{sec.maximumEnrollment ?? "—"}
+                    </span>
+                    {showRmp && (
+                      <RmpStarBadge rmp={sec.rmp} interactive={false} />
+                    )}
+                  </div>
                 </div>
 
                 {!fit.fits && fit.conflictsWith.length > 0 && (
@@ -661,8 +897,79 @@ export function CourseLookupPanel({
     );
   };
 
+  const renderComponentSummaryPills = (
+    course: ScheduleCourseGroup,
+    entry: PlannedCourseEntry,
+    isExpanded: boolean,
+  ) => {
+    const currentComp =
+      activeCompTab[entry.courseCode] &&
+      course.requiredComponents.includes(activeCompTab[entry.courseCode])
+        ? activeCompTab[entry.courseCode]
+        : course.requiredComponents[0];
+
+    return course.requiredComponents.map((comp) => {
+      const crn = entry.selectedCrns[comp];
+      const sec = crn
+        ? course.sections.find((s) => s.crn === crn)
+        : undefined;
+      const isCompOpen = isExpanded && currentComp === comp;
+
+      return (
+        <button
+          key={comp}
+          type="button"
+          onClick={() => handleComponentPillClick(course, comp, isExpanded)}
+          title={isCompOpen ? `Hide ${comp} sections` : `View ${comp} sections`}
+          className={`inline-flex cursor-pointer items-center gap-1 rounded-md border px-2 py-0.5 text-[10.5px] font-medium shadow-2xs transition active:scale-[0.98] ${
+            isCompOpen
+              ? "border-blue-500 bg-blue-50 text-blue-900 ring-1 ring-blue-500/30 dark:border-blue-500 dark:bg-blue-950/70 dark:text-blue-100"
+              : sec
+                ? "border-zinc-300 bg-white text-zinc-800 hover:border-blue-400 hover:bg-blue-50/60 hover:text-blue-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:border-blue-500 dark:hover:bg-blue-950/50 dark:hover:text-blue-100"
+                : "border-amber-400 bg-amber-50 text-amber-900 hover:border-amber-500 hover:bg-amber-100/80 dark:border-amber-700 dark:bg-amber-950/60 dark:text-amber-200 dark:hover:border-amber-500 dark:hover:bg-amber-900/60"
+          }`}
+        >
+          <span>
+            {comp}:{" "}
+            {sec
+              ? sec.isAsync
+                ? `CRN ${sec.crn} (Async)`
+                : `CRN ${sec.crn}${sec.weekPattern !== "both" ? ` ${sec.weekPattern === "week1" ? "W1" : "W2"}` : ""}`
+              : isEditMode
+                ? "Pick section"
+                : "Unselected"}
+          </span>
+          <span className="text-[9px] opacity-65">
+            {isCompOpen ? "▴" : "▾"}
+          </span>
+        </button>
+      );
+    });
+  };
+
+  const renderCourseVisibilityButton = (entry: PlannedCourseEntry) => (
+    <button
+      type="button"
+      onClick={() => onToggleCourseVisibility(entry.courseCode)}
+      className={`cursor-pointer rounded px-1.5 py-0.5 text-[11px] font-medium transition ${
+        entry.hidden
+          ? "bg-amber-100 text-amber-800 hover:bg-amber-200 dark:bg-amber-950/60 dark:text-amber-300 dark:hover:bg-amber-900/60"
+          : "text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+      }`}
+      title={entry.hidden ? "Show on grid" : "Hide from grid"}
+    >
+      <FixedWidthSwapLabel
+        label={entry.hidden ? "Show" : "Hide"}
+        first="Show"
+        second="Hide"
+      />
+    </button>
+  );
+
   const plannedOfficial = plannedCourses.filter((c) => c.mode === "planned");
   const exploringOnly = plannedCourses.filter((c) => c.mode === "exploring");
+  const allCoursesHidden =
+    plannedCourses.length > 0 && plannedCourses.every((c) => c.hidden);
 
   const activeFilterCount = [
     electiveId !== "all",
@@ -677,56 +984,36 @@ export function CourseLookupPanel({
     filterBiweekly,
   ].filter(Boolean).length;
 
-  const effectiveTab = isEditMode ? panelTab : "search";
+  const effectiveTab = panelTab;
 
   return (
     <aside className="flex h-full flex-col rounded-xl border border-zinc-300/80 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
       {/* Top Panel Header / Tabs */}
       <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-2.5 dark:border-zinc-800">
-        {isEditMode ? (
-          <div className="grid w-full grid-cols-2 rounded-lg border border-zinc-200 bg-zinc-100 p-0.5 text-xs font-medium dark:border-zinc-800 dark:bg-zinc-900">
-            <button
-              type="button"
-              onClick={() => setPanelTab("search")}
-              className={`rounded-md px-2.5 py-1.5 transition ${
-                effectiveTab === "search"
-                  ? "bg-white text-zinc-900 shadow-xs dark:bg-zinc-800 dark:text-zinc-100"
-                  : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400"
-              }`}
-            >
-              Course Lookup &amp; Explore
-            </button>
-            <button
-              type="button"
-              onClick={() => setPanelTab("planned")}
-              className={`rounded-md px-2.5 py-1.5 transition ${
-                effectiveTab === "planned"
-                  ? "bg-white text-zinc-900 shadow-xs dark:bg-zinc-800 dark:text-zinc-100"
-                  : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400"
-              }`}
-            >
-              My Courses ({plannedCourses.length})
-            </button>
-          </div>
-        ) : (
-          <div className="flex w-full items-center justify-between gap-2">
-            <div>
-              <h3 className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
-                Course Search &amp; Lookup
-              </h3>
-              <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
-                Read-only view · hover sections to preview
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={onEnableEditMode}
-              className="shrink-0 rounded-lg bg-blue-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-blue-700"
-            >
-              Edit Schedule
-            </button>
-          </div>
-        )}
+        <div className="grid w-full grid-cols-2 rounded-lg border border-zinc-200 bg-zinc-100 p-0.5 text-xs font-medium dark:border-zinc-800 dark:bg-zinc-900">
+          <button
+            type="button"
+            onClick={() => setPanelTab("planned")}
+            className={`rounded-md px-2.5 py-1.5 transition ${
+              effectiveTab === "planned"
+                ? "bg-white text-zinc-900 shadow-xs dark:bg-zinc-800 dark:text-zinc-100"
+                : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400"
+            }`}
+          >
+            My Courses ({plannedCourses.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => setPanelTab("search")}
+            className={`rounded-md px-2.5 py-1.5 transition ${
+              effectiveTab === "search"
+                ? "bg-white text-zinc-900 shadow-xs dark:bg-zinc-800 dark:text-zinc-100"
+                : "text-zinc-500 hover:text-zinc-800 dark:text-zinc-400"
+            }`}
+          >
+            Course Lookup &amp; Explore
+          </button>
+        </div>
       </div>
 
       {effectiveTab === "search" ? (
@@ -931,8 +1218,26 @@ export function CourseLookupPanel({
                   <input
                     type="text"
                     value={completedInput}
-                    onChange={(e) => setCompletedInput(e.target.value)}
-                    placeholder="e.g. CSCI 1030U"
+                    onChange={(e) => {
+                      setCompletedInput(e.target.value);
+                      setCompletedActiveIdx(0);
+                    }}
+                    onKeyDown={(e) => {
+                      if (completedSuggestions.length === 0) return;
+                      if (e.key === "ArrowDown") {
+                        e.preventDefault();
+                        setCompletedActiveIdx((i) =>
+                          Math.min(completedSuggestions.length - 1, i + 1),
+                        );
+                      } else if (e.key === "ArrowUp") {
+                        e.preventDefault();
+                        setCompletedActiveIdx((i) => Math.max(0, i - 1));
+                      } else if (e.key === "Escape") {
+                        e.preventDefault();
+                        setCompletedInput("");
+                      }
+                    }}
+                    placeholder="Search course code or name (e.g. CSCI 1030U or Calculus)..."
                     className="flex-1 rounded border border-zinc-300 bg-white px-2 py-1 text-xs text-zinc-900 focus:border-blue-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
                   />
                   <button
@@ -942,6 +1247,30 @@ export function CourseLookupPanel({
                     Add
                   </button>
                 </form>
+                {completedSuggestions.length > 0 && (
+                  <div className="mt-1 max-h-40 divide-y divide-zinc-100 overflow-y-auto rounded-md border border-zinc-200 bg-white shadow-md dark:divide-zinc-800 dark:border-zinc-700 dark:bg-zinc-950">
+                    {completedSuggestions.map((item, idx) => (
+                      <button
+                        key={item.code}
+                        type="button"
+                        onClick={() => selectCompletedCourse(item.code)}
+                        onMouseEnter={() => setCompletedActiveIdx(idx)}
+                        className={`flex w-full cursor-pointer items-center justify-between gap-2 px-2.5 py-1.5 text-left text-[11px] transition ${
+                          idx === safeCompletedIdx
+                            ? "bg-blue-50 text-blue-900 dark:bg-blue-950/60 dark:text-blue-100"
+                            : "text-zinc-700 hover:bg-zinc-50 dark:text-zinc-200 dark:hover:bg-zinc-900"
+                        }`}
+                      >
+                        <span className="shrink-0 font-mono font-semibold">
+                          {item.code}
+                        </span>
+                        <span className="truncate text-[10.5px] text-zinc-500 dark:text-zinc-400">
+                          {item.title}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <div className="mt-2 flex max-h-24 flex-wrap gap-1 overflow-y-auto">
                   {completedCourses.length === 0 ? (
                     <span className="text-[11px] text-zinc-500">
@@ -949,22 +1278,26 @@ export function CourseLookupPanel({
                       or add courses above.
                     </span>
                   ) : (
-                    completedCourses.map((code) => (
-                      <span
-                        key={code}
-                        className="inline-flex items-center gap-1 rounded-full bg-white px-2 py-0.5 text-[10px] font-medium text-zinc-700 border border-zinc-200 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
-                      >
-                        {code}
-                        <button
-                          type="button"
-                          onClick={() => onRemoveCompletedCourse(code)}
-                          className="text-zinc-400 hover:text-rose-500"
-                          title={`Remove ${code}`}
+                    completedCourses.map((code) => {
+                      const courseTitle = titleByCode.get(code.toUpperCase());
+                      return (
+                        <span
+                          key={code}
+                          title={courseTitle ? `${code} — ${courseTitle}` : code}
+                          className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-white px-2 py-0.5 text-[10px] font-medium text-zinc-700 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
                         >
-                          &times;
-                        </button>
-                      </span>
-                    ))
+                          {code}
+                          <button
+                            type="button"
+                            onClick={() => onRemoveCompletedCourse(code)}
+                            className="text-zinc-400 hover:text-rose-500"
+                            title={`Remove ${code}`}
+                          >
+                            &times;
+                          </button>
+                        </span>
+                      );
+                    })
                   )}
                 </div>
               </div>
@@ -1170,17 +1503,24 @@ export function CourseLookupPanel({
                             ) : null}
                           </div>
 
-                          <button
-                            type="button"
-                            onClick={() =>
-                              toggleExpandCourse(course.courseCode)
-                            }
-                            className="rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-[11px] font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
-                          >
-                            {isExpanded
-                              ? "Hide Sections ▲"
-                              : `Sections (${course.sections.length}) ▾`}
-                          </button>
+                          <div className="ml-auto flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                toggleExpandCourse(course.courseCode)
+                              }
+                              className="rounded-md border border-zinc-200 bg-zinc-50 px-2.5 py-1 text-[11px] font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                            >
+                              {isExpanded
+                                ? "Hide Sections ▲"
+                                : `Sections (${course.sections.length}) ▾`}
+                            </button>
+                            {showRmp && (
+                              <RmpStarBadge
+                                rmp={getCourseCardRmp(course, entry, true)}
+                              />
+                            )}
+                          </div>
                         </div>
 
                         {isExpanded && renderSectionPicker(course, entry)}
@@ -1204,13 +1544,13 @@ export function CourseLookupPanel({
       ) : (
         /* My Courses Tab (Necessary Planned + Exploring + Custom Blocks) */
         <div className="flex min-h-0 flex-1 flex-col">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200 p-3 dark:border-zinc-800">
-            <div className="flex flex-wrap items-center gap-1.5">
+          {isEditMode ? (
+            <div className="flex flex-wrap items-center gap-1 border-b border-zinc-200 p-2.5 dark:border-zinc-800">
               <button
                 type="button"
                 onClick={onAutoFitAll}
                 disabled={plannedCourses.length === 0}
-                className="rounded-lg bg-emerald-600 px-2.5 py-1.5 text-xs font-medium text-white shadow-xs transition hover:bg-emerald-700 disabled:opacity-40"
+                className="whitespace-nowrap rounded-lg bg-emerald-600 px-2 py-1.5 text-[11px] font-medium text-white shadow-xs transition hover:bg-emerald-700 disabled:opacity-40"
                 title="Automatically pick conflict-free Lecture, Lab, and Tutorial times across all active courses"
               >
                 Auto-Fit Sections
@@ -1218,27 +1558,105 @@ export function CourseLookupPanel({
               <button
                 type="button"
                 onClick={() => setCustomOpen((v) => !v)}
-                className="rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
+                className={`whitespace-nowrap rounded-lg border px-2 py-1.5 text-[11px] font-medium transition ${
+                  customOpen || isCustomBlockDragMode
+                    ? "border-teal-400 bg-teal-50 text-teal-800 dark:border-teal-800 dark:bg-teal-950/50 dark:text-teal-200"
+                    : "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
+                }`}
               >
                 + Custom Block
               </button>
+              {onToggleAllCoursesVisibility && (
+                <button
+                  type="button"
+                  onClick={onToggleAllCoursesVisibility}
+                  disabled={plannedCourses.length === 0}
+                  className="cursor-pointer whitespace-nowrap rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-[11px] font-medium text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                  title={
+                    allCoursesHidden
+                      ? "Show all courses on the grid"
+                      : "Hide all courses from the grid"
+                  }
+                >
+                  <FixedWidthSwapLabel
+                    label={allCoursesHidden ? "Show All" : "Hide All"}
+                    first="Show All"
+                    second="Hide All"
+                  />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={onClearPlanner}
+                disabled={
+                  plannedCourses.length === 0 && customBlocks.length === 0
+                }
+                className="ml-auto whitespace-nowrap rounded-lg border border-rose-200 bg-rose-50 px-2 py-1.5 text-[11px] font-medium text-rose-700 transition hover:bg-rose-100 disabled:opacity-40 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300"
+                title="Clear all planned and exploring courses from the planner"
+              >
+                Clear Planner
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={onClearPlanner}
-              disabled={plannedCourses.length === 0 && customBlocks.length === 0}
-              className="rounded-lg border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-medium text-rose-700 transition hover:bg-rose-100 disabled:opacity-40 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300"
-              title="Clear all planned and exploring courses from the planner"
-            >
-              Clear Planner
-            </button>
-          </div>
+          ) : (
+            plannedCourses.length > 0 &&
+            onToggleAllCoursesVisibility && (
+              <div className="flex items-center justify-end border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
+                <button
+                  type="button"
+                  onClick={onToggleAllCoursesVisibility}
+                  className="cursor-pointer whitespace-nowrap rounded-lg border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                  title={
+                    allCoursesHidden
+                      ? "Show all courses on the grid"
+                      : "Hide all courses from the grid"
+                  }
+                >
+                  <FixedWidthSwapLabel
+                    label={allCoursesHidden ? "Show All" : "Hide All"}
+                    first="Show All"
+                    second="Hide All"
+                  />
+                </button>
+              </div>
+            )
+          )}
 
-          {customOpen && (
+          {isEditMode && (customOpen || isCustomBlockDragMode) && (
             <form
               onSubmit={handleCreateCustomSubmit}
               className="space-y-2 border-b border-zinc-200 bg-zinc-50 p-3 text-xs dark:border-zinc-800 dark:bg-zinc-900/60"
             >
+              <div className="flex items-center justify-between border-b border-zinc-200/70 pb-1.5 dark:border-zinc-800">
+                <span className="font-semibold text-zinc-900 dark:text-zinc-100">
+                  Add Custom Time Block
+                </span>
+                {customBlocks.length > 0 && onClearCustomBlocks && (
+                  <button
+                    type="button"
+                    onClick={onClearCustomBlocks}
+                    className="text-[11px] text-rose-600 hover:underline dark:text-rose-400"
+                  >
+                    Clear all
+                  </button>
+                )}
+              </div>
+
+              {onToggleCustomBlockDragMode && (
+                <button
+                  type="button"
+                  onClick={() => onToggleCustomBlockDragMode()}
+                  className={`w-full cursor-pointer rounded-lg border px-2.5 py-1.5 text-left font-medium transition ${
+                    isCustomBlockDragMode
+                      ? "border-teal-500 bg-teal-50 text-teal-800 dark:bg-teal-950/70 dark:text-teal-200"
+                      : "border-zinc-200 bg-white text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+                  }`}
+                >
+                  {isCustomBlockDragMode
+                    ? "✓ Drag-to-Create Custom Block Active (drag across hours & days)"
+                    : "🖱 Drag on Grid to Add Custom Block"}
+                </button>
+              )}
+
               <div className="grid grid-cols-2 gap-2">
                 <input
                   type="text"
@@ -1321,7 +1739,12 @@ export function CourseLookupPanel({
                 <div className="flex gap-1.5">
                   <button
                     type="button"
-                    onClick={() => setCustomOpen(false)}
+                    onClick={() => {
+                      setCustomOpen(false);
+                      if (isCustomBlockDragMode) {
+                        onToggleCustomBlockDragMode?.();
+                      }
+                    }}
                     className="rounded px-2 py-1 text-zinc-500 hover:bg-zinc-200 dark:hover:bg-zinc-800"
                   >
                     Cancel
@@ -1340,8 +1763,17 @@ export function CourseLookupPanel({
           <div className="max-h-[680px] flex-1 space-y-4 overflow-y-auto p-3">
             {plannedCourses.length === 0 && customBlocks.length === 0 ? (
               <div className="rounded-lg border border-dashed border-zinc-200 p-6 text-center text-xs text-zinc-500 dark:border-zinc-800">
-                No courses planned for {catalog.termLabel} yet. Search and add
-                courses in the <strong>Course Lookup &amp; Explore</strong> tab.
+                <p className="font-medium text-zinc-700 dark:text-zinc-300">
+                  Nothing here yet
+                </p>
+                <p className="mt-1">
+                  You don&apos;t have any courses planned for{" "}
+                  {catalog.termLabel}. Browse courses in the{" "}
+                  <strong>Course Lookup &amp; Explore</strong> tab
+                  {isEditMode
+                    ? " to add them to your schedule."
+                    : ", or enable Edit Schedule to start building your timetable."}
+                </p>
               </div>
             ) : (
               <>
@@ -1354,6 +1786,11 @@ export function CourseLookupPanel({
                       const course = courseMap.get(entry.courseCode);
                       const isExpanded = expandedCourses.has(entry.courseCode);
                       const style = THEME_STYLES[entry.color];
+                      const selectedRmp = getCourseCardRmp(
+                        course,
+                        entry,
+                        false,
+                      );
                       return (
                         <div
                           key={entry.courseCode}
@@ -1383,65 +1820,32 @@ export function CourseLookupPanel({
                               </p>
                             </div>
                             <div className="flex shrink-0 items-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  onToggleCourseVisibility(entry.courseCode)
-                                }
-                                className="rounded px-1.5 py-0.5 text-[11px] text-zinc-500 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                                title={entry.hidden ? "Show on grid" : "Hide from grid"}
-                              >
-                                {entry.hidden ? "Show" : "Hide"}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => onRemoveCourse(entry.courseCode)}
-                                className="rounded px-1.5 py-0.5 text-[11px] text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40"
-                              >
-                                &times;
-                              </button>
+                              {renderCourseVisibilityButton(entry)}
+                              {isEditMode && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    onRemoveCourse(entry.courseCode)
+                                  }
+                                  className="rounded px-1.5 py-0.5 text-[11px] text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/40"
+                                >
+                                  &times;
+                                </button>
+                              )}
                             </div>
                           </div>
 
                           {/* Component summary pills */}
                           {course && (
                             <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                              {course.requiredComponents.map((comp) => {
-                                const crn = entry.selectedCrns[comp];
-                                const sec = crn
-                                  ? course.sections.find((s) => s.crn === crn)
-                                  : undefined;
-                                return (
-                                  <button
-                                    key={comp}
-                                    type="button"
-                                    onClick={() => {
-                                      setActiveCompTab((p) => ({
-                                        ...p,
-                                        [entry.courseCode]: comp,
-                                      }));
-                                      setExpandedCourses((p) =>
-                                        new Set(p).add(entry.courseCode),
-                                      );
-                                    }}
-                                    className={`rounded border px-2 py-0.5 text-[10.5px] font-medium ${
-                                      sec
-                                        ? "border-zinc-300 bg-zinc-50 text-zinc-800 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
-                                        : "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-800 dark:bg-amber-950/60 dark:text-amber-300"
-                                    }`}
-                                  >
-                                    {comp}:{" "}
-                                    {sec
-                                      ? sec.isAsync
-                                        ? `CRN ${sec.crn} (Async)`
-                                        : `CRN ${sec.crn}${sec.weekPattern !== "both" ? ` ${sec.weekPattern === "week1" ? "W1" : "W2"}` : ""}`
-                                      : "Pick section"}
-                                  </button>
-                                );
-                              })}
+                              {renderComponentSummaryPills(
+                                course,
+                                entry,
+                                isExpanded,
+                              )}
 
                               <div className="ml-auto flex items-center gap-2">
-                                {onChangeGridSectionPicker &&
+                                {onChangeGridSectionPickers &&
                                   course.requiredComponents.length > 0 && (
                                     <button
                                       type="button"
@@ -1449,14 +1853,17 @@ export function CourseLookupPanel({
                                         toggleGridPickerForCourse(course)
                                       }
                                       className={`rounded px-1.5 py-0.5 text-[10.5px] font-medium transition ${
-                                        gridSectionPicker?.courseCode ===
-                                        entry.courseCode
+                                        gridSectionPickers.some(
+                                          (t) =>
+                                            t.courseCode === entry.courseCode,
+                                        )
                                           ? "bg-emerald-600 text-white hover:bg-emerald-700"
                                           : "text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-950/50"
                                       }`}
                                     >
-                                      {gridSectionPicker?.courseCode ===
-                                      entry.courseCode
+                                      {gridSectionPickers.some(
+                                        (t) => t.courseCode === entry.courseCode,
+                                      )
                                         ? "Showing on Grid"
                                         : "See on Grid"}
                                     </button>
@@ -1468,13 +1875,18 @@ export function CourseLookupPanel({
                                   }
                                   className="text-[11px] font-medium text-blue-600 hover:underline dark:text-blue-400"
                                 >
-                                  {isExpanded ? "Done" : "Choose Times"}
+                                  {isExpanded
+                                    ? "Done"
+                                    : isEditMode
+                                      ? "Choose Times"
+                                      : "Sections"}
                                 </button>
+                                {showRmp && <RmpStarBadge rmp={selectedRmp} />}
                               </div>
                             </div>
                           )}
 
-                          {isExpanded && (
+                          {isEditMode && isExpanded && (
                             <div className="mt-2 flex items-center gap-1">
                               <span className="text-[10px] text-zinc-500">
                                 Color:
@@ -1516,10 +1928,17 @@ export function CourseLookupPanel({
                     {exploringOnly.map((entry) => {
                       const course = courseMap.get(entry.courseCode);
                       const isExpanded = expandedCourses.has(entry.courseCode);
+                      const selectedRmp = getCourseCardRmp(
+                        course,
+                        entry,
+                        false,
+                      );
                       return (
                         <div
                           key={entry.courseCode}
-                          className="rounded-xl border border-dashed border-amber-300 bg-amber-50/30 p-3 dark:border-amber-800/80 dark:bg-amber-950/20"
+                          className={`rounded-xl border border-dashed border-amber-300 bg-amber-50/30 p-3 dark:border-amber-800/80 dark:bg-amber-950/20 ${
+                            entry.hidden ? "opacity-60" : ""
+                          }`}
                         >
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
@@ -1531,62 +1950,44 @@ export function CourseLookupPanel({
                               </p>
                             </div>
                             <div className="flex shrink-0 items-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  onSetCourseMode(entry.courseCode, "planned")
-                                }
-                                className="rounded bg-blue-600 px-2 py-0.5 text-[10.5px] font-medium text-white hover:bg-blue-700"
-                              >
-                                Add Officially
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => onRemoveCourse(entry.courseCode)}
-                                className="rounded px-1.5 py-0.5 text-[11px] text-rose-600 hover:bg-rose-50 dark:text-rose-400"
-                              >
-                                &times;
-                              </button>
+                              {renderCourseVisibilityButton(entry)}
+                              {isEditMode && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      onSetCourseMode(
+                                        entry.courseCode,
+                                        "planned",
+                                      )
+                                    }
+                                    className="rounded bg-blue-600 px-2 py-0.5 text-[10.5px] font-medium text-white hover:bg-blue-700"
+                                  >
+                                    Add Officially
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      onRemoveCourse(entry.courseCode)
+                                    }
+                                    className="rounded px-1.5 py-0.5 text-[11px] text-rose-600 hover:bg-rose-50 dark:text-rose-400"
+                                  >
+                                    &times;
+                                  </button>
+                                </>
+                              )}
                             </div>
                           </div>
 
                           {course && (
                             <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                              {course.requiredComponents.map((comp) => {
-                                const crn = entry.selectedCrns[comp];
-                                const sec = crn
-                                  ? course.sections.find((s) => s.crn === crn)
-                                  : undefined;
-                                return (
-                                  <button
-                                    key={comp}
-                                    type="button"
-                                    onClick={() => {
-                                      setActiveCompTab((p) => ({
-                                        ...p,
-                                        [entry.courseCode]: comp,
-                                      }));
-                                      setExpandedCourses((p) =>
-                                        new Set(p).add(entry.courseCode),
-                                      );
-                                    }}
-                                    className={`rounded border px-2 py-0.5 text-[10.5px] font-medium ${
-                                      sec
-                                        ? "border-amber-200 bg-white text-zinc-700 dark:border-amber-800 dark:bg-zinc-900 dark:text-zinc-300"
-                                        : "border-amber-400 bg-amber-100/70 text-amber-900 dark:border-amber-700 dark:bg-amber-950/70 dark:text-amber-200"
-                                    }`}
-                                  >
-                                    {comp}:{" "}
-                                    {sec
-                                      ? sec.isAsync
-                                        ? `CRN ${sec.crn} (Async)`
-                                        : `CRN ${sec.crn}${sec.weekPattern !== "both" ? ` ${sec.weekPattern === "week1" ? "W1" : "W2"}` : ""}`
-                                      : "Pick section"}
-                                  </button>
-                                );
-                              })}
+                              {renderComponentSummaryPills(
+                                course,
+                                entry,
+                                isExpanded,
+                              )}
                               <div className="ml-auto flex items-center gap-2">
-                                {onChangeGridSectionPicker &&
+                                {onChangeGridSectionPickers &&
                                   course.requiredComponents.length > 0 && (
                                     <button
                                       type="button"
@@ -1594,14 +1995,17 @@ export function CourseLookupPanel({
                                         toggleGridPickerForCourse(course)
                                       }
                                       className={`rounded px-1.5 py-0.5 text-[10.5px] font-medium transition ${
-                                        gridSectionPicker?.courseCode ===
-                                        entry.courseCode
+                                        gridSectionPickers.some(
+                                          (t) =>
+                                            t.courseCode === entry.courseCode,
+                                        )
                                           ? "bg-emerald-600 text-white hover:bg-emerald-700"
                                           : "text-emerald-700 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-950/50"
                                       }`}
                                     >
-                                      {gridSectionPicker?.courseCode ===
-                                      entry.courseCode
+                                      {gridSectionPickers.some(
+                                        (t) => t.courseCode === entry.courseCode,
+                                      )
                                         ? "Showing on Grid"
                                         : "See on Grid"}
                                     </button>
@@ -1613,8 +2017,13 @@ export function CourseLookupPanel({
                                   }
                                   className="text-[11px] font-medium text-blue-600 hover:underline dark:text-blue-400"
                                 >
-                                  {isExpanded ? "Done" : "Choose Times"}
+                                  {isExpanded
+                                    ? "Done"
+                                    : isEditMode
+                                      ? "Choose Times"
+                                      : "Sections"}
                                 </button>
+                                {showRmp && <RmpStarBadge rmp={selectedRmp} />}
                               </div>
                             </div>
                           )}
@@ -1647,13 +2056,15 @@ export function CourseLookupPanel({
                             –{formatTimeDisplay(b.endTime)})
                           </span>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => onRemoveCustomBlock(b.id)}
-                          className="text-rose-600 hover:underline"
-                        >
-                          Remove
-                        </button>
+                        {isEditMode && (
+                          <button
+                            type="button"
+                            onClick={() => onRemoveCustomBlock(b.id)}
+                            className="text-rose-600 hover:underline"
+                          >
+                            Remove
+                          </button>
+                        )}
                       </div>
                     ))}
                   </div>
