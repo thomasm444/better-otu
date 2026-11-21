@@ -111,6 +111,7 @@ export function CampusMapView() {
   const [currentMode, setCurrentMode] = useState<"availability" | "floors">("availability");
   const [currentWeekStart, setCurrentWeekStart] = useState<string | null>(null);
   const [currentFloor, setCurrentFloor] = useState<string>("ALL");
+  const [focusedBuilding, setFocusedBuilding] = useState<string>("ALL");
   const [activeVenue, setActiveVenue] = useState<VenueKey>("north");
   const [currentDay, setCurrentDay] = useState<number>(1);
   const [currentSlotStart, setCurrentSlotStart] = useState<number>(720); // 12:00 PM
@@ -150,6 +151,8 @@ export function CampusMapView() {
 
   // Leaflet Floating Floor Control Portal Container
   const [floorControlEl, setFloorControlEl] = useState<HTMLDivElement | null>(null);
+  const [mapReady, setMapReady] = useState<boolean>(false);
+  const [pendingBuildingZoom, setPendingBuildingZoom] = useState<string | null>(null);
 
   // Map & Cache references
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
@@ -219,6 +222,12 @@ export function CampusMapView() {
       const venueParam = params.get("venue")?.toLowerCase();
       if (venueParam === "north" || venueParam === "downtown" || venueParam === "whitby") {
         setActiveVenue(venueParam);
+      }
+
+      const buildingParam = params.get("building")?.trim().toUpperCase();
+      if (buildingParam) {
+        setFocusedBuilding(buildingParam);
+        setPendingBuildingZoom(buildingParam);
       }
     });
 
@@ -383,10 +392,12 @@ export function CampusMapView() {
       }
 
       mapInstanceRef.current = map;
+      setMapReady(true);
     });
 
     return () => {
       isMounted = false;
+      setMapReady(false);
       setFloorControlEl(null);
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove();
@@ -563,6 +574,64 @@ export function CampusMapView() {
       // Fallback: ignore invalid bounds
     }
   }, []);
+
+  // Zoom map to all polygon features in a building code (e.g. LIB, SHA, SIR, ERC, BIT, SCI, ENG, UP, U5)
+  const zoomToBuilding = useCallback(
+    (buildingCode: string) => {
+      const map = mapInstanceRef.current;
+      const L = leafletRef.current;
+      if (!map || !L || !data || buildingCode === "ALL") return;
+
+      const target = buildingCode.toUpperCase();
+      const matching = data.features.filter(
+        (f) =>
+          f.geometry &&
+          (f.geometry.type as string) !== "Point" &&
+          f.properties?.building?.toUpperCase() === target,
+      );
+      if (matching.length === 0) return;
+
+      try {
+        const tempLayer = L.geoJSON(matching as unknown as GeoJSON.GeoJsonObject);
+        const bounds = tempLayer.getBounds();
+        if (bounds.isValid()) {
+          const isMobile = window.innerWidth < 1024;
+          map.flyToBounds(bounds, {
+            paddingTopLeft: isMobile ? [24, 48] : [380, 70],
+            paddingBottomRight: isMobile ? [24, 240] : [90, 140],
+            maxZoom: 19,
+            duration: 0.75,
+          });
+        }
+      } catch {
+        // Ignore invalid bounds
+      }
+    },
+    [data],
+  );
+
+  // Distinct building codes for the Building Focus filter dropdown
+  const buildingOptions = useMemo(() => {
+    const priority = ["LIB", "SHA", "SIR", "ERC", "BIT", "SCI", "ENG", "UP", "U5"];
+    const found = new Set<string>(priority);
+    if (data?.features) {
+      for (const f of data.features) {
+        const b = f.properties?.building?.trim().toUpperCase();
+        if (b) found.add(b);
+      }
+    }
+    const rest = Array.from(found)
+      .filter((b) => !priority.includes(b))
+      .sort();
+    return [...priority.filter((b) => found.has(b)), ...rest];
+  }, [data]);
+
+  // Zoom to ?building=CODE once map and features are ready
+  useEffect(() => {
+    if (!mapReady || !data || !pendingBuildingZoom) return;
+    zoomToBuilding(pendingBuildingZoom);
+    queueMicrotask(() => setPendingBuildingZoom(null));
+  }, [mapReady, data, pendingBuildingZoom, zoomToBuilding]);
 
   // Open Weekly Schedule modal
   const openWeeklySchedule = useCallback((feat: CampusMapFeature, subRoom?: string) => {
@@ -743,6 +812,19 @@ export function CampusMapView() {
       style: (geoFeature) => {
         const feature = geoFeature as unknown as CampusMapFeature;
         const fl = feature.properties?.floor || "";
+        const featureBuilding = feature.properties?.building?.trim().toUpperCase() || "";
+
+        // When focusing on a specific building, keep non-matching visible rooms in a darker grey
+        // than unscheduled rooms (#94a3b8) so both remain clearly distinguishable.
+        if (focusedBuilding !== "ALL" && featureBuilding !== focusedBuilding) {
+          return {
+            fillColor: "#334155",
+            color: "#1e293b",
+            weight: 1,
+            opacity: 0.75,
+            fillOpacity: 0.55,
+          };
+        }
 
         if (currentMode === "floors") {
           const col = FLOOR_COLORS[fl] || "#64748b";
@@ -866,6 +948,7 @@ export function CampusMapView() {
     data,
     weekData,
     currentFloor,
+    focusedBuilding,
     currentMode,
     currentDay,
     currentSlotStart,
@@ -1148,6 +1231,39 @@ export function CampusMapView() {
                   {VENUES[key].label}
                 </button>
               ))}
+            </div>
+
+            {/* Building Focus Filter */}
+            <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-100 px-2 py-0.5 dark:border-zinc-700 dark:bg-zinc-800">
+              <label
+                htmlFor="building-focus-select"
+                className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400"
+              >
+                Building
+              </label>
+              <select
+                id="building-focus-select"
+                value={focusedBuilding}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setFocusedBuilding(next);
+                  if (next !== "ALL") {
+                    zoomToBuilding(next);
+                  }
+                  setIsMobileControlsOpen(false);
+                }}
+                aria-label="Focus on building"
+                className="bg-transparent py-0.5 text-[11px] font-semibold text-slate-800 focus:outline-none dark:text-zinc-100"
+              >
+                <option value="ALL" className="dark:bg-zinc-900">
+                  All Buildings
+                </option>
+                {buildingOptions.map((bldg) => (
+                  <option key={bldg} value={bldg} className="dark:bg-zinc-900">
+                    {bldg}
+                  </option>
+                ))}
+              </select>
             </div>
 
             {/* Unmapped Spaces Button */}
@@ -1455,6 +1571,24 @@ export function CampusMapView() {
                   {showUnscheduled ? stats.grayCount.toLocaleString() : "Hidden"}
                 </span>
               </button>
+
+              {focusedBuilding !== "ALL" && (
+                <div className="mt-0.5 flex items-center justify-between gap-2 rounded-lg border border-slate-700/40 bg-slate-800/10 px-2 py-1 dark:border-zinc-700 dark:bg-zinc-800/70">
+                  <span className="flex min-w-0 items-center gap-2">
+                    <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-slate-700 ring-1 ring-slate-900/30" />
+                    <span className="truncate text-[11px] font-semibold text-slate-700 dark:text-zinc-200">
+                      Outside {focusedBuilding}
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setFocusedBuilding("ALL")}
+                    className="shrink-0 text-[10px] font-bold text-sky-700 hover:underline dark:text-sky-400"
+                  >
+                    Clear
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-1 pt-0.5">

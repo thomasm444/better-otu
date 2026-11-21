@@ -29,10 +29,9 @@ export const CREDIT_CAP = 15;
 export function normalizeTermSlots(
   slots: (string | null)[],
 ): (string | null)[] {
-  const next = slots.slice(0, MAX_SLOTS_PER_TERM);
-  while (next.length > SLOTS_PER_TERM && next[next.length - 1] === null) {
-    next.pop();
-  }
+  const next: (string | null)[] = slots
+    .filter((s): s is string => Boolean(s))
+    .slice(0, MAX_SLOTS_PER_TERM);
   while (next.length < SLOTS_PER_TERM) {
     next.push(null);
   }
@@ -73,6 +72,8 @@ export function buildEquivalenceMap(
       addEdge(course.code, former);
     }
   }
+  // CSCI 1050U (2026-27+) replaced CSCI 2050U (2025-26 and earlier)
+  addEdge("CSCI 1050U", "CSCI 2050U");
 
   // Compute connected components so transitive renames are all linked
   const equiv = new Map<string, Set<string>>();
@@ -438,12 +439,37 @@ export function placedCodes(terms: PlannerTerm[]): Set<string> {
   return set;
 }
 
+export function transferCodes(customs: Map<string, CustomCourse>): Set<string> {
+  const set = new Set<string>();
+  for (const course of customs.values()) {
+    if (course.transfer) set.add(course.code);
+  }
+  return set;
+}
+
+export function earnedCodes(
+  terms: PlannerTerm[],
+  customs: Map<string, CustomCourse>,
+): Set<string> {
+  const set = placedCodes(terms);
+  for (const code of transferCodes(customs)) {
+    set.add(code);
+  }
+  return set;
+}
+
 export function completedBefore(
   terms: PlannerTerm[],
   termIndex: number,
   equivMap?: Map<string, Set<string>>,
+  customs?: Map<string, CustomCourse>,
 ): Set<string> {
   const set = new Set<string>();
+  if (customs) {
+    for (const code of transferCodes(customs)) {
+      set.add(code);
+    }
+  }
   for (let i = 0; i < termIndex; i++) {
     for (const code of terms[i].slots) {
       if (code) set.add(code);
@@ -452,17 +478,73 @@ export function completedBefore(
   return expandWithEquivalents(set, equivMap);
 }
 
+export type PrereqEvalContext = {
+  termYear?: number;
+  priorCredits?: number;
+};
+
+function evalConditionText(
+  text: string,
+  ctx?: PrereqEvalContext,
+): boolean | null {
+  if (!ctx) return null;
+  const low = text.toLowerCase();
+
+  // Keep high-school and co-op / registration gates as informational
+  if (
+    /grade\s+12|mhf4u|mcv4u|sph4u|sch4u|eng4u|co-?op\s+program|registration\s+in/i.test(
+      low,
+    )
+  ) {
+    return null;
+  }
+
+  if (
+    /(?:fourth|4th)[- ]year\s+standing|at\s+least\s+three\s+years/i.test(low)
+  ) {
+    if (ctx.termYear === undefined && ctx.priorCredits === undefined) return null;
+    return (ctx.termYear ?? 0) >= 4 || (ctx.priorCredits ?? 0) >= 84;
+  }
+  if (
+    /(?:third|3rd)[- ]year\s+standing|at\s+least\s+two\s+years/i.test(low)
+  ) {
+    if (ctx.termYear === undefined && ctx.priorCredits === undefined) return null;
+    return (ctx.termYear ?? 0) >= 3 || (ctx.priorCredits ?? 0) >= 54;
+  }
+  if (
+    /(?:second|2nd)[- ]year\s+standing|at\s+least\s+one\s+year/i.test(low)
+  ) {
+    if (ctx.termYear === undefined && ctx.priorCredits === undefined) return null;
+    return (ctx.termYear ?? 0) >= 2 || (ctx.priorCredits ?? 0) >= 24;
+  }
+
+  const crMatch = low.match(
+    /(?:completed?|completion\s+of)\s+(?:at\s+least\s+|a\s+minimum\s+of\s+)?(\d+)\s+credit\s+hours?/i,
+  );
+  if (crMatch && ctx.priorCredits !== undefined) {
+    return ctx.priorCredits >= Number(crMatch[1]);
+  }
+
+  // Assume clear academic standing
+  if (/(?:be\s+in\s+)?clear\s+(?:academic\s+)?standing/i.test(low)) {
+    return true;
+  }
+
+  return null;
+}
+
 export function evalPrereq(
   node: PrereqAstNode | null | undefined,
   completed: Set<string>,
+  ctx?: PrereqEvalContext,
 ): boolean | null {
   if (!node) return true;
   if (node.type === "course") return completed.has(node.code);
-  if (node.type === "condition") return null;
+  if (node.type === "condition") return evalConditionText(node.text ?? "", ctx);
   if (node.type === "and") {
     let unknown = false;
     for (const item of node.items) {
-      const res = evalPrereq(item, completed);
+      const res = evalPrereq(item, completed, ctx);
       if (res === false) return false;
       if (res === null) unknown = true;
     }
@@ -471,7 +553,7 @@ export function evalPrereq(
   if (node.type === "or") {
     let unknown = false;
     for (const item of node.items) {
-      const res = evalPrereq(item, completed);
+      const res = evalPrereq(item, completed, ctx);
       if (res === true) return true;
       if (res === null) unknown = true;
     }
@@ -529,8 +611,20 @@ export function prereqFlag(
   const ast = course.prerequisite_ast;
   if (!ast) return null;
 
-  const completed = completedBefore(terms, termIndex, options?.equivMap);
-  const result = evalPrereq(ast, completed);
+  const completed = completedBefore(terms, termIndex, options?.equivMap, customs);
+  let priorCredits = 0;
+  for (const c of customs.values()) {
+    if (c.transfer) priorCredits += Number(c.credit_hours) || 0;
+  }
+  for (let i = 0; i < termIndex; i++) {
+    for (const slotCode of terms[i].slots) {
+      if (slotCode) priorCredits += creditsOf(slotCode, catalogMap, customs);
+    }
+  }
+  const result = evalPrereq(ast, completed, {
+    termYear: term?.year,
+    priorCredits,
+  });
   if (result === true) return null;
   if (result === null) {
     return {
@@ -684,13 +778,18 @@ function distributeYear(
           eligible.push({ index, code });
           return;
         }
-        if (
-          offeringsMap.size > 0 &&
-          !offeredIn(code, term.season, offeringsMap, customs, {
+        const isOfferedTerm =
+          offeringsMap.size === 0 ||
+          offeredIn(code, term.season, offeringsMap, customs, {
             calendarYear: calYear,
             context,
-          })
-        ) {
+          }) ||
+          (code === "CSCI 1050U" &&
+            offeredIn("CSCI 2050U", term.season, offeringsMap, customs, {
+              calendarYear: calYear,
+              context,
+            }));
+        if (!isOfferedTerm) {
           return;
         }
         const deps = catalogMap.get(code)?.prerequisite_codes ?? [];
@@ -894,13 +993,24 @@ export function matchesBucket(
   match: ElectiveMatch | null | undefined,
 ): boolean {
   if (!course || !match) return true;
-  if (match.subjects && !match.subjects.includes(course.subject ?? "")) {
+  if ((course.credit_hours || 0) <= 0) return false;
+  if (
+    course.subject === "SCCO" &&
+    (match.faculties ?? []).includes("Faculty of Science")
+  ) {
+    return false;
+  }
+  if (
+    (match.subjects ?? []).length > 0 &&
+    !(match.subjects ?? []).includes(course.subject ?? "")
+  ) {
     return false;
   }
   if ((match.exclude_subjects ?? []).includes(course.subject ?? "")) {
     return false;
   }
-  const faculty = course.faculty ?? null;
+  const faculty =
+    course.code === "SUST 1001U" ? "Faculty of Science" : (course.faculty ?? null);
   if (
     (match.faculties ?? []).length > 0 &&
     (!faculty || !(match.faculties ?? []).includes(faculty))
@@ -977,16 +1087,33 @@ export function buildModel(program: DegreeProgramDetail): RequirementModel {
         continue;
       }
       if (group.kind === "choose") {
-        const key = `${group.required || 1}:${group.items.map(firstCode).join("|")}`;
+        const electiveItem = group.items.find(
+          (item): item is Extract<ProgramItemNode, { type: "elective" }> =>
+            item.type === "elective",
+        );
+        const key = `${group.required || 1}:${group.items.map(firstCode).join("|")}:${electiveItem?.text ?? ""}`;
         if (seenChoose.has(key)) continue;
         const options = group.items.flatMap((item) => nodeCodes(item));
-        if (!options.length) continue;
+        if (!options.length && !electiveItem) continue;
         seenChoose.add(key);
         chooseGroups.push({
           id: group.group_id,
           required: group.required || 1,
           options,
           label: group.label || `Choose ${group.required || 1}`,
+          elective: electiveItem
+            ? {
+                credits: electiveItem.credit_hours || 3,
+                match: electiveItem.match ?? {},
+                label:
+                  electiveItem.match?.subjects?.includes("CSCI") &&
+                  electiveItem.match?.min_level === 3000
+                    ? "Senior CS elective (3000/4000-level)"
+                    : electiveItem.match?.label ||
+                      electiveItem.text ||
+                      "Elective",
+              }
+            : null,
         });
         continue;
       }
@@ -1014,12 +1141,251 @@ export function buildModel(program: DegreeProgramDetail): RequirementModel {
     }
   }
 
+  const breadthList = [...breadth.values()].sort((a, b) => b.credits - a.credits);
+  const bucketList = [...buckets.values()]
+    .filter((b) => {
+      if (breadthList.length === 0) return true;
+      const m = b.match ?? {};
+      const isGenericAny =
+        !m.subjects?.length &&
+        !m.exclude_subjects?.length &&
+        !m.faculties?.length &&
+        !m.exclude_faculties?.length &&
+        !m.min_level &&
+        !m.max_level;
+      return !isGenericAny;
+    })
+    .sort((a, b) => b.credits - a.credits);
+
   return {
     required: [...required.values()],
     chooseGroups,
-    buckets: [...buckets.values()].sort((a, b) => b.credits - a.credits),
-    breadth: [...breadth.values()].sort((a, b) => b.credits - a.credits),
+    buckets: bucketList,
+    breadth: breadthList,
   };
+}
+
+export function evaluatePlanRequirements(
+  placed: Set<string>,
+  model: RequirementModel,
+  catalogMap: Map<string, CatalogCourse>,
+  customs: Map<string, CustomCourse>,
+  equivMap?: Map<string, Set<string>>,
+): {
+  freeCodes: string[];
+  chooseHits: Map<string, number>;
+} {
+  const consumed = expandWithEquivalents(
+    new Set(model.required.map((r) => r.code)),
+    equivMap,
+  );
+  const chooseHits = new Map<string, number>();
+
+  const consumeCode = (code: string) => {
+    consumed.add(code);
+    const peers = equivMap?.get(code);
+    if (peers) {
+      for (const peer of peers) consumed.add(peer);
+    }
+  };
+
+  // First pass: satisfy chooseGroups using their explicit course options
+  for (const group of model.chooseGroups) {
+    let hits = 0;
+    for (const opt of group.options) {
+      if (hits >= group.required) break;
+      const matched = findEquivalentInSet(opt, placed, equivMap);
+      if (matched && !consumed.has(matched)) {
+        consumeCode(matched);
+        hits += 1;
+      }
+    }
+    chooseHits.set(group.id, hits);
+  }
+
+  // Second pass: for chooseGroups with an elective fallback (e.g. "CSCI 4410U or Senior CS elective")
+  for (const group of model.chooseGroups) {
+    if (!group.elective) continue;
+    let hits = chooseHits.get(group.id) ?? 0;
+    if (hits >= group.required) continue;
+    for (const code of placed) {
+      if (hits >= group.required) break;
+      if (consumed.has(code)) continue;
+      const course = courseOf(code, catalogMap, customs);
+      if (matchesBucket(course, group.elective.match)) {
+        consumeCode(code);
+        hits += 1;
+      }
+    }
+    chooseHits.set(group.id, hits);
+  }
+
+  const freeCodes = [...placed].filter(
+    (code) => !consumed.has(code) && creditsOf(code, catalogMap, customs) > 0,
+  );
+  return { freeCodes, chooseHits };
+}
+
+export function assignBreadthBuckets(
+  freeCodes: string[],
+  breadth: ElectiveBucket[],
+  catalogMap: Map<string, CatalogCourse>,
+  customs: Map<string, CustomCourse>,
+  overrides: Record<string, string> = {},
+): {
+  assignedByBucket: Map<string, string[]>;
+  assignedBucketOf: Map<string, string>;
+} {
+  const assignedByBucket = new Map<string, string[]>();
+  const bucketCredits = new Map<string, number>();
+  const assignedBucketOf = new Map<string, string>();
+  for (const b of breadth) {
+    assignedByBucket.set(b.key, []);
+    bucketCredits.set(b.key, 0);
+  }
+  if (breadth.length === 0) {
+    return { assignedByBucket, assignedBucketOf };
+  }
+
+  const bucketByKey = new Map(breadth.map((b) => [b.key, b]));
+  const remaining: string[] = [];
+
+  // 1. Apply user overrides first
+  for (const code of freeCodes) {
+    const targetKey = overrides[code];
+    const targetBucket = targetKey ? bucketByKey.get(targetKey) : undefined;
+    const course = courseOf(code, catalogMap, customs);
+    if (targetBucket && matchesBucket(course, targetBucket.match)) {
+      assignedByBucket.get(targetKey)!.push(code);
+      bucketCredits.set(
+        targetKey,
+        (bucketCredits.get(targetKey) ?? 0) +
+          creditsOf(code, catalogMap, customs),
+      );
+      assignedBucketOf.set(code, targetKey);
+    } else {
+      remaining.push(code);
+    }
+  }
+
+  // 2. Auto-assign remaining courses: fewest eligible buckets first,
+  //    then sub-requirement matches first so BUSI/COMM land in Outside Science.
+  const eligibleOf = new Map<string, ElectiveBucket[]>();
+  for (const code of remaining) {
+    const course = courseOf(code, catalogMap, customs);
+    eligibleOf.set(
+      code,
+      breadth.filter((b) => matchesBucket(course, b.match)),
+    );
+  }
+
+  const ordered = remaining.slice().sort((a, b) => {
+    const ea = eligibleOf.get(a) ?? [];
+    const eb = eligibleOf.get(b) ?? [];
+    if (ea.length !== eb.length) return ea.length - eb.length;
+    const ca = courseOf(a, catalogMap, customs);
+    const cb = courseOf(b, catalogMap, customs);
+    const subA = ea.some((bk) => bk.subs.some((s) => matchesBucket(ca, s.match)))
+      ? 0
+      : 1;
+    const subB = eb.some((bk) => bk.subs.some((s) => matchesBucket(cb, s.match)))
+      ? 0
+      : 1;
+    if (subA !== subB) return subA - subB;
+    // Place specific-subject/faculty courses before general transfer credits
+    const genA = ca && "transfer" in ca && ca.transfer && !ca.subject ? 1 : 0;
+    const genB = cb && "transfer" in cb && cb.transfer && !cb.subject ? 1 : 0;
+    return genA - genB;
+  });
+
+  for (const code of ordered) {
+    const eligible = eligibleOf.get(code) ?? [];
+    if (eligible.length === 0) continue;
+    const cr = creditsOf(code, catalogMap, customs);
+    const course = courseOf(code, catalogMap, customs);
+
+    // Prefer a bucket with remaining capacity (and matching sub-requirement first);
+    // if all eligible buckets are already full, fall back to the broadest eligible
+    // bucket (e.g. General electives) so every elective still appears in the sidebar.
+    const target =
+      eligible.find(
+        (b) =>
+          (bucketCredits.get(b.key) ?? 0) < b.credits &&
+          b.subs.some((s) => matchesBucket(course, s.match)),
+      ) ??
+      eligible.find((b) => (bucketCredits.get(b.key) ?? 0) < b.credits) ??
+      eligible.find(
+        (b) =>
+          !(b.match.faculties ?? []).length &&
+          !(b.match.exclude_faculties ?? []).length &&
+          !(b.match.subjects ?? []).length,
+      ) ??
+      eligible[eligible.length - 1];
+
+    assignedByBucket.get(target.key)!.push(code);
+    bucketCredits.set(target.key, (bucketCredits.get(target.key) ?? 0) + cr);
+    assignedBucketOf.set(code, target.key);
+  }
+
+  return { assignedByBucket, assignedBucketOf };
+}
+
+export type DegreeCreditRules = {
+  maxFirstYearCredits: number | null;
+  min4000CsciCredits: number | null;
+};
+
+export function extractDegreeRules(
+  program: DegreeProgramDetail,
+): DegreeCreditRules {
+  let maxFirstYearCredits: number | null = null;
+  let min4000CsciCredits: number | null = null;
+
+  for (const sec of program.sections) {
+    const text = [sec.title, sec.description].filter(Boolean).join(" ");
+    if (!text) continue;
+    if (maxFirstYearCredits === null) {
+      const m = text.match(
+        /no\s+more\s+than\s+(\d+)\s+credit\s+hours?\s+may\s+be\s+taken\s+at\s+the\s+(?:first[- ]year|1000)[- ]level/i,
+      );
+      if (m) maxFirstYearCredits = Number(m[1]);
+    }
+    if (min4000CsciCredits === null) {
+      const m = text.match(
+        /at\s+least\s+(\d+)\s+credit\s+hours?\s+in\s+Computer\s+Science\s+(?:courses\s+)?at\s+the\s+4000[- ]?level/i,
+      );
+      if (m) min4000CsciCredits = Number(m[1]);
+    }
+  }
+
+  return { maxFirstYearCredits, min4000CsciCredits };
+}
+
+export function evaluateDegreeRules(
+  program: DegreeProgramDetail,
+  placed: Set<string>,
+  catalogMap: Map<string, CatalogCourse>,
+  customs: Map<string, CustomCourse>,
+): {
+  rules: DegreeCreditRules;
+  firstYearCredits: number;
+  csci4000Credits: number;
+} {
+  const rules = extractDegreeRules(program);
+  let firstYearCredits = 0;
+  let csci4000Credits = 0;
+
+  for (const code of placed) {
+    const course = courseOf(code, catalogMap, customs);
+    if (!course) continue;
+    const cr = Number(course.credit_hours) || 0;
+    if (course.level === 1000) firstYearCredits += cr;
+    if (course.subject === "CSCI" && (course.level || 0) >= 4000) {
+      csci4000Credits += cr;
+    }
+  }
+
+  return { rules, firstYearCredits, csci4000Credits };
 }
 
 export function findBucket(
@@ -1105,7 +1471,7 @@ export function collectWarnings(
   },
 ): PlannerWarning[] {
   const out: PlannerWarning[] = [];
-  const placed = placedCodes(terms);
+  const placed = earnedCodes(terms, customs);
   const startYear = options?.startYear ?? DEFAULT_START_YEAR;
   const context = options?.context;
   const planMismatches = options?.planMismatches;

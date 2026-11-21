@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
+import { connection } from "next/server";
 import { Suspense } from "react";
 
-import { getProgramSummaries } from "@/lib/degree-queries";
 import { MIN_PLAN_CATALOG_YEAR } from "@/lib/degree-planner";
+import { getProgramSummaries } from "@/lib/degree-queries";
 import {
   getCurrentAcademicStartYear,
   getSafeNextPath,
@@ -17,22 +18,8 @@ import { OnboardingFlow } from "./_components/onboarding-flow";
 export const metadata: Metadata = {
   title: "Get Started | Better OTU",
   description:
-    "Tell Better OTU your year of study, degree program, and optional minor to prefill your Degree Planner.",
+    "Select your year of study, degree program, and optional minor to prefill your Degree Planner.",
 };
-
-function extractFirstName(
-  fullName: string | null | undefined,
-  email: string | null | undefined,
-): string | null {
-  if (fullName?.trim()) {
-    return fullName.trim().split(/\s+/)[0] ?? null;
-  }
-  if (email) {
-    const local = email.split("@")[0]?.split(/[._-]/)[0];
-    if (local) return local.charAt(0).toUpperCase() + local.slice(1);
-  }
-  return null;
-}
 
 export default function OnboardingPage({
   searchParams,
@@ -59,6 +46,8 @@ async function OnboardingContent({
 }: {
   searchParams: Promise<RawSearchParams>;
 }) {
+  await connection();
+
   const params = await searchParams;
   const rawNext = Array.isArray(params.next) ? params.next[0] : params.next;
   const nextPath = getSafeNextPath(rawNext);
@@ -89,15 +78,6 @@ async function OnboardingContent({
     ...new Set(programs.map((p) => p.catalog_year).filter(Boolean)),
   ].sort((a, b) => b.localeCompare(a));
 
-  const metadataName =
-    (user.user_metadata?.full_name as string | undefined) ??
-    (user.user_metadata?.name as string | undefined) ??
-    null;
-
-  const firstName = extractFirstName(
-    initialProfile?.full_name ?? metadataName,
-    user.email,
-  );
   const currentAcademicStartYear = getCurrentAcademicStartYear();
 
   return (
@@ -105,7 +85,6 @@ async function OnboardingContent({
       programs={programs}
       availableCatalogYears={availableCatalogYears}
       initialProfile={initialProfile}
-      firstName={firstName}
       nextPath={nextPath}
       currentAcademicStartYear={currentAcademicStartYear}
     />
@@ -114,24 +93,31 @@ async function OnboardingContent({
 
 function OnboardingSkeleton() {
   return (
-    <div className="mx-auto flex w-full max-w-2xl flex-1 flex-col justify-center px-5 py-10">
-      <div className="rounded-2xl border border-[#BFD7F2]/80 bg-white p-7 shadow-lg shadow-[#003C71]/5 dark:border-slate-800 dark:bg-slate-900">
-        <div className="flex items-center justify-between gap-4">
-          <div className="h-8 w-28 animate-pulse rounded-lg bg-slate-200/80 dark:bg-slate-800" />
-          <div className="h-7 w-40 animate-pulse rounded-full bg-slate-200/80 dark:bg-slate-800" />
-          <div className="h-7 w-20 animate-pulse rounded-lg bg-slate-200/80 dark:bg-slate-800" />
+    <div className="mx-auto flex w-full max-w-lg flex-1 flex-col justify-center px-4 py-10 sm:px-6">
+      <div className="rounded-2xl border border-[#BFD7F2]/80 bg-white px-6 py-6 shadow-[0_12px_36px_-18px_rgba(0,60,113,0.16)] sm:px-8 sm:py-7 dark:border-slate-800 dark:bg-slate-900">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="h-6 w-12 animate-pulse rounded-md bg-slate-200/80 dark:bg-slate-800" />
+            <div className="h-6 w-12 animate-pulse rounded-md bg-slate-200/80 dark:bg-slate-800" />
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="h-1.5 w-5 animate-pulse rounded-full bg-slate-200/80 dark:bg-slate-800" />
+            <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-slate-200/80 dark:bg-slate-800" />
+            <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-slate-200/80 dark:bg-slate-800" />
+          </div>
         </div>
-        <div className="mt-8 space-y-3">
-          <div className="h-8 w-64 animate-pulse rounded-lg bg-slate-200/80 dark:bg-slate-800" />
-          <div className="h-4 w-80 animate-pulse rounded-lg bg-slate-200/80 dark:bg-slate-800" />
-        </div>
-        <div className="mt-7 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="mt-7 h-7 w-56 animate-pulse rounded-lg bg-slate-200/80 dark:bg-slate-800" />
+        <div className="mt-6 space-y-2.5">
           {[1, 2, 3, 4].map((item) => (
             <div
               key={item}
-              className="h-24 animate-pulse rounded-2xl bg-slate-100 dark:bg-slate-800/80"
+              className="h-12 animate-pulse rounded-xl bg-slate-100 dark:bg-slate-800/80"
             />
           ))}
+        </div>
+        <div className="mt-8 flex items-center justify-between">
+          <div className="h-10 w-10 animate-pulse rounded-full bg-slate-100 dark:bg-slate-800" />
+          <div className="h-10 w-10 animate-pulse rounded-full bg-slate-200/80 dark:bg-slate-800" />
         </div>
       </div>
     </div>

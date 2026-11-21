@@ -151,6 +151,40 @@ export function ScheduleContainer({
   const [gridSectionPickers, setGridSectionPickers] = useState<
     SectionGridPickerTarget[]
   >([]);
+
+  type HistorySnapshot = {
+    plannedCourses: PlannedCourseEntry[];
+    gridSectionPickers: SectionGridPickerTarget[];
+    customBlocks: ScheduleBlock[];
+    blockedSlots: BlockedTimeSlot[];
+  };
+  const plannedCoursesRef = useRef<PlannedCourseEntry[]>(plannedCourses);
+  const gridSectionPickersRef = useRef<SectionGridPickerTarget[]>(gridSectionPickers);
+  const customBlocksRef = useRef<ScheduleBlock[]>(customBlocks);
+  const blockedSlotsRef = useRef<BlockedTimeSlot[]>(blockedSlots);
+  const undoStackRef = useRef<HistorySnapshot[]>([]);
+  const redoStackRef = useRef<HistorySnapshot[]>([]);
+
+  useEffect(() => {
+    plannedCoursesRef.current = plannedCourses;
+  }, [plannedCourses]);
+
+  useEffect(() => {
+    gridSectionPickersRef.current = gridSectionPickers;
+  }, [gridSectionPickers]);
+
+  useEffect(() => {
+    customBlocksRef.current = customBlocks;
+  }, [customBlocks]);
+
+  useEffect(() => {
+    blockedSlotsRef.current = blockedSlots;
+  }, [blockedSlots]);
+
+  useEffect(() => {
+    undoStackRef.current = [];
+    redoStackRef.current = [];
+  }, [activeTerm]);
   const [hiddenUnplannedCodes, setHiddenUnplannedCodes] = useState<Set<string>>(
     () => new Set(),
   );
@@ -217,7 +251,7 @@ export function ScheduleContainer({
       }
     };
     document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
+  return () => document.removeEventListener("mousedown", onDown);
   }, [blockMenuOpen]);
 
   // Close degree-plan import popover on outside click
@@ -232,7 +266,7 @@ export function ScheduleContainer({
       }
     };
     document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
+  return () => document.removeEventListener("mousedown", onDown);
   }, [importMenuOpen]);
 
   // Auth listener
@@ -252,7 +286,7 @@ export function ScheduleContainer({
       setAuthReady(true);
     });
 
-    return () => {
+  return () => {
       active = false;
       subscription.unsubscribe();
     };
@@ -529,7 +563,7 @@ export function ScheduleContainer({
 
     void hydrate();
 
-    return () => {
+  return () => {
       cancelled = true;
     };
   }, [activeTerm, authReady, user, terms, supabase, courseMap]);
@@ -574,7 +608,7 @@ export function ScheduleContainer({
         });
     }, 600);
 
-    return () => {
+  return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
   }, [
@@ -861,6 +895,19 @@ export function ScheduleContainer({
     setSyncStatus(user ? "saving" : "local");
   }, [user]);
 
+  const pushUndoSnapshot = useCallback(() => {
+    undoStackRef.current.push({
+      plannedCourses: plannedCoursesRef.current,
+      gridSectionPickers: gridSectionPickersRef.current,
+      customBlocks: customBlocksRef.current,
+      blockedSlots: blockedSlotsRef.current,
+    });
+    if (undoStackRef.current.length > 50) {
+      undoStackRef.current.shift();
+    }
+    redoStackRef.current = [];
+  }, []);
+
   const handleAddCourse = useCallback(
     (
       courseCode: string,
@@ -875,6 +922,7 @@ export function ScheduleContainer({
         ...(preferredCrns ?? {}),
       };
 
+      pushUndoSnapshot();
       markDirty();
       clearUnplannedHidden(courseCode);
       setPlannedCourses((prev) => {
@@ -911,24 +959,32 @@ export function ScheduleContainer({
           : `Added ${courseCode} to your schedule`,
       );
     },
-    [courseMap, markDirty, clearUnplannedHidden, showToast],
+    [courseMap, markDirty, pushUndoSnapshot, clearUnplannedHidden, showToast],
   );
 
   const handleSelectSection = useCallback(
     (courseCode: string, component: CourseComponentType, crn: string) => {
       if (!isEditMode) return;
+      pushUndoSnapshot();
       markDirty();
       clearUnplannedHidden(courseCode);
       setHoverPreviewSection(null);
       setPlannedCourses((prev) => {
         const existing = prev.find((entry) => entry.courseCode === courseCode);
         if (existing) {
+          const isAlreadySelected = existing.selectedCrns[component] === crn;
+          const nextCrns = { ...existing.selectedCrns };
+          if (isAlreadySelected) {
+            delete nextCrns[component];
+          } else {
+            nextCrns[component] = crn;
+          }
           return prev.map((entry) =>
             entry.courseCode === courseCode
               ? {
                   ...entry,
                   hidden: false,
-                  selectedCrns: { ...entry.selectedCrns, [component]: crn },
+                  selectedCrns: nextCrns,
                 }
               : entry,
           );
@@ -948,11 +1004,12 @@ export function ScheduleContainer({
         ];
       });
     },
-    [courseMap, isEditMode, markDirty, clearUnplannedHidden],
+    [courseMap, isEditMode, markDirty, pushUndoSnapshot, clearUnplannedHidden],
   );
 
   const handleRemoveCourse = useCallback(
     (courseCode: string) => {
+      pushUndoSnapshot();
       markDirty();
       setGridSectionPickers((prev) =>
         prev.filter((t) => t.courseCode !== courseCode),
@@ -962,8 +1019,52 @@ export function ScheduleContainer({
         prev.filter((entry) => entry.courseCode !== courseCode),
       );
     },
-    [markDirty, clearUnplannedHidden],
+    [markDirty, pushUndoSnapshot, clearUnplannedHidden],
   );
+
+  useEffect(() => {
+    if (!isEditMode) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      const mod = e.ctrlKey || e.metaKey;
+      if (!mod || e.altKey || e.key.toLowerCase() !== "z") return;
+
+      if (e.shiftKey) {
+        const next = redoStackRef.current.pop();
+        if (!next) return;
+        e.preventDefault();
+        undoStackRef.current.push({
+          plannedCourses: plannedCoursesRef.current,
+          gridSectionPickers: gridSectionPickersRef.current,
+          customBlocks: customBlocksRef.current,
+          blockedSlots: blockedSlotsRef.current,
+        });
+        markDirty();
+        setPlannedCourses(next.plannedCourses);
+        setGridSectionPickers(next.gridSectionPickers);
+        setCustomBlocks(next.customBlocks);
+        setBlockedSlots(next.blockedSlots);
+        showToast("Redid schedule change");
+      } else {
+        const prev = undoStackRef.current.pop();
+        if (!prev) return;
+        e.preventDefault();
+        redoStackRef.current.push({
+          plannedCourses: plannedCoursesRef.current,
+          gridSectionPickers: gridSectionPickersRef.current,
+          customBlocks: customBlocksRef.current,
+          blockedSlots: blockedSlotsRef.current,
+        });
+        markDirty();
+        setPlannedCourses(prev.plannedCourses);
+        setGridSectionPickers(prev.gridSectionPickers);
+        setCustomBlocks(prev.customBlocks);
+        setBlockedSlots(prev.blockedSlots);
+        showToast("Undid last change");
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+  return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isEditMode, markDirty, showToast]);
 
   const handleSetCourseMode = useCallback(
     (courseCode: string, mode: "planned" | "exploring") => {
@@ -1044,6 +1145,7 @@ export function ScheduleContainer({
       );
       return;
     }
+    pushUndoSnapshot();
     markDirty();
     setPlannedCourses((prev) =>
       prev.map((entry) =>
@@ -1053,7 +1155,15 @@ export function ScheduleContainer({
       ),
     );
     showToast("Updated Lecture/Lab/Tutorial sections with zero conflicts.");
-  }, [plannedCourses, courseMap, blockedSlots, customBlocks, markDirty, showToast]);
+  }, [
+    plannedCourses,
+    courseMap,
+    blockedSlots,
+    customBlocks,
+    pushUndoSnapshot,
+    markDirty,
+    showToast,
+  ]);
 
   const handleRemoveBlockFromGrid = useCallback(
     (block: ScheduleBlock) => {
@@ -1189,6 +1299,7 @@ export function ScheduleContainer({
   );
 
   const handleClearSchedule = useCallback(() => {
+    pushUndoSnapshot();
     markDirty();
     setPlannedCourses([]);
     setCustomBlocks([]);
@@ -1199,9 +1310,10 @@ export function ScheduleContainer({
     setDismissedTempCompleted(new Set());
     setTermPlannedCodesMap((prev) => ({ ...prev, [activeTerm]: [] }));
     showToast("Cleared schedule and blocked times.");
-  }, [activeTerm, markDirty, showToast]);
+  }, [activeTerm, pushUndoSnapshot, markDirty, showToast]);
 
   const handleClearPlanner = useCallback(() => {
+    pushUndoSnapshot();
     markDirty();
     setPlannedCourses([]);
     setCustomBlocks([]);
@@ -1211,7 +1323,7 @@ export function ScheduleContainer({
     setDismissedTempCompleted(new Set());
     setTermPlannedCodesMap((prev) => ({ ...prev, [activeTerm]: [] }));
     showToast("Cleared all courses from planner.");
-  }, [activeTerm, markDirty, showToast]);
+  }, [activeTerm, pushUndoSnapshot, markDirty, showToast]);
 
   const handleImportFromDegreePlan = (plan: DegreePlanImportOption) => {
     setImportMenuOpen(false);
@@ -1298,6 +1410,26 @@ export function ScheduleContainer({
     [markDirty, temporaryPriorCourseCodes],
   );
 
+  const hasBiweeklyClass = useMemo(() => {
+    if (annotatedBlocks.some((b) => b.weekPattern !== "both")) return true;
+    for (const target of gridSectionPickers) {
+      const course = courseMap.get(target.courseCode);
+      if (!course) continue;
+      if (
+        course.sections.some((sec) =>
+          sec.meetings.some((m) => m.weekPattern !== "both"),
+        )
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }, [annotatedBlocks, gridSectionPickers, courseMap]);
+
+  const effectiveViewMode: ScheduleViewMode = hasBiweeklyClass
+    ? viewMode
+    : "combined";
+
   return (
     <div className="space-y-4">
       {/* Mobile 2-Tab Bar (< lg) */}
@@ -1352,29 +1484,31 @@ export function ScheduleContainer({
                 ))}
               </select>
 
-              {/* View Mode Switcher (Combined, Week 1, Week 2 only) */}
-              <div className="inline-flex rounded-lg border border-zinc-300 bg-white p-0.5 text-xs font-medium dark:border-zinc-700 dark:bg-zinc-800">
-                {(
-                  [
-                    { id: "combined", label: "Combined" },
-                    { id: "week1", label: "Week 1" },
-                    { id: "week2", label: "Week 2" },
-                  ] as const
-                ).map((mode) => (
-                  <button
-                    key={mode.id}
-                    type="button"
-                    onClick={() => setViewMode(mode.id)}
-                    className={`rounded-md px-2.5 py-1 transition ${
-                      viewMode === mode.id
-                        ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-                        : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200"
-                    }`}
-                  >
-                    {mode.label}
-                  </button>
-                ))}
-              </div>
+              {/* View Mode Switcher (Combined, Week 1, Week 2 only when biweekly classes exist) */}
+              {hasBiweeklyClass && (
+                <div className="inline-flex rounded-lg border border-zinc-300 bg-white p-0.5 text-xs font-medium dark:border-zinc-700 dark:bg-zinc-800">
+                  {(
+                    [
+                      { id: "combined", label: "Combined" },
+                      { id: "week1", label: "Week 1" },
+                      { id: "week2", label: "Week 2" },
+                    ] as const
+                  ).map((mode) => (
+                    <button
+                      key={mode.id}
+                      type="button"
+                      onClick={() => setViewMode(mode.id)}
+                      className={`rounded-md px-2.5 py-1 transition ${
+                        viewMode === mode.id
+                          ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+                          : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200"
+                      }`}
+                    >
+                      {mode.label}
+                    </button>
+                  ))}
+                </div>
+              )}
 
               {/* RateMyProfessors Star Toggle (off by default) */}
               <button
@@ -1408,7 +1542,7 @@ export function ScheduleContainer({
               </button>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-2">
               {/* Edit Schedule Toggle */}
               <button
                 type="button"
@@ -1433,8 +1567,19 @@ export function ScheduleContainer({
                 <span>{isEditMode ? "✓ Done Editing" : "Edit Schedule"}</span>
               </button>
 
-              {isEditMode && (
-                <>
+              {/* Calendar Export */}
+              <button
+                type="button"
+                onClick={() => setIsCalendarModalOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white shadow-xs transition hover:bg-blue-700"
+              >
+                <span>Export / Sync Calendar</span>
+              </button>
+            </div>
+          </div>
+
+          {isEditMode && (
+            <div className="flex flex-wrap items-center justify-end gap-2">
                   {/* Block Times Menu */}
                   <div className="relative" ref={blockMenuRef}>
                     <button
@@ -1691,19 +1836,8 @@ export function ScheduleContainer({
                   >
                     Clear Schedule
                   </button>
-                </>
-              )}
-
-              {/* Calendar Export */}
-              <button
-                type="button"
-                onClick={() => setIsCalendarModalOpen(true)}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white shadow-xs transition hover:bg-blue-700"
-              >
-                <span>Export / Sync Calendar</span>
-              </button>
             </div>
-          </div>
+          )}
 
           {/* Status & Summary Strip */}
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-200/80 bg-white px-3.5 py-2 text-xs dark:border-zinc-800 dark:bg-zinc-950">
@@ -1724,6 +1858,25 @@ export function ScheduleContainer({
                   {conflictCount === 1 ? "block" : "blocks"}
                 </span>
               )}
+              {(() => {
+                const fullCourses = [
+                  ...new Set(
+                    annotatedBlocks
+                      .filter((b) => b.isFull)
+                      .map((b) => `${b.courseCode}${b.type ? ` (${b.type})` : ""}`),
+                  ),
+                ];
+                if (fullCourses.length === 0) return null;
+  return (
+                  <span
+                    title={`0 seats available: ${fullCourses.join(", ")}`}
+                    className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800 dark:border-amber-800 dark:bg-amber-950/60 dark:text-amber-300"
+                  >
+                    ⚠ {fullCourses.length}{" "}
+                    {fullCourses.length === 1 ? "class" : "classes"} may be full
+                  </span>
+                );
+              })()}
             </div>
 
             <div className="flex items-center gap-2 text-[11px] text-zinc-500">
@@ -1778,24 +1931,24 @@ export function ScheduleContainer({
 
           {/* Timetable Grid */}
           <WeekScheduleGrid
-            viewMode={viewMode}
+            viewMode={effectiveViewMode}
             title={
-              viewMode === "combined"
+              effectiveViewMode === "combined"
                 ? `${catalog.termLabel} Schedule`
-                : viewMode === "week1"
+                : effectiveViewMode === "week1"
                   ? `${catalog.termLabel} — Week 1`
                   : `${catalog.termLabel} — Week 2`
             }
             subtitle={
-              viewMode === "combined"
+              effectiveViewMode === "combined"
                 ? isEditMode
                   ? "Biweekly W1 (left) & W2 (right) side-by-side · Drag blocks to snap to other sections"
                   : "Biweekly W1 (left) and W2 (right) classes sit side-by-side"
-                : viewMode === "week1"
+                : effectiveViewMode === "week1"
                   ? "Odd Teaching Weeks"
                   : "Even Teaching Weeks"
             }
-            accentColor={viewMode === "combined" ? "purple": viewMode === "week2" ? "red" : "blue"
+            accentColor={effectiveViewMode === "combined" ? "purple": effectiveViewMode === "week2" ? "red" : "blue"
             }
             courses={annotatedBlocks}
             blockedSlots={blockedSlots}

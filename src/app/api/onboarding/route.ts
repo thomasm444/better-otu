@@ -236,7 +236,8 @@ export async function POST(request: Request) {
     degree_program_id: degreeProgram?.program_id ?? null,
     has_minor: hasMinor,
     minor_program_id: minorProgram?.program_id ?? null,
-    onboarding_completed_at: nowIso,
+    onboarding_completed_at:
+      existingProfile?.onboarding_completed_at ?? nowIso,
     onboarding_skipped_at: null,
   };
 

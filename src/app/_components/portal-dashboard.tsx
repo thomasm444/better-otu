@@ -5,10 +5,27 @@ import Link from "next/link";
 import React, { useEffect, useState } from "react";
 
 import { AuthButton } from "@/components/auth-button";
+import { ClassicPortalView } from "@/app/_components/classic-portal-view";
+import {
+  GoogleLogoIcon,
+  GoogleMeetIcon,
+  GoogleServiceIcon,
+  GoogleShortcutsModal,
+} from "@/app/_components/google-shortcuts-modal";
+import {
+  EMPTY_GOOGLE_STATE,
+  GOOGLE_SERVICES,
+  loadGoogleShortcutsState,
+  normalizeMeetUrl,
+  saveGoogleShortcutsState,
+  type GoogleShortcutsState,
+} from "@/lib/google-shortcuts";
 import {
   DAY_SHORT,
   formatShortIsoDate,
+  getDayOfWeekMon1,
   getDefaultCampusMapState,
+  getTorontoNowParts,
 } from "@/lib/campus-map-dates";
 import {
   fetchLatestDegreePlan,
@@ -29,8 +46,13 @@ import {
 } from "@/lib/student-courses";
 import { createClient } from "@/lib/supabase/client";
 
+type HomeTheme = "stacked" | "classic";
+
+const HOME_THEME_STORAGE_KEY = "better-otu:home-theme:v1";
+
 interface PortalDashboardProps {
   termLabel: string;
+  footer?: React.ReactNode;
 }
 
 interface CustomShortcut {
@@ -40,6 +62,8 @@ interface CustomShortcut {
 }
 
 const CUSTOM_SHORTCUTS_STORAGE_KEY = "better-otu:portal-custom-shortcuts:v1";
+
+const QUICK_BUILDINGS = ["SHA", "SIR", "ERC", "BIT", "SCI", "ENG", "UP", "U5"] as const;
 
 const DEFAULT_SHORTCUTS = [
   {
@@ -140,28 +164,38 @@ function computeDegreeProgress(plan: DegreePlanRecord | null): {
   };
 }
 
-export function PortalDashboard({ termLabel }: PortalDashboardProps) {
+export function PortalDashboard({ termLabel, footer }: PortalDashboardProps) {
+  const [homeTheme, setHomeTheme] = useState<HomeTheme>("stacked");
   const [firstName, setFirstName] = useState<string | null>(null);
   const [profile, setProfile] = useState<StudentProfileWithPrograms | null>(null);
   const [academicStartYear, setAcademicStartYear] = useState<number>(DEFAULT_START_YEAR);
   const [savedCourseCodes, setSavedCourseCodes] = useState<string[]>([]);
   const [latestPlan, setLatestPlan] = useState<DegreePlanRecord | null>(null);
 
-  // Live available rooms for Card 3 right compartment
+  // Live available rooms for Card 3 right compartment & Classic Campus Pulse
   const [nowLabel, setNowLabel] = useState<string | null>(null);
-  const [freeRoomsSample, setFreeRoomsSample] = useState<string[]>([]);
+  const [liveTimeLabel, setLiveTimeLabel] = useState<string | null>(null);
   const [freeRoomsTotal, setFreeRoomsTotal] = useState<number | null>(null);
-  const [roomsLoading, setRoomsLoading] = useState<boolean>(true);
 
-  // Custom circular shortcuts for "+" button
+  // Custom circular shortcuts for "+" button & Google Workspace shortcuts
   const [customShortcuts, setCustomShortcuts] = useState<CustomShortcut[]>([]);
   const [isAddShortcutOpen, setIsAddShortcutOpen] = useState(false);
   const [shortcutName, setShortcutName] = useState("");
   const [shortcutUrl, setShortcutUrl] = useState("");
+  const [googleShortcuts, setGoogleShortcuts] = useState<GoogleShortcutsState>(EMPTY_GOOGLE_STATE);
+  const [isGoogleModalOpen, setIsGoogleModalOpen] = useState(false);
 
-  // Load saved custom shortcuts from localStorage
+  // Load saved home theme, custom shortcuts, and Google shortcuts from localStorage
   useEffect(() => {
     try {
+      const savedTheme = window.localStorage.getItem(HOME_THEME_STORAGE_KEY);
+      if (savedTheme === "stacked" || savedTheme === "classic") {
+        queueMicrotask(() => setHomeTheme(savedTheme));
+      }
+      const loadedGoogle = loadGoogleShortcutsState();
+      if (loadedGoogle.accounts.length > 0 || loadedGoogle.meetLinks.length > 0) {
+        queueMicrotask(() => setGoogleShortcuts(loadedGoogle));
+      }
       const raw = window.localStorage.getItem(CUSTOM_SHORTCUTS_STORAGE_KEY);
       if (!raw) return;
       const parsed = JSON.parse(raw) as CustomShortcut[];
@@ -181,6 +215,20 @@ export function PortalDashboard({ termLabel }: PortalDashboardProps) {
     } catch {
       // Ignore storage errors
     }
+  }, []);
+
+  // Client-side Toronto clock for Classic Campus Pulse strip (Next 16 prerender-safe)
+  useEffect(() => {
+    const updateClock = () => {
+      const { date, minutes } = getTorontoNowParts(new Date());
+      const dayIdx = getDayOfWeekMon1(date);
+      setLiveTimeLabel(
+        `${DAY_SHORT[dayIdx]}, ${formatShortIsoDate(date)} · ${formatMinutesToClock(minutes)}`,
+      );
+    };
+    queueMicrotask(updateClock);
+    const timer = window.setInterval(updateClock, 30_000);
+    return () => window.clearInterval(timer);
   }, []);
 
   // Load signed-in user profile, saved schedule courses, and latest degree plan
@@ -291,24 +339,10 @@ export function PortalDashboard({ termLabel }: PortalDashboardProps) {
           }
         }
 
-        // Pick a fresh randomized selection of currently free rooms on each visit/refresh
-        for (let i = freeNow.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          const tmp = freeNow[i];
-          freeNow[i] = freeNow[j];
-          freeNow[j] = tmp;
-        }
-
         setFreeRoomsTotal(freeNow.length);
-        setFreeRoomsSample(freeNow.slice(0, 6));
       } catch {
         if (!controller.signal.aborted) {
           setFreeRoomsTotal(null);
-          setFreeRoomsSample([]);
-        }
-      } finally {
-        if (!controller.signal.aborted) {
-          setRoomsLoading(false);
         }
       }
     }
@@ -354,6 +388,95 @@ export function PortalDashboard({ termLabel }: PortalDashboardProps) {
     }
   };
 
+  const handleSaveGoogleShortcuts = (next: GoogleShortcutsState) => {
+    setGoogleShortcuts(next);
+    saveGoogleShortcutsState(next);
+  };
+
+  const handleRemoveMeetShortcut = (meetId: string) => {
+    const next: GoogleShortcutsState = {
+      ...googleShortcuts,
+      meetLinks: googleShortcuts.meetLinks.filter((m) => m.id !== meetId),
+    };
+    setGoogleShortcuts(next);
+    saveGoogleShortcutsState(next);
+  };
+
+  const handleSelectTheme = (nextTheme: HomeTheme) => {
+    setHomeTheme(nextTheme);
+    try {
+      window.localStorage.setItem(HOME_THEME_STORAGE_KEY, nextTheme);
+    } catch {
+      // Ignore storage errors
+    }
+  };
+
+  const themeToggle = (
+    <div
+      role="radiogroup"
+      aria-label="Home layout theme"
+      className="inline-flex items-center rounded-xl border border-slate-200/90 bg-white/90 p-0.5 shadow-2xs dark:border-slate-800 dark:bg-slate-900/90"
+    >
+      <button
+        type="button"
+        role="radio"
+        aria-checked={homeTheme === "stacked"}
+        onClick={() => handleSelectTheme("stacked")}
+        className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-[#003C71]/40 focus-visible:outline-none ${
+          homeTheme === "stacked"
+            ? "bg-[#003C71] text-white dark:bg-sky-500 dark:text-slate-950"
+            : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
+        }`}
+      >
+        <svg
+          className="h-3.5 w-3.5"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <rect width="18" height="5" x="3" y="4" rx="1.5" />
+          <rect width="18" height="5" x="3" y="10" rx="1.5" />
+          <rect width="18" height="5" x="3" y="16" rx="1.5" />
+        </svg>
+        <span>Stacked</span>
+      </button>
+
+      <button
+        type="button"
+        role="radio"
+        aria-checked={homeTheme === "classic"}
+        onClick={() => handleSelectTheme("classic")}
+        className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-[#003C71]/40 focus-visible:outline-none ${
+          homeTheme === "classic"
+            ? "bg-[#003C71] text-white dark:bg-sky-500 dark:text-slate-950"
+            : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
+        }`}
+      >
+        <svg
+          className="h-3.5 w-3.5"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <rect width="5" height="7" x="3" y="4" rx="1" />
+          <rect width="5" height="7" x="9.5" y="4" rx="1" />
+          <rect width="5" height="7" x="16" y="4" rx="1" />
+          <rect width="10" height="7" x="3" y="13" rx="1" />
+          <rect width="6" height="7" x="15" y="13" rx="1" />
+        </svg>
+        <span>Classic</span>
+      </button>
+    </div>
+  );
+
   const degreeProgress = computeDegreeProgress(latestPlan);
   const visibleCourseCodes = savedCourseCodes.slice(0, 4);
   const yearLabel = formatYearOfStudy(profile?.year_of_study);
@@ -369,54 +492,109 @@ export function PortalDashboard({ termLabel }: PortalDashboardProps) {
   );
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-5 py-7 sm:px-8 sm:py-10">
-      {/* Minimal Top Header: Greeting on left, Auth profile on right */}
-      <header className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl dark:text-white">
-            {firstName ? `Welcome back, ${firstName}` : "Welcome to Better OTU"}
-          </h1>
-          <p className="mt-0.5 text-xs font-medium text-slate-500 dark:text-slate-400">
-            Ontario Tech University &bull; {termLabel}
-          </p>
-          {hasAcademicSummary ? (
-            <p className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-slate-600 dark:text-slate-300">
-              <span className="font-medium text-[#003C71] dark:text-sky-300">
-                {[
-                  yearLabel,
-                  profileDegreeName,
-                  profileMinorName ? `Minor: ${profileMinorName}` : null,
-                ]
-                  .filter(Boolean)
-                  .join(" · ")}
-              </span>
-              <span
-                aria-hidden="true"
-                className="text-slate-300 dark:text-slate-600"
-              >
-                &bull;
-              </span>
-              <Link
-                href="/onboarding"
-                className="font-medium text-slate-500 underline decoration-slate-300 underline-offset-2 transition-colors hover:text-[#003C71] dark:text-slate-400 dark:decoration-slate-700 dark:hover:text-sky-300"
-              >
-                Edit
-              </Link>
-            </p>
-          ) : profile?.onboarding_skipped_at ? (
-            <p className="mt-1 text-xs">
-              <Link
-                href="/onboarding"
-                className="font-medium text-[#003C71] underline decoration-[#9AC0EB] underline-offset-2 transition-colors hover:text-[#002D56] dark:text-sky-300 dark:decoration-sky-700 dark:hover:text-sky-200"
-              >
-                Personalize your year &amp; degree &rarr;
-              </Link>
-            </p>
-          ) : null}
-        </div>
+    <main
+      className={`relative flex min-h-screen flex-1 flex-col overflow-x-clip font-sans text-slate-900 dark:text-slate-100 ${
+        homeTheme === "classic"
+          ? "bg-[#F8FAFC] dark:bg-[#070B14]"
+          : "bg-[#F8FAFD] dark:bg-[#090D16]"
+      }`}
+    >
+      {homeTheme === "classic" ? (
+        <>
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 bg-[radial-gradient(rgba(0,60,113,0.1)_1px,transparent_1px)] [background-size:22px_22px] [mask-image:radial-gradient(ellipse_85%_75%_at_50%_15%,#000_60%,transparent_100%)] dark:bg-[radial-gradient(rgba(148,163,184,0.14)_1px,transparent_1px)]"
+          />
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-x-0 top-0 h-[440px] bg-[radial-gradient(ellipse_62%_58%_at_22%_-6%,rgba(0,60,113,0.15),transparent_70%),radial-gradient(ellipse_50%_46%_at_84%_-8%,rgba(231,93,42,0.13),transparent_68%)] dark:bg-[radial-gradient(ellipse_62%_58%_at_22%_-6%,rgba(0,60,113,0.45),transparent_70%),radial-gradient(ellipse_50%_46%_at_84%_-8%,rgba(231,93,42,0.22),transparent_68%)]"
+          />
+        </>
+      ) : (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 top-0 h-80 bg-[radial-gradient(ellipse_70%_60%_at_50%_-10%,rgba(191,219,254,0.45),transparent_72%)] dark:bg-[radial-gradient(ellipse_70%_60%_at_50%_-10%,rgba(0,60,113,0.35),transparent_72%)]"
+        />
+      )}
 
-        <AuthButton />
-      </header>
+      <div className="relative z-10 flex flex-1 flex-col">
+        <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-5 py-7 sm:px-8 sm:py-10">
+          {/* Shared Top Header: Greeting on left, Account & Theme switch on top-right */}
+          <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+            <div className="min-w-0 flex-1">
+              <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl dark:text-white">
+                {firstName ? `Welcome back, ${firstName}` : "Welcome to Better OTU"}
+              </h1>
+              <p className="mt-0.5 text-xs font-medium text-slate-500 dark:text-slate-400">
+                Ontario Tech University &bull; {termLabel}
+              </p>
+              {hasAcademicSummary ? (
+                <p className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-slate-600 dark:text-slate-300">
+                  <span className="font-medium text-[#003C71] dark:text-sky-300">
+                    {[
+                      yearLabel,
+                      profileDegreeName,
+                      profileMinorName ? `Minor: ${profileMinorName}` : null,
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </span>
+                  <span
+                    aria-hidden="true"
+                    className="text-slate-300 dark:text-slate-600"
+                  >
+                    &bull;
+                  </span>
+                  <Link
+                    href="/profile"
+                    className="font-medium text-slate-500 underline decoration-slate-300 underline-offset-2 transition-colors hover:text-[#003C71] dark:text-slate-400 dark:decoration-slate-700 dark:hover:text-sky-300"
+                  >
+                    Edit
+                  </Link>
+                </p>
+              ) : profile?.onboarding_skipped_at ? (
+                <p className="mt-1 text-xs">
+                  <Link
+                    href="/onboarding"
+                    className="font-medium text-[#003C71] underline decoration-[#9AC0EB] underline-offset-2 transition-colors hover:text-[#002D56] dark:text-sky-300 dark:decoration-sky-700 dark:hover:text-sky-200"
+                  >
+                    Personalize your year &amp; degree &rarr;
+                  </Link>
+                </p>
+              ) : null}
+            </div>
+
+            <div className="flex shrink-0 flex-col items-end gap-2 self-end sm:self-auto">
+              <AuthButton />
+              {themeToggle}
+            </div>
+          </header>
+
+          {homeTheme === "classic" ? (
+            <ClassicPortalView
+              termLabel={termLabel}
+              profile={profile}
+              profileDegreeName={profileDegreeName}
+              profileMinorName={profileMinorName}
+              derivedProfileStartYear={derivedProfileStartYear}
+              savedCourseCodes={savedCourseCodes}
+              visibleCourseCodes={visibleCourseCodes}
+              degreeProgress={degreeProgress}
+              latestPlan={latestPlan}
+              nowLabel={nowLabel}
+              liveTimeLabel={liveTimeLabel}
+              freeRoomsTotal={freeRoomsTotal}
+              quickBuildings={QUICK_BUILDINGS}
+              defaultShortcuts={DEFAULT_SHORTCUTS}
+              googleShortcuts={googleShortcuts}
+              customShortcuts={customShortcuts}
+              onOpenAddShortcut={() => setIsAddShortcutOpen(true)}
+              onRemoveCustomShortcut={handleRemoveShortcut}
+              onOpenGoogleModal={() => setIsGoogleModalOpen(true)}
+              onRemoveMeetShortcut={handleRemoveMeetShortcut}
+            />
+          ) : (
+            <>
 
       {/* Main Centered Stack: 3 Horizontal Split Cards + 4 Circular Shortcuts */}
       <div className="mx-auto my-auto flex w-full max-w-3xl flex-col items-center py-8 sm:py-12">
@@ -569,11 +747,11 @@ export function PortalDashboard({ termLabel }: PortalDashboardProps) {
             </div>
           </Link>
 
-          {/* CARD 3: 3-Part Map Card (Map | Find Empty Study Spot Now | Live Free Rooms Pill) */}
+          {/* CARD 3: 3-Part Map Card (Map | Find Library Room | Building Free Rooms) */}
           <div className="flex flex-col overflow-hidden rounded-[26px] border border-[#BFD7F2] bg-[#DCEBFA]/75 shadow-[0_6px_24px_-12px_rgba(0,60,113,0.18)] transition-all duration-200 hover:border-[#003C71]/40 hover:shadow-[0_14px_32px_-14px_rgba(0,60,113,0.26)] sm:min-h-[134px] sm:flex-row dark:border-slate-700/80 dark:bg-slate-900/85 dark:hover:border-sky-400/50">
-            {/* Part 1 (Left): Map */}
+            {/* Part 1 (Left): Map (North Campus) */}
             <Link
-              href="/campus-map"
+              href="/campus-map?venue=north"
               className="group flex shrink-0 flex-col items-center justify-center border-b border-[#B7D1EE] px-5 py-5 text-center transition-colors hover:bg-white/40 sm:w-[27%] sm:border-b-0 sm:border-r dark:border-slate-700/80 dark:hover:bg-slate-800/60"
             >
               <div className="mb-1.5 flex h-9 w-9 items-center justify-center rounded-xl bg-white/80 text-emerald-700 shadow-2xs ring-1 ring-emerald-500/15 transition-transform duration-200 group-hover:scale-105 dark:bg-emerald-500/15 dark:text-emerald-300 dark:ring-emerald-400/20">
@@ -586,13 +764,13 @@ export function PortalDashboard({ termLabel }: PortalDashboardProps) {
                 Map
               </span>
               <span className="mt-0.5 text-[11px] font-medium text-slate-600 dark:text-slate-400">
-                All Campuses
+                North Campus
               </span>
             </Link>
 
-            {/* Part 2 (Middle): Find an empty study spot now */}
+            {/* Part 2 (Middle): Find a library room */}
             <Link
-              href="/campus-map?filter=available&now=1"
+              href="/campus-map?building=LIB&filter=available&now=1"
               className="group flex flex-1 flex-col items-center justify-center border-b border-[#B7D1EE] px-5 py-5 text-center transition-colors hover:bg-white/40 sm:border-b-0 dark:border-slate-700/80 dark:hover:bg-slate-800/60"
             >
               <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-[10px] font-bold text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300">
@@ -603,7 +781,7 @@ export function PortalDashboard({ termLabel }: PortalDashboardProps) {
                 Live Now
               </span>
               <p className="mt-2 text-sm font-bold leading-snug text-slate-900 group-hover:text-[#003C71] dark:text-white dark:group-hover:text-sky-300">
-                Find an empty study spot now
+                Find a library room
               </p>
               {nowLabel && (
                 <p className="mt-1 font-mono text-[11px] text-slate-600 dark:text-slate-400">
@@ -612,7 +790,7 @@ export function PortalDashboard({ termLabel }: PortalDashboardProps) {
               )}
             </Link>
 
-            {/* Part 3 (Right): Live Free Rooms Curved Pill Compartment */}
+            {/* Part 3 (Right): Building Free Rooms Curved Pill Compartment */}
             <div className="flex shrink-0 flex-col items-center justify-center bg-white/55 px-4 py-4 text-center sm:w-[37%] sm:rounded-l-[26px] sm:border-l sm:border-[#B7D1EE] dark:bg-slate-800/65 dark:sm:border-slate-700/80">
               <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-800 dark:text-slate-100">
                 <span>Free Rooms Right Now</span>
@@ -623,35 +801,17 @@ export function PortalDashboard({ termLabel }: PortalDashboardProps) {
                 )}
               </div>
 
-              {roomsLoading ? (
-                <div className="mt-2.5 flex flex-wrap justify-center gap-1.5">
-                  {[1, 2, 3, 4].map((n) => (
-                    <span
-                      key={n}
-                      className="h-6 w-14 animate-pulse rounded-full bg-slate-200/80 dark:bg-slate-700"
-                    />
-                  ))}
-                </div>
-              ) : freeRoomsSample.length > 0 ? (
-                <div className="mt-2 flex flex-wrap justify-center gap-1.5">
-                  {freeRoomsSample.map((roomCode) => (
-                    <Link
-                      key={roomCode}
-                      href={`/campus-map?q=${encodeURIComponent(roomCode)}`}
-                      className="rounded-full border border-emerald-200 bg-white px-2.5 py-0.5 font-mono text-[11px] font-semibold text-slate-800 shadow-2xs transition hover:border-emerald-500 hover:bg-emerald-50 hover:text-emerald-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-emerald-500 dark:hover:text-emerald-300"
-                    >
-                      {roomCode}
-                    </Link>
-                  ))}
-                </div>
-              ) : (
-                <Link
-                  href="/campus-map?filter=available&now=1"
-                  className="mt-2 text-xs font-semibold text-[#003C71] hover:underline dark:text-sky-300"
-                >
-                  View live rooms on map &rarr;
-                </Link>
-              )}
+              <div className="mt-2 flex flex-wrap justify-center gap-1.5">
+                {QUICK_BUILDINGS.map((bldg) => (
+                  <Link
+                    key={bldg}
+                    href={`/campus-map?building=${bldg}&filter=available&now=1`}
+                    className="rounded-full border border-emerald-200 bg-white px-2.5 py-0.5 font-mono text-[11px] font-semibold text-slate-800 shadow-2xs transition hover:border-emerald-500 hover:bg-emerald-50 hover:text-emerald-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-emerald-500 dark:hover:text-emerald-300"
+                  >
+                    {bldg}
+                  </Link>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -684,6 +844,71 @@ export function PortalDashboard({ termLabel }: PortalDashboardProps) {
             </a>
           ))}
 
+          {/* Google Workspace Service Shortcuts */}
+          {googleShortcuts.accounts.flatMap((acct) =>
+            GOOGLE_SERVICES.filter((svc) =>
+              acct.enabledServices.includes(svc.id),
+            ).map((svc) => {
+              const href = svc.buildUrl(acct.authIndex);
+              const showAccountTag = googleShortcuts.accounts.length > 1;
+              return (
+                <a
+                  key={`${acct.id}-${svc.id}`}
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={`${svc.label} — ${acct.label} (u/${acct.authIndex})`}
+                  className="group relative flex flex-col items-center gap-2"
+                >
+                  <span className="flex h-16 w-16 items-center justify-center rounded-full border border-[#BFD7F2] bg-white shadow-xs transition-all duration-200 group-hover:-translate-y-1 group-hover:border-[#003C71]/45 group-hover:shadow-md dark:border-slate-700 dark:bg-slate-900 dark:group-hover:border-sky-400/60">
+                    <GoogleServiceIcon serviceId={svc.id} className="h-7 w-7" />
+                  </span>
+                  {showAccountTag && (
+                    <span className="absolute -bottom-0.5 right-0 rounded-full border border-slate-200 bg-white px-1.5 py-0.2 text-[9px] font-bold text-slate-700 shadow-2xs dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
+                      {acct.label}
+                    </span>
+                  )}
+                  <span className="max-w-[76px] truncate text-xs font-semibold text-slate-700 transition-colors group-hover:text-[#003C71] dark:text-slate-300 dark:group-hover:text-sky-300">
+                    {svc.shortLabel}
+                  </span>
+                </a>
+              );
+            }),
+          )}
+
+          {/* Google Meet Links (?authuser=x) */}
+          {googleShortcuts.meetLinks.map((meet) => {
+            const acct = googleShortcuts.accounts.find(
+              (a) => a.id === meet.accountId,
+            );
+            const href = normalizeMeetUrl(meet.url, acct?.authIndex ?? 0);
+            return (
+              <div key={meet.id} className="group relative flex flex-col items-center gap-2">
+                <a
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={`${meet.label} (${href})`}
+                  className="flex h-16 w-16 items-center justify-center rounded-full border border-emerald-200 bg-white shadow-xs transition-all duration-200 hover:-translate-y-1 hover:border-emerald-500/60 hover:shadow-md dark:border-slate-700 dark:bg-slate-900 dark:hover:border-emerald-400/60"
+                >
+                  <GoogleMeetIcon className="h-7 w-7" />
+                </a>
+                <button
+                  type="button"
+                  onClick={() => handleRemoveMeetShortcut(meet.id)}
+                  aria-label={`Remove ${meet.label} Meet shortcut`}
+                  title="Remove Meet shortcut"
+                  className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 bg-white text-[11px] font-bold text-slate-500 opacity-0 shadow-xs transition hover:bg-rose-50 hover:text-rose-600 group-hover:opacity-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                >
+                  &times;
+                </button>
+                <span className="max-w-[76px] truncate text-xs font-semibold text-slate-700 dark:text-slate-300">
+                  {meet.label}
+                </span>
+              </div>
+            );
+          })}
+
           {/* User-Added Custom Circular Shortcuts */}
           {customShortcuts.map((item) => (
             <div key={item.id} className="group relative flex flex-col items-center gap-2">
@@ -711,6 +936,25 @@ export function PortalDashboard({ termLabel }: PortalDashboardProps) {
             </div>
           ))}
 
+          {/* Google Setup / Manage Circle */}
+          <button
+            type="button"
+            onClick={() => setIsGoogleModalOpen(true)}
+            title={
+              googleShortcuts.accounts.length > 0
+                ? "Manage Google accounts, services & Meet links"
+                : "Add Google school & personal shortcuts"
+            }
+            className="group flex flex-col items-center gap-2"
+          >
+            <span className="flex h-16 w-16 items-center justify-center rounded-full border border-dashed border-[#9AC0EB] bg-white/85 shadow-xs transition-all duration-200 group-hover:-translate-y-1 group-hover:border-[#003C71]/50 group-hover:bg-white group-hover:shadow-md dark:border-slate-700 dark:bg-slate-900/80 dark:group-hover:border-sky-400/60 dark:group-hover:bg-slate-800">
+              <GoogleLogoIcon className="h-6.5 w-6.5" />
+            </span>
+            <span className="text-xs font-semibold text-slate-600 transition-colors group-hover:text-[#003C71] dark:text-slate-400 dark:group-hover:text-sky-300">
+              {googleShortcuts.accounts.length > 0 ? "Google" : "Add Google"}
+            </span>
+          </button>
+
           {/* "+" Add Shortcut Circle */}
           <button
             type="button"
@@ -727,6 +971,12 @@ export function PortalDashboard({ termLabel }: PortalDashboardProps) {
           </button>
         </div>
       </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {footer}
 
       {/* Add Custom Shortcut Modal */}
       {isAddShortcutOpen && (
@@ -785,24 +1035,46 @@ export function PortalDashboard({ termLabel }: PortalDashboardProps) {
               </div>
             </div>
 
-            <div className="mt-5 flex justify-end gap-2">
+            <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3 dark:border-slate-800">
               <button
                 type="button"
-                onClick={() => setIsAddShortcutOpen(false)}
-                className="rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                onClick={() => {
+                  setIsAddShortcutOpen(false);
+                  setIsGoogleModalOpen(true);
+                }}
+                className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#003C71] hover:underline dark:text-sky-300"
               >
-                Cancel
+                <GoogleLogoIcon className="h-3.5 w-3.5" />
+                <span>Add Google links instead</span>
               </button>
-              <button
-                type="submit"
-                className="rounded-lg bg-[#003C71] px-4 py-1.5 text-xs font-semibold text-white transition hover:bg-[#002D56]"
-              >
-                Save Shortcut
-              </button>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsAddShortcutOpen(false)}
+                  className="rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="rounded-lg bg-[#003C71] px-4 py-1.5 text-xs font-semibold text-white transition hover:bg-[#002D56]"
+                >
+                  Save Shortcut
+                </button>
+              </div>
             </div>
           </form>
         </div>
       )}
-    </div>
+
+      {/* Google Workspace & Meet Shortcuts Modal */}
+      {isGoogleModalOpen && (
+        <GoogleShortcutsModal
+          initialState={googleShortcuts}
+          onSave={handleSaveGoogleShortcuts}
+          onClose={() => setIsGoogleModalOpen(false)}
+        />
+      )}
+    </main>
   );
 }
