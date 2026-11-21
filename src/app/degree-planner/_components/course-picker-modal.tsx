@@ -4,6 +4,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   completedBefore,
+  earnedCodes,
   evalPrereq,
   findBucket,
   matchesBucket,
@@ -12,7 +13,6 @@ import {
   normalizeCode,
   offeredIn,
   offeringOf,
-  placedCodes,
   seasonsOf,
   termCalendarYear,
 } from "@/lib/degree-planner";
@@ -24,7 +24,21 @@ import type {
   PickerState,
   PlannerTerm,
   RequirementModel,
+  TransferKind,
 } from "@/lib/degree-types";
+
+function matchesCourseQuery(course: CatalogCourse, rawQuery: string): boolean {
+  const q = rawQuery.trim().toLowerCase();
+  if (!q) return true;
+  if (
+    course.code.toLowerCase().includes(q) ||
+    course.title.toLowerCase().includes(q)
+  ) {
+    return true;
+  }
+  const qCompact = q.replace(/\s+/g, "");
+  return course.code.toLowerCase().replace(/\s+/g, "").includes(qCompact);
+}
 
 type CoursePickerModalProps = {
   picker: PickerState;
@@ -42,6 +56,7 @@ type CoursePickerModalProps = {
   subjectFaculty: Map<string, string | null>;
   onClose: () => void;
   onPlaceCourse: (termIndex: number, slotIndex: number, code: string) => void;
+  onClearSlot?: (termIndex: number, slotIndex: number) => void;
   onSaveCustom: (
     course: CustomCourse,
     target: { termIndex: number; slotIndex: number } | null,
@@ -65,6 +80,7 @@ export function CoursePickerModal({
   subjectFaculty,
   onClose,
   onPlaceCourse,
+  onClearSlot,
   onSaveCustom,
   onToast,
 }: CoursePickerModalProps) {
@@ -79,16 +95,23 @@ export function CoursePickerModal({
     Boolean(picker.bucketKey),
   );
 
-  const [customOpen, setCustomOpen] = useState(initialTransferMode);
+  const [customOpen, setCustomOpen] = useState(false);
   const [cxCode, setCxCode] = useState("");
   const [cxTitle, setCxTitle] = useState("");
   const [cxCredits, setCxCredits] = useState("3");
   const [cxSubject, setCxSubject] = useState("");
   const [cxLevel, setCxLevel] = useState("1000");
-  const [cxTransfer, setCxTransfer] = useState(initialTransferMode);
+
+  const [transferKind, setTransferKind] = useState<TransferKind>("general");
+  const [txLevel, setTxLevel] = useState("1000");
+  const [txCredits, setTxCredits] = useState("3");
+  const [txNote, setTxNote] = useState("");
+  const [txEquivQuery, setTxEquivQuery] = useState("");
+  const [txEquivCourse, setTxEquivCourse] = useState<CatalogCourse | null>(null);
 
   const searchInputRef = useRef<HTMLInputElement>(null);
   const codeInputRef = useRef<HTMLInputElement>(null);
+  const txEquivInputRef = useRef<HTMLInputElement>(null);
 
   const bucket = useMemo(
     () => (picker.bucketKey ? findBucket(model, picker.bucketKey) : null),
@@ -97,25 +120,41 @@ export function CoursePickerModal({
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (initialTransferMode) codeInputRef.current?.focus();
-      else searchInputRef.current?.focus();
+      if (!initialTransferMode) searchInputRef.current?.focus();
     }, 30);
     return () => clearTimeout(timer);
   }, [initialTransferMode]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape") {
+        onClose();
+        return;
+      }
+      if (event.key === "Tab" && !initialTransferMode && !customOpen) {
+        if (terms.length === 0) return;
+        event.preventDefault();
+        const delta = event.shiftKey ? -1 : 1;
+        const nextIdx =
+          (selectedTermIndex + delta + terms.length) % terms.length;
+        setSelectedTermIndex(nextIdx);
+        setTimeout(() => searchInputRef.current?.focus(), 0);
+      }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
+  }, [onClose, initialTransferMode, customOpen, terms, selectedTermIndex]);
 
   const term = terms[selectedTermIndex] ?? terms[picker.termIndex];
   const activeSlotIndex = useMemo(() => {
-    if (selectedTermIndex === picker.termIndex) return picker.slotIndex;
     const t = terms[selectedTermIndex];
     if (!t) return 0;
+    if (
+      selectedTermIndex === picker.termIndex &&
+      t.slots[picker.slotIndex] === null
+    ) {
+      return picker.slotIndex;
+    }
     const emptyIdx = t.slots.indexOf(null);
     return emptyIdx >= 0 ? emptyIdx : t.slots.length;
   }, [selectedTermIndex, picker.termIndex, picker.slotIndex, terms]);
@@ -124,7 +163,7 @@ export function CoursePickerModal({
     : startYear;
   const academicBaseYear = term ? startYear + (term.year - 1) : startYear;
 
-  const openCustomForm = (prefill = "", transfer = false) => {
+  const openCustomForm = (prefill = "") => {
     const cleanPrefill = /[a-z]/i.test(prefill)
       ? prefill.toUpperCase().trim()
       : "";
@@ -133,7 +172,6 @@ export function CoursePickerModal({
     setCxCode(cleanPrefill);
     setCxTitle("");
     setCxCredits("3");
-    setCxTransfer(transfer);
     setCustomOpen(true);
     applyCodeInference(cleanPrefill, "");
     setTimeout(() => codeInputRef.current?.focus(), 20);
@@ -174,9 +212,78 @@ export function CoursePickerModal({
       level: Number(cxLevel) || 0,
       faculty: subject ? (subjectFaculty.get(subject) ?? null) : null,
       custom: true,
-      transfer: cxTransfer,
+      transfer: false,
     };
-  }, [cxCode, cxTitle, cxCredits, cxSubject, cxLevel, cxTransfer, subjectFaculty]);
+  }, [cxCode, cxTitle, cxCredits, cxSubject, cxLevel, subjectFaculty]);
+
+  const equivCandidates = useMemo(() => {
+    if (!initialTransferMode || transferKind !== "equivalent") return [];
+    const list = txEquivQuery.trim()
+      ? catalogCourses.filter((c) => matchesCourseQuery(c, txEquivQuery))
+      : catalogCourses;
+    return list.slice(0, 40);
+  }, [initialTransferMode, transferKind, txEquivQuery, catalogCourses]);
+
+  const transferDraft = useMemo<CustomCourse | null>(() => {
+    const level = Number(txLevel) || 1000;
+    const credits = Number(txCredits) || 0;
+    if (transferKind === "general") {
+      let idx = 1;
+      let code = `TRCR-${level}-${idx}`;
+      while (customs.has(code)) {
+        idx += 1;
+        code = `TRCR-${level}-${idx}`;
+      }
+      return {
+        code,
+        title: txNote.trim() || "General transfer credit",
+        credit_hours: credits,
+        subject: null,
+        level,
+        faculty: null,
+        custom: true,
+        transfer: true,
+        transfer_kind: "general",
+      };
+    }
+    if (!txEquivCourse) return null;
+    return {
+      code: txEquivCourse.code,
+      title: txEquivCourse.title,
+      credit_hours: credits,
+      subject: txEquivCourse.subject || null,
+      level,
+      faculty: txEquivCourse.faculty ?? null,
+      custom: true,
+      transfer: true,
+      transfer_kind: "equivalent",
+      equivalent_code: txEquivCourse.code,
+    };
+  }, [transferKind, txLevel, txCredits, txNote, txEquivCourse, customs]);
+
+  const transferHint = useMemo(() => {
+    if (!transferDraft) {
+      return {
+        line1: "Search and select the equivalent Ontario Tech course.",
+        buckets: [] as string[],
+        isRequired: false,
+      };
+    }
+    const isRequired = Boolean(
+      transferDraft.transfer_kind === "equivalent" &&
+        model?.required.some((r) => r.code === transferDraft.code),
+    );
+    const buckets = isRequired ? [] : matchingBuckets(transferDraft, model);
+    return {
+      line1: isRequired
+        ? `Satisfies required course ${transferDraft.code} and its prerequisites.`
+        : transferDraft.transfer_kind === "equivalent"
+          ? `Satisfies ${transferDraft.code} (prerequisites & degree requirements).`
+          : "Counts toward outside-Science and general electives without taking a term slot.",
+      buckets,
+      isRequired,
+    };
+  }, [transferDraft, model]);
 
   const customHint = useMemo(() => {
     if (!customDraft.code) {
@@ -217,16 +324,17 @@ export function CoursePickerModal({
     };
   }, [customDraft, catalogMap, offeringsMap, model]);
 
-  const placed = useMemo(() => placedCodes(terms), [terms]);
+  const placed = useMemo(() => earnedCodes(terms, customs), [terms, customs]);
   const completed = useMemo(
-    () => completedBefore(terms, selectedTermIndex, equivMap),
-    [terms, selectedTermIndex, equivMap],
+    () => completedBefore(terms, selectedTermIndex, equivMap, customs),
+    [terms, selectedTermIndex, equivMap, customs],
   );
 
   const filteredRows = useMemo(() => {
     if (!term) return [];
 
-    let rows = catalogCourses;
+    const inThisTerm = new Set(term.slots.filter((s): s is string => Boolean(s)));
+    let rows = catalogCourses.filter((c) => !inThisTerm.has(c.code));
     if (filterOffered) {
       rows = rows.filter(
         (c) =>
@@ -249,17 +357,14 @@ export function CoursePickerModal({
     if (filterBucket && bucket) {
       rows = rows.filter((c) => matchesBucket(c, bucket.match));
     }
-    const q = query.trim().toLowerCase();
-    if (q) {
-      rows = rows.filter(
-        (c) =>
-          c.code.toLowerCase().includes(q) ||
-          c.title.toLowerCase().includes(q),
-      );
+    if (query.trim()) {
+      rows = rows.filter((c) => matchesCourseQuery(c, query));
     }
     if (filterPrereq) {
       rows = rows.filter(
-        (c) => evalPrereq(c.prerequisite_ast, completed) !== false,
+        (c) =>
+          evalPrereq(c.prerequisite_ast, completed, { termYear: term.year }) !==
+          false,
       );
     }
 
@@ -309,6 +414,12 @@ export function CoursePickerModal({
 
   if (!term) return null;
 
+  const handleAddCourse = (code: string) => {
+    onPlaceCourse(selectedTermIndex, activeSlotIndex, code);
+    setQuery("");
+    setTimeout(() => searchInputRef.current?.focus(), 0);
+  };
+
   const handleSaveCustom = () => {
     if (!customDraft.code) {
       onToast("Give the course a code");
@@ -329,6 +440,19 @@ export function CoursePickerModal({
     });
   };
 
+  const handleSaveTransfer = () => {
+    if (transferKind === "equivalent" && !txEquivCourse) {
+      onToast("Pick an equivalent OTU course");
+      txEquivInputRef.current?.focus();
+      return;
+    }
+    if (!transferDraft || transferDraft.credit_hours <= 0) {
+      onToast("How many credits is it worth?");
+      return;
+    }
+    onSaveCustom(transferDraft, null);
+  };
+
   const titleText = initialTransferMode
     ? "Add a transfer credit"
     : bucket
@@ -336,7 +460,7 @@ export function CoursePickerModal({
       : `Add a course — Year ${term.year} ${term.season}`;
 
   const subText = initialTransferMode
-    ? "Credit you already earned elsewhere — pick how it should count and it lands in the first free slot."
+    ? "Credit earned elsewhere — counts toward your degree without taking a slot on the term map."
     : bucket
       ? `${bucket.credits} credits needed · choosing from the whole catalogue`
       : "Defaults to courses offered in this term whose prerequisites you already meet.";
@@ -409,6 +533,16 @@ export function CoursePickerModal({
               type="search"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (
+                  e.key === "Enter" &&
+                  !customOpen &&
+                  filteredRows.length > 0
+                ) {
+                  e.preventDefault();
+                  handleAddCourse(filteredRows[0].code);
+                }
+              }}
               placeholder="Search code or title…"
               autoComplete="off"
               className="min-w-[200px] flex-1 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-sm text-zinc-900 focus:border-blue-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
@@ -460,7 +594,7 @@ export function CoursePickerModal({
             )}
             <button
               type="button"
-              onClick={() => openCustomForm(query, false)}
+              onClick={() => openCustomForm(query)}
               title="A course not listed in the timetable"
               className="rounded-full border border-zinc-200 bg-white px-3 py-1 text-xs text-zinc-600 hover:border-blue-400 hover:text-blue-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
             >
@@ -469,8 +603,212 @@ export function CoursePickerModal({
           </div>
         )}
 
+        {/* Dedicated Transfer Credit panel */}
+        {initialTransferMode && (
+          <div className="flex flex-1 flex-col overflow-auto px-5 py-4">
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => setTransferKind("general")}
+                className={`rounded-xl border p-3 text-left transition-all ${
+                  transferKind === "general"
+                    ? "border-indigo-400 bg-indigo-50/70 ring-2 ring-indigo-400/20 dark:border-indigo-700 dark:bg-indigo-950/40"
+                    : "border-zinc-200 bg-white hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-900/70 dark:hover:border-zinc-700"
+                }`}
+              >
+                <div className="text-[13px] font-semibold text-zinc-900 dark:text-zinc-100">
+                  General transfer credit
+                </div>
+                <div className="mt-0.5 text-[11.5px] text-zinc-500 dark:text-zinc-400">
+                  No specific OTU equivalent · covers outside-Science and/or general electives
+                </div>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setTransferKind("equivalent");
+                  setTimeout(() => txEquivInputRef.current?.focus(), 20);
+                }}
+                className={`rounded-xl border p-3 text-left transition-all ${
+                  transferKind === "equivalent"
+                    ? "border-indigo-400 bg-indigo-50/70 ring-2 ring-indigo-400/20 dark:border-indigo-700 dark:bg-indigo-950/40"
+                    : "border-zinc-200 bg-white hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-900/70 dark:hover:border-zinc-700"
+                }`}
+              >
+                <div className="text-[13px] font-semibold text-zinc-900 dark:text-zinc-100">
+                  Equivalent OTU class
+                </div>
+                <div className="mt-0.5 text-[11.5px] text-zinc-500 dark:text-zinc-400">
+                  Matches a specific OTU course · satisfies core, prereqs, or electives
+                </div>
+              </button>
+            </div>
+
+            {transferKind === "equivalent" && (
+              <div className="mt-3.5">
+                {txEquivCourse ? (
+                  <div className="flex items-center justify-between gap-3 rounded-xl border border-indigo-200 bg-indigo-50/50 px-3.5 py-2.5 dark:border-indigo-800/70 dark:bg-indigo-950/30">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-xs font-semibold text-indigo-700 dark:text-indigo-300">
+                          {txEquivCourse.code}
+                        </span>
+                        <span className="truncate text-[13px] font-medium text-zinc-900 dark:text-zinc-100">
+                          {txEquivCourse.title}
+                        </span>
+                      </div>
+                      <div className="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">
+                        {[txEquivCourse.subject, txEquivCourse.faculty]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTxEquivCourse(null);
+                        setTimeout(() => txEquivInputRef.current?.focus(), 20);
+                      }}
+                      className="shrink-0 rounded-lg border border-zinc-200 bg-white px-2.5 py-1 text-xs text-zinc-600 hover:border-zinc-300 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
+                    >
+                      Change
+                    </button>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="flex flex-col gap-1 text-[11.5px] font-medium text-zinc-600 dark:text-zinc-400">
+                      Equivalent OTU course
+                      <input
+                        ref={txEquivInputRef}
+                        type="search"
+                        value={txEquivQuery}
+                        onChange={(e) => setTxEquivQuery(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && equivCandidates.length > 0) {
+                            e.preventDefault();
+                            const first = equivCandidates[0];
+                            setTxEquivCourse(first);
+                            setTxCredits(String(first.credit_hours || 3));
+                            if (first.level >= 1000 && first.level <= 4000) {
+                              setTxLevel(String(first.level));
+                            }
+                          }
+                        }}
+                        placeholder="Search code or title (e.g. CSCI 1060U, MATH 1010U)…"
+                        autoComplete="off"
+                        className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-[13px] text-zinc-900 focus:border-indigo-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+                      />
+                    </label>
+                    <div className="mt-1.5 max-h-48 overflow-auto rounded-xl border border-zinc-200 bg-zinc-50/40 p-1 dark:border-zinc-800 dark:bg-zinc-950/40">
+                      {equivCandidates.length === 0 ? (
+                        <div className="py-5 text-center text-xs text-zinc-500">
+                          No matching courses found.
+                        </div>
+                      ) : (
+                        equivCandidates.map((c) => (
+                          <button
+                            key={c.code}
+                            type="button"
+                            onClick={() => {
+                              setTxEquivCourse(c);
+                              setTxCredits(String(c.credit_hours || 3));
+                              if (c.level >= 1000 && c.level <= 4000) {
+                                setTxLevel(String(c.level));
+                              }
+                            }}
+                            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-left hover:bg-white dark:hover:bg-zinc-800/70"
+                          >
+                            <span className="w-24 shrink-0 font-mono text-xs font-medium text-indigo-700 dark:text-indigo-300">
+                              {c.code}
+                            </span>
+                            <span className="min-w-0 flex-1 truncate text-[12.5px] text-zinc-800 dark:text-zinc-200">
+                              {c.title}
+                            </span>
+                            <span className="shrink-0 text-[11px] text-zinc-400">
+                              {c.credit_hours} cr · {c.level}
+                            </span>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="mt-3.5 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="flex flex-col gap-1 text-[11.5px] text-zinc-600 dark:text-zinc-400">
+                Level
+                <select
+                  value={txLevel}
+                  onChange={(e) => setTxLevel(e.target.value)}
+                  className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-[13px] text-zinc-900 focus:border-indigo-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                >
+                  <option value="1000">1000 level</option>
+                  <option value="2000">2000 level</option>
+                  <option value="3000">3000 level</option>
+                  <option value="4000">4000 level</option>
+                </select>
+              </label>
+              <label className="flex flex-col gap-1 text-[11.5px] text-zinc-600 dark:text-zinc-400">
+                Credits
+                <input
+                  type="number"
+                  min={0.5}
+                  max={18}
+                  step={0.5}
+                  value={txCredits}
+                  onChange={(e) => setTxCredits(e.target.value)}
+                  className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-[13px] text-zinc-900 focus:border-indigo-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                />
+              </label>
+              {transferKind === "general" && (
+                <label className="flex flex-col gap-1 text-[11.5px] text-zinc-600 sm:col-span-2 dark:text-zinc-400">
+                  Label (optional)
+                  <input
+                    value={txNote}
+                    onChange={(e) => setTxNote(e.target.value)}
+                    placeholder="General transfer credit"
+                    autoComplete="off"
+                    className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-[13px] text-zinc-900 focus:border-indigo-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                  />
+                </label>
+              )}
+            </div>
+
+            <div className="mt-3 rounded-xl border border-zinc-200/80 bg-zinc-50/70 px-3 py-2 text-[11.5px] leading-relaxed text-zinc-600 dark:border-zinc-800 dark:bg-zinc-950/60 dark:text-zinc-400">
+              <div>{transferHint.line1}</div>
+              {transferHint.buckets.length > 0 && (
+                <div className="mt-0.5">
+                  Counts toward:{" "}
+                  <strong className="text-indigo-700 dark:text-indigo-300">
+                    {transferHint.buckets.join(", ")}
+                  </strong>
+                </div>
+              )}
+            </div>
+
+            <div className="mt-4 flex items-center gap-2.5">
+              <button
+                type="button"
+                onClick={handleSaveTransfer}
+                className="rounded-lg bg-indigo-600 px-4 py-1.5 text-xs font-medium text-white transition-colors hover:bg-indigo-700"
+              >
+                Add transfer credit
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-600 hover:border-zinc-300 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Custom course panel */}
-        {customOpen && (
+        {!initialTransferMode && customOpen && (
           <div className="border-b border-zinc-200 bg-zinc-50/70 px-5 py-4 dark:border-zinc-800 dark:bg-zinc-950/60">
             <h4 className="mb-2.5 text-[11.5px] font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
               Custom course
@@ -485,12 +823,6 @@ export function CoursePickerModal({
                     const next = e.target.value;
                     setCxCode(next);
                     applyCodeInference(next, cxTitle);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      handleSaveCustom();
-                    }
                   }}
                   placeholder="CSCI 4150U"
                   autoComplete="off"
@@ -573,30 +905,17 @@ export function CoursePickerModal({
               )}
             </div>
 
-            <label className="mt-3 flex items-center gap-2 text-[12.5px] text-zinc-800 dark:text-zinc-200">
-              <input
-                type="checkbox"
-                checked={cxTransfer}
-                onChange={(e) => setCxTransfer(e.target.checked)}
-                className="h-4 w-4 accent-blue-600"
-              />
-              Transfer credit — earned at another institution
-            </label>
-
             <div className="mt-3 flex items-center gap-2.5">
               <button
                 type="button"
                 onClick={handleSaveCustom}
                 className="rounded-lg bg-blue-600 px-4 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-700"
               >
-                {cxTransfer ? "Add transfer credit" : "Add to this term"}
+                Add to this term
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  if (initialTransferMode) onClose();
-                  else setCustomOpen(false);
-                }}
+                onClick={() => setCustomOpen(false)}
                 className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-600 hover:border-zinc-300 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
               >
                 Cancel
@@ -608,6 +927,49 @@ export function CoursePickerModal({
         {/* Course list */}
         {!initialTransferMode && (
           <div className="flex-1 overflow-auto p-2 pb-3">
+            {term.slots.map((code, sIdx) => {
+              if (!code) return null;
+              const cat = catalogMap.get(code);
+              const cust = customs.get(code);
+              const title = cat?.title ?? cust?.title ?? code;
+              const cr = cat?.credit_hours ?? cust?.credit_hours ?? 3;
+              if (query.trim()) {
+                const q = query.trim().toLowerCase();
+                const qCompact = q.replace(/\s+/g, "");
+                const hit =
+                  code.toLowerCase().includes(q) ||
+                  code.toLowerCase().replace(/\s+/g, "").includes(qCompact) ||
+                  title.toLowerCase().includes(q);
+                if (!hit) return null;
+              }
+              return (
+                <div
+                  key={`added:${sIdx}:${code}`}
+                  className="flex items-center gap-2.5 rounded-lg bg-blue-50/45 px-2.5 py-2 hover:bg-blue-50/80 dark:bg-blue-950/20 dark:hover:bg-blue-950/35"
+                >
+                  <span className="w-24 shrink-0 font-mono text-xs font-medium text-blue-800 dark:text-blue-300">
+                    {code}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="truncate text-[13px] text-zinc-900 dark:text-zinc-100">
+                      {title}
+                    </div>
+                    <div className="text-[11.5px] text-zinc-500 dark:text-zinc-400">
+                      {cr} cr · Added to Year {term.year} {term.season}
+                    </div>
+                  </div>
+                  {onClearSlot && (
+                    <button
+                      type="button"
+                      onClick={() => onClearSlot(selectedTermIndex, sIdx)}
+                      className="shrink-0 rounded-md border border-rose-200 bg-white px-2.5 py-1 text-xs text-rose-600 hover:border-rose-400 hover:bg-rose-50 dark:border-rose-800/70 dark:bg-zinc-800 dark:text-rose-400 dark:hover:bg-rose-950/40"
+                    >
+                      remove
+                    </button>
+                  )}
+                </div>
+              );
+            })}
             {filteredRows.length === 0 ? (
                   <div className="px-6 py-8 text-center text-[13px] text-zinc-500 dark:text-zinc-400">
                     {query.trim()
@@ -619,7 +981,7 @@ export function CoursePickerModal({
                     <div className="mt-3">
                       <button
                         type="button"
-                        onClick={() => openCustomForm(query, false)}
+                        onClick={() => openCustomForm(query)}
                         className="rounded-lg border border-blue-200 bg-blue-50 px-3.5 py-1.5 text-xs font-medium text-blue-800 hover:border-blue-400 dark:border-blue-800 dark:bg-blue-950/60 dark:text-blue-300"
                       >
                         ＋ Add a custom course
@@ -628,7 +990,9 @@ export function CoursePickerModal({
                   </div>
                 ) : (
                   filteredRows.map((course) => {
-                    const check = evalPrereq(course.prerequisite_ast, completed);
+                    const check = evalPrereq(course.prerequisite_ast, completed, {
+                      termYear: term.year,
+                    });
                     const used = placed.has(course.code);
                     const academicBaseYear = startYear + (term.year - 1);
                     const isOfferedThisTerm = offeredIn(
@@ -686,13 +1050,7 @@ export function CoursePickerModal({
                         </div>
                         <button
                           type="button"
-                          onClick={() =>
-                            onPlaceCourse(
-                              selectedTermIndex,
-                              activeSlotIndex,
-                              course.code,
-                            )
-                          }
+                          onClick={() => handleAddCourse(course.code)}
                           className="shrink-0 rounded-md border border-zinc-200 bg-white px-2.5 py-1 text-xs text-zinc-700 hover:border-blue-500 hover:text-blue-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
                         >
                           {used ? "move here" : "add"}
@@ -717,7 +1075,7 @@ export function CoursePickerModal({
                   </div>
                   <button
                     type="button"
-                    onClick={() => openCustomForm(query, false)}
+                    onClick={() => openCustomForm(query)}
                     className="shrink-0 rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-800 hover:border-blue-500 dark:border-blue-800 dark:bg-blue-950/60 dark:text-blue-300"
                   >
                     ＋ custom

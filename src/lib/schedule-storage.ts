@@ -323,7 +323,6 @@ function buildDegreePlanImportOption(
 ): DegreePlanImportOption {
   const academicCycleStartChrono = termChronoKey("Fall", 2026);
   const termCourseCodesSet = new Set<string>();
-  const summerPrevYearSet = new Set<string>();
   const fallTermCourseCodesSet = new Set<string>();
   const winterTermCourseCodesSet = new Set<string>();
   const priorRawSet = new Set<string>();
@@ -335,12 +334,6 @@ function buildDegreePlanImportOption(
     const calYear = termCalendarYear(params.startYear, t.year, t.season);
     if (t.season === termInfo.season && calYear === termInfo.year) {
       for (const c of slots) termCourseCodesSet.add(c);
-    } else if (
-      termInfo.season === "Summer" &&
-      t.season === "Summer" &&
-      calYear === termInfo.year - 1
-    ) {
-      for (const c of slots) summerPrevYearSet.add(c);
     }
     if (t.season === "Fall" && calYear === 2026) {
       for (const c of slots) fallTermCourseCodesSet.add(c);
@@ -351,10 +344,6 @@ function buildDegreePlanImportOption(
     if (termChronoKey(t.season, calYear) < academicCycleStartChrono) {
       for (const c of slots) priorRawSet.add(c);
     }
-  }
-
-  if (termInfo.season === "Summer" && termCourseCodesSet.size === 0) {
-    for (const c of summerPrevYearSet) termCourseCodesSet.add(c);
   }
 
   const completedPriorCourseCodes = [...priorRawSet].filter(

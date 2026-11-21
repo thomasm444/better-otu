@@ -540,6 +540,25 @@ export function WeekScheduleGrid({
         }
         setHoveredPickerCrn(null);
         onChangeGridSectionPickers?.([]);
+        return;
+      }
+      if (
+        e.key === "Enter" &&
+        !selectedCourse &&
+        gridSectionPickers.length > 0
+      ) {
+        const activeTag = document.activeElement?.tagName;
+        const isInteractive =
+          activeTag === "INPUT" ||
+          activeTag === "TEXTAREA" ||
+          activeTag === "SELECT" ||
+          activeTag === "BUTTON" ||
+          document.activeElement?.getAttribute("role") === "button";
+        if (!isInteractive) {
+          e.preventDefault();
+          setHoveredPickerCrn(null);
+          onChangeGridSectionPickers?.([]);
+        }
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -681,6 +700,14 @@ export function WeekScheduleGrid({
     courses,
     blockedSlots,
   ]);
+
+  const componentsWithCurrent = useMemo(() => {
+    const set = new Set<string>();
+    for (const g of pickerGhosts) {
+      if (g.isCurrent) set.add(`${g.courseCode}:${g.component}`);
+    }
+    return set;
+  }, [pickerGhosts]);
 
   const ghostsByDay = useMemo(() => {
     const grouped: Record<DayOfWeek, GhostTargetSlot[]> = {
@@ -1749,6 +1776,8 @@ export function WeekScheduleGrid({
                               ? ` [${block.weekPattern === "week1" ? "Week 1" : "Week 2"}]`
                               : ""
                           }${isExploring ? " • Exploring" : ""}${
+                            block.isFull ? " • Warning: Class may be full" : ""
+                          }${
                             isConflict
                               ? ` • Conflicts with ${block.conflictWith?.join(", ")}`
                               : ""
@@ -1810,11 +1839,17 @@ export function WeekScheduleGrid({
                                 </div>
                               </div>
                               <p className="line-clamp-1 text-[9.5px] opacity-80">
-                                {isConflict
-                                  ? "⚠ Conflict"
-                                  : isExploring
-                                    ? `Exploring • ${block.type || ""}`
-                                    : block.title}
+                                {isConflict ? (
+                                  "⚠ Conflict"
+                                ) : block.isFull ? (
+                                  <span className="font-semibold text-amber-600 dark:text-amber-400">
+                                    ⚠ May be full
+                                  </span>
+                                ) : isExploring ? (
+                                  `Exploring • ${block.type || ""}`
+                                ) : (
+                                  block.title
+                                )}
                               </p>
                             </div>
 
@@ -1916,6 +1951,12 @@ export function WeekScheduleGrid({
                                 : undefined,
                           });
                         };
+                        const compAlreadySelected =
+                          isPickerOverlay &&
+                          !g.isCurrent &&
+                          componentsWithCurrent.has(
+                            `${g.courseCode}:${g.component}`,
+                          );
 
                         return (
                           <div
@@ -1969,18 +2010,30 @@ export function WeekScheduleGrid({
                               isPickerOverlay ? "cursor-pointer" : ""
                             } ${
                               g.isCurrent
-                                ? isHovered
-                                  ? "z-50 border-blue-600 bg-blue-500/35 text-blue-950 ring-2 ring-blue-500 shadow-md dark:border-blue-400 dark:bg-blue-900/80 dark:text-blue-50"
-                                  : "border-blue-500 bg-blue-500/20 text-blue-950 dark:border-blue-400 dark:bg-blue-950/75 dark:text-blue-100"
-                                : g.fits
-                                  ? getFittingGhostClasses(
-                                      g.component,
-                                      isHovered,
-                                      g.multiColorIndex,
-                                    )
-                                  : isHovered
-                                    ? "z-50 border-rose-600 bg-rose-500/35 text-rose-950 ring-2 ring-rose-500 shadow-md dark:border-rose-400 dark:bg-rose-900/80 dark:text-rose-50"
-                                    : "border-rose-500 bg-rose-500/20 text-rose-950 dark:border-rose-400 dark:bg-rose-950/75 dark:text-rose-100"
+                                ? `z-40 ${
+                                    g.fits
+                                      ? getFittingGhostClasses(
+                                          g.component,
+                                          isHovered,
+                                          g.multiColorIndex,
+                                        )
+                                      : isHovered
+                                        ? "z-50 border-rose-600 bg-rose-500/35 text-rose-950 ring-2 ring-rose-500 shadow-md dark:border-rose-400 dark:bg-rose-900/80 dark:text-rose-50"
+                                        : "border-rose-500 bg-rose-500/20 text-rose-950 dark:border-rose-400 dark:bg-rose-950/75 dark:text-rose-100"
+                                  }`
+                                : compAlreadySelected
+                                  ? isHovered
+                                    ? "z-50 border-slate-500 bg-slate-300/80 text-slate-900 ring-2 ring-slate-400 shadow-md dark:border-slate-400 dark:bg-slate-700/85 dark:text-slate-100"
+                                    : "border-slate-400/90 bg-slate-200/75 text-slate-700 opacity-80 dark:border-slate-500/80 dark:bg-slate-800/75 dark:text-slate-300"
+                                  : g.fits
+                                    ? getFittingGhostClasses(
+                                        g.component,
+                                        isHovered,
+                                        g.multiColorIndex,
+                                      )
+                                    : isHovered
+                                      ? "z-50 border-rose-600 bg-rose-500/35 text-rose-950 ring-2 ring-rose-500 shadow-md dark:border-rose-400 dark:bg-rose-900/80 dark:text-rose-50"
+                                      : "border-rose-500 bg-rose-500/20 text-rose-950 dark:border-rose-400 dark:bg-rose-950/75 dark:text-rose-100"
                             }`}
                           >
                             <div className="flex items-center justify-between gap-1 font-semibold">
@@ -1999,10 +2052,12 @@ export function WeekScheduleGrid({
                             </div>
                             <span className="truncate text-[9px] opacity-85">
                               {g.isCurrent
-                                ? "Current"
-                                : g.fits
-                                  ? `${g.room} • Fits`
-                                  : `${g.room} • Conflict`}
+                                ? `✓ Current ${g.component}`
+                                : compAlreadySelected
+                                  ? `${g.room} • ${g.fits ? "Switch" : "Conflict"}`
+                                  : g.fits
+                                    ? `${g.room} • Fits`
+                                    : `${g.room} • Conflict`}
                             </span>
                           </div>
                         );

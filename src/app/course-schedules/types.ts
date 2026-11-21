@@ -352,6 +352,10 @@ export interface ScheduleBlock {
   deliveryMode?: DeliveryMode;
   /** Color theme for styling the spreadsheet block */
   color?: ColorTheme;
+  /** Remaining seats from Banner enrollment data */
+  seatsAvailable?: number | null;
+  /** True when the section has 0 or fewer seats available */
+  isFull?: boolean;
   /** Conflict markers computed by annotateScheduleConflicts */
   isConflict?: boolean;
   conflictWith?: string[];
@@ -692,6 +696,8 @@ export function convertScheduleSectionToBlocks(
     mode,
     deliveryMode: section.deliveryMode,
     color,
+    seatsAvailable: section.seatsAvailable,
+    isFull: section.seatsAvailable !== null && section.seatsAvailable <= 0,
   }));
 }
 

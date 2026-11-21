@@ -1027,6 +1027,40 @@ export function CourseLookupPanel({
                 setQuery(e.target.value);
                 setVisibleLimit(30);
               }}
+              onKeyDown={(e) => {
+                if (
+                  isEditMode &&
+                  e.key === "Enter" &&
+                  query.trim() &&
+                  filteredCourses.length > 0
+                ) {
+                  e.preventDefault();
+                  const course = filteredCourses[0].course;
+                  onAddCourse(course.courseCode, "planned");
+                  const multiComps = course.requiredComponents.filter(
+                    (comp) =>
+                      course.sections.filter((s) => s.component === comp)
+                        .length > 1,
+                  );
+                  if (multiComps.length > 0 && onChangeGridSectionPickers) {
+                    const targetComp: SectionGridPickerComponent =
+                      multiComps.length > 1 ? "ALL" : multiComps[0];
+                    onChangeGridSectionPickers((prev) =>
+                      prev.some((t) => t.courseCode === course.courseCode)
+                        ? prev
+                        : [
+                            ...prev,
+                            {
+                              courseCode: course.courseCode,
+                              component: targetComp,
+                            },
+                          ],
+                    );
+                  }
+                  setQuery("");
+                  setVisibleLimit(30);
+                }
+              }}
               placeholder="Search code, title, description, prof, or CRN..."
               className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-xs text-zinc-900 focus:border-blue-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
             />
@@ -1545,57 +1579,121 @@ export function CourseLookupPanel({
         /* My Courses Tab (Necessary Planned + Exploring + Custom Blocks) */
         <div className="flex min-h-0 flex-1 flex-col">
           {isEditMode ? (
-            <div className="flex flex-wrap items-center gap-1 border-b border-zinc-200 p-2.5 dark:border-zinc-800">
-              <button
-                type="button"
-                onClick={onAutoFitAll}
-                disabled={plannedCourses.length === 0}
-                className="whitespace-nowrap rounded-lg bg-emerald-600 px-2 py-1.5 text-[11px] font-medium text-white shadow-xs transition hover:bg-emerald-700 disabled:opacity-40"
-                title="Automatically pick conflict-free Lecture, Lab, and Tutorial times across all active courses"
-              >
-                Auto-Fit Sections
-              </button>
-              <button
-                type="button"
-                onClick={() => setCustomOpen((v) => !v)}
-                className={`whitespace-nowrap rounded-lg border px-2 py-1.5 text-[11px] font-medium transition ${
-                  customOpen || isCustomBlockDragMode
-                    ? "border-teal-400 bg-teal-50 text-teal-800 dark:border-teal-800 dark:bg-teal-950/50 dark:text-teal-200"
-                    : "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
-                }`}
-              >
-                + Custom Block
-              </button>
-              {onToggleAllCoursesVisibility && (
+            <div className="space-y-1.5 border-b border-zinc-200 p-2.5 dark:border-zinc-800">
+              <div className="flex flex-wrap items-center gap-1">
                 <button
                   type="button"
-                  onClick={onToggleAllCoursesVisibility}
+                  onClick={onAutoFitAll}
                   disabled={plannedCourses.length === 0}
-                  className="cursor-pointer whitespace-nowrap rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-[11px] font-medium text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
-                  title={
-                    allCoursesHidden
-                      ? "Show all courses on the grid"
-                      : "Hide all courses from the grid"
-                  }
+                  className="whitespace-nowrap rounded-lg bg-emerald-600 px-2 py-1.5 text-[11px] font-medium text-white shadow-xs transition hover:bg-emerald-700 disabled:opacity-40"
+                  title="Automatically pick conflict-free Lecture, Lab, and Tutorial times across all active courses"
                 >
-                  <FixedWidthSwapLabel
-                    label={allCoursesHidden ? "Show All" : "Hide All"}
-                    first="Show All"
-                    second="Hide All"
-                  />
+                  Auto-Fit Sections
                 </button>
-              )}
-              <button
-                type="button"
-                onClick={onClearPlanner}
-                disabled={
-                  plannedCourses.length === 0 && customBlocks.length === 0
+                <button
+                  type="button"
+                  onClick={() => setCustomOpen((v) => !v)}
+                  className={`whitespace-nowrap rounded-lg border px-2 py-1.5 text-[11px] font-medium transition ${
+                    customOpen || isCustomBlockDragMode
+                      ? "border-teal-400 bg-teal-50 text-teal-800 dark:border-teal-800 dark:bg-teal-950/50 dark:text-teal-200"
+                      : "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
+                  }`}
+                >
+                  + Custom Block
+                </button>
+                <button
+                  type="button"
+                  onClick={onClearPlanner}
+                  disabled={
+                    plannedCourses.length === 0 && customBlocks.length === 0
+                  }
+                  className="ml-auto whitespace-nowrap rounded-lg border border-rose-200 bg-rose-50 px-2 py-1.5 text-[11px] font-medium text-rose-700 transition hover:bg-rose-100 disabled:opacity-40 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300"
+                  title="Clear all planned and exploring courses from the planner"
+                >
+                  Clear Planner
+                </button>
+              </div>
+              {(() => {
+                const unaddedTargets: SectionGridPickerTarget[] = [];
+                for (const entry of plannedCourses) {
+                  const c = courseMap.get(entry.courseCode);
+                  if (!c) continue;
+                  const missing = c.requiredComponents.filter(
+                    (comp) => !entry.selectedCrns[comp],
+                  );
+                  if (missing.length > 0) {
+                    unaddedTargets.push({
+                      courseCode: entry.courseCode,
+                      component: missing.length > 1 ? "ALL" : missing[0],
+                    });
+                  }
                 }
-                className="ml-auto whitespace-nowrap rounded-lg border border-rose-200 bg-rose-50 px-2 py-1.5 text-[11px] font-medium text-rose-700 transition hover:bg-rose-100 disabled:opacity-40 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-300"
-                title="Clear all planned and exploring courses from the planner"
-              >
-                Clear Planner
-              </button>
+                const allUnaddedShown =
+                  unaddedTargets.length > 0 &&
+                  unaddedTargets.every((t) =>
+                    gridSectionPickers.some(
+                      (p) => p.courseCode === t.courseCode,
+                    ),
+                  );
+                return (
+                  <div className="flex flex-wrap items-center gap-1">
+                    {onChangeGridSectionPickers && (
+                      <button
+                        type="button"
+                        disabled={unaddedTargets.length === 0}
+                        onClick={() => {
+                          onChangeGridSectionPickers((prev) => {
+                            if (allUnaddedShown) {
+                              const unaddedSet = new Set(
+                                unaddedTargets.map((t) => t.courseCode),
+                              );
+                              return prev.filter(
+                                (p) => !unaddedSet.has(p.courseCode),
+                              );
+                            }
+                            const existingCodes = new Set(
+                              prev.map((p) => p.courseCode),
+                            );
+                            return [
+                              ...prev,
+                              ...unaddedTargets.filter(
+                                (t) => !existingCodes.has(t.courseCode),
+                              ),
+                            ];
+                          });
+                        }}
+                        className={`whitespace-nowrap rounded-lg border px-2 py-1.5 text-[11px] font-medium transition disabled:cursor-not-allowed disabled:opacity-40 ${
+                          allUnaddedShown
+                            ? "border-blue-400 bg-blue-50 text-blue-800 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-200"
+                            : "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                        }`}
+                        title="Show unpicked section options on the timetable grid for all courses missing sections"
+                      >
+                        {allUnaddedShown ? "Hide Unadded" : "Show Unadded"}
+                      </button>
+                    )}
+                    {onToggleAllCoursesVisibility && (
+                      <button
+                        type="button"
+                        onClick={onToggleAllCoursesVisibility}
+                        disabled={plannedCourses.length === 0}
+                        className="cursor-pointer whitespace-nowrap rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-[11px] font-medium text-zinc-700 transition hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                        title={
+                          allCoursesHidden
+                            ? "Show all courses on the grid"
+                            : "Hide all courses from the grid"
+                        }
+                      >
+                        <FixedWidthSwapLabel
+                          label={allCoursesHidden ? "Show All" : "Hide All"}
+                          first="Show All"
+                          second="Hide All"
+                        />
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           ) : (
             plannedCourses.length > 0 &&

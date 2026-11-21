@@ -34,6 +34,7 @@ import {
   creditsOf,
   CREDIT_CAP,
   DEFAULT_START_YEAR,
+  earnedCodes,
   expandWithEquivalents,
   findEquivalentInSet,
   findProgramInCatalogYear,
@@ -232,6 +233,9 @@ export function DegreePlannerClient({
   const [newPlanName, setNewPlanName] = useState("");
   const [newPlanStartYear, setNewPlanStartYear] = useState<number>(
     DEFAULT_START_YEAR,
+  );
+  const [newPlanCatalogYear, setNewPlanCatalogYear] = useState<string>(() =>
+    resolveCatalogYearForStartYear(DEFAULT_START_YEAR, availableCatalogYears),
   );
   const [creatingPlan, setCreatingPlan] = useState(false);
 
@@ -1064,7 +1068,7 @@ export function DegreePlannerClient({
 
   const totalPlacedCredits = useMemo(() => {
     let total = 0;
-    for (const code of placedCodes(terms)) {
+    for (const code of earnedCodes(terms, customs)) {
       total += creditsOf(code, catalogMap, customs);
     }
     return total;
@@ -1228,15 +1232,13 @@ export function DegreePlannerClient({
     setNewPlanProgram(matchingSummary);
     setNewPlanName(program.name);
     setNewPlanStartYear(startYear);
+    setNewPlanCatalogYear(program.catalog_year || catalogYear);
     setAddPlanModalOpen(true);
-  }, [program, bootstrap.programs, startYear]);
+  }, [program, bootstrap.programs, startYear, catalogYear]);
 
   const filteredNewPlanPrograms = useMemo(() => {
     const q = newPlanQuery.trim().toLowerCase();
-    const targetCatalogYear = resolveCatalogYearForStartYear(
-      newPlanStartYear,
-      availableCatalogYears,
-    );
+    const targetCatalogYear = newPlanCatalogYear;
     return bootstrap.programs
       .filter(
         (p) =>
@@ -1248,25 +1250,17 @@ export function DegreePlannerClient({
               .includes(q)),
       )
       .slice(0, 60);
-  }, [
-    bootstrap.programs,
-    newPlanQuery,
-    newPlanStartYear,
-    availableCatalogYears,
-  ]);
+  }, [bootstrap.programs, newPlanQuery, newPlanCatalogYear]);
 
   const handleCreateNewPlan = useCallback(async () => {
     if (!newPlanProgram || creatingPlan) return;
     setCreatingPlan(true);
     try {
-      const targetCatalogYear = resolveCatalogYearForStartYear(
-        newPlanStartYear,
-        availableCatalogYears,
-      );
+      const targetCatalogYear = newPlanCatalogYear;
       const keepExactPreviewCatalog =
         carryPreviewOnAdd &&
         programRef.current?.program_id === newPlanProgram.program_id &&
-        newPlanStartYear === startYear;
+        newPlanCatalogYear === catalogYear;
       const resolvedProgram = keepExactPreviewCatalog
         ? newPlanProgram
         : (findProgramInCatalogYear(
@@ -1387,7 +1381,6 @@ export function DegreePlannerClient({
       setCreatingPlan(false);
     }
   }, [
-    availableCatalogYears,
     bootstrap.programs,
     newPlanProgram,
     creatingPlan,
@@ -1396,13 +1389,14 @@ export function DegreePlannerClient({
     newPlanName,
     savedPlans,
     carryPreviewOnAdd,
-    startYear,
     terms,
     customs,
     gapYears,
     catalogMap,
     offeringsMap,
     newPlanStartYear,
+    newPlanCatalogYear,
+    catalogYear,
     offeringContext,
     user,
     supabase,
@@ -1415,6 +1409,7 @@ export function DegreePlannerClient({
       slotIndex: number,
       code: string,
       customMapOverride?: Map<string, CustomCourse>,
+      options?: { keepOpen?: boolean },
     ) => {
       const nextCustoms = customMapOverride ?? customs;
       const nextTerms = terms.map((t) => ({ ...t, slots: t.slots.slice() }));
@@ -1423,7 +1418,7 @@ export function DegreePlannerClient({
 
       if (slotIndex >= MAX_SLOTS_PER_TERM) {
         showToast(`Maximum of ${MAX_SLOTS_PER_TERM} courses per term`);
-        setPicker(null);
+        if (!options?.keepOpen) setPicker(null);
         return;
       }
 
@@ -1436,7 +1431,7 @@ export function DegreePlannerClient({
         const oldTerm = nextTerms[existingTermIdx];
         const oldSlotIdx = oldTerm.slots.indexOf(code);
         if (existingTermIdx === termIndex && oldSlotIdx === slotIndex) {
-          setPicker(null);
+          if (!options?.keepOpen) setPicker(null);
           return;
         }
         const displaced = targetTerm.slots[slotIndex] ?? null;
@@ -1445,7 +1440,7 @@ export function DegreePlannerClient({
 
       targetTerm.slots[slotIndex] = code;
       commitPlan(nextTerms, nextCustoms);
-      setPicker(null);
+      if (!options?.keepOpen) setPicker(null);
     },
     [terms, customs, commitPlan, showToast],
   );
@@ -1846,33 +1841,37 @@ export function DegreePlannerClient({
     ) => {
       const nextCustoms = new Map(customs);
       nextCustoms.set(draft.code, draft);
+      let removedFromMap = false;
       if (target) {
         placeCourse(target.termIndex, target.slotIndex, draft.code, nextCustoms);
       } else {
-        commitPlan(terms, nextCustoms);
+        let nextTerms = terms;
+        if (
+          draft.transfer &&
+          draft.transfer_kind === "equivalent" &&
+          placedTermIndex(terms, draft.code) >= 0
+        ) {
+          removedFromMap = true;
+          nextTerms = terms.map((t) => ({
+            ...t,
+            slots: t.slots.map((c) => (c === draft.code ? null : c)),
+          }));
+        }
+        commitPlan(nextTerms, nextCustoms);
       }
       setPickerTransferMode(false);
+      setPicker(null);
       showToast(
         draft.transfer
-          ? `${draft.code} added as a transfer credit`
+          ? removedFromMap
+            ? `${draft.code} added as a transfer credit (removed from term map)`
+            : draft.transfer_kind === "general"
+              ? `General transfer credit (${draft.credit_hours} cr) added`
+              : `${draft.code} added as a transfer credit`
           : `${draft.code} added as a custom course`,
       );
     },
     [customs, placeCourse, commitPlan, terms, showToast],
-  );
-
-  const handlePlaceTransfer = useCallback(
-    (code: string) => {
-      const slot = firstFreeSlot(terms);
-      placeCourse(slot.termIndex, slot.slotIndex, code);
-      const targetTerm = terms[slot.termIndex];
-      if (targetTerm) {
-        showToast(
-          `${code} placed in Year ${targetTerm.year} ${targetTerm.season}`,
-        );
-      }
-    },
-    [terms, placeCourse, showToast],
   );
 
   const handlePlaceCourseInTerm = useCallback(
@@ -2095,7 +2094,7 @@ export function DegreePlannerClient({
                                 e.stopPropagation();
                                 setPlansMenuOpen(false);
                                 setPlanToDelete(saved);
-                                setDeleteCountdown(5);
+                                setDeleteCountdown(2);
                               }}
                               title="Delete saved plan"
                               aria-label={`Delete ${saved.degree_name || saved.program_id}`}
@@ -2604,21 +2603,40 @@ export function DegreePlannerClient({
                 />
               </div>
 
-              <div>
-                <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">
-                  3. Start year
-                </label>
-                <select
-                  value={newPlanStartYear}
-                  onChange={(e) => setNewPlanStartYear(Number(e.target.value))}
-                  className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-400 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                >
-                  {startYearOptions.map((y) => (
-                    <option key={y} value={y}>
-                      {y} ({y}–{String(y + 1).slice(-2)})
-                    </option>
-                  ))}
-                </select>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">
+                    3. Start year
+                  </label>
+                  <select
+                    value={newPlanStartYear}
+                    onChange={(e) => setNewPlanStartYear(Number(e.target.value))}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-400 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                  >
+                    {startYearOptions.map((y) => (
+                      <option key={y} value={y}>
+                        {y} ({y}–{String(y + 1).slice(-2)})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">
+                    4. Plan year (calendar)
+                  </label>
+                  <select
+                    value={newPlanCatalogYear}
+                    onChange={(e) => setNewPlanCatalogYear(e.target.value)}
+                    className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-400 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                  >
+                    {availableCatalogYears.map((cy) => (
+                      <option key={cy} value={cy}>
+                        {cy}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
             </div>
 
@@ -2688,7 +2706,7 @@ export function DegreePlannerClient({
                 )}
                 <span className="inline-flex items-center gap-1.5">
                   <span className="h-2.5 w-1 rounded-full bg-indigo-400" />
-                  <span>Transfer / Custom</span>
+                  <span>Custom course</span>
                 </span>
                 <span className="inline-flex items-center gap-1.5">
                   <span className="h-2.5 w-1 rounded-full bg-amber-400" />
@@ -3240,7 +3258,6 @@ export function DegreePlannerClient({
                     modelSource: "major",
                   });
                 }}
-                onPlaceTransfer={handlePlaceTransfer}
                 onRemoveTransfer={handleRemoveTransfer}
                 activeTab={sidebarTab}
                 onTabChange={setSidebarTab}
@@ -3329,7 +3346,10 @@ export function DegreePlannerClient({
             setPicker(null);
             setPickerTransferMode(false);
           }}
-          onPlaceCourse={(ti, si, code) => placeCourse(ti, si, code)}
+          onPlaceCourse={(ti, si, code) =>
+            placeCourse(ti, si, code, undefined, { keepOpen: true })
+          }
+          onClearSlot={(ti, si) => clearSlot(ti, si)}
           onSaveCustom={handleSaveCustom}
           onToast={showToast}
         />
