@@ -15,7 +15,7 @@ import type { DegreeProgramDetail, ElectiveMatch } from "@/lib/degree-types";
 import {
   extractAllDegreePlansForTerm,
   loadLocalTermSchedule,
-  loadUserTermScheduleFromDb,
+  loadUserScheduleHydrationFromDb,
   saveLocalTermSchedule,
   syncUserTermScheduleToDb,
   type DegreePlanImportOption,
@@ -343,7 +343,7 @@ export function ScheduleContainer({
 
       let remotePlans: Awaited<ReturnType<typeof fetchAllDegreePlans>> = [];
       let dbState: Awaited<
-        ReturnType<typeof loadUserTermScheduleFromDb>
+        ReturnType<typeof loadUserScheduleHydrationFromDb>
       > | null = null;
       let dbCompleted: string[] = [];
       let dbFallCodes: string[] = [];
@@ -351,56 +351,20 @@ export function ScheduleContainer({
 
       if (user?.email) {
         try {
-          const [plansRes, schedRes, completedRes, priorTermRowsRes] =
-            await Promise.all([
-              fetchAllDegreePlans(supabase, user.email),
-              loadUserTermScheduleFromDb(
-                supabase,
-                user.id,
-                activeTerm,
-                courseMap,
-              ),
-              supabase
-                .from("student_courses")
-                .select("course_code")
-                .eq("user_id", user.id)
-                .eq("status", "completed"),
-              supabase
-                .from("student_courses")
-                .select("course_code, semester, status")
-                .eq("user_id", user.id)
-                .in("semester", ["202609", "202701"]),
-            ]);
+          const [plansRes, hydrationRes] = await Promise.all([
+            fetchAllDegreePlans(supabase, user.email),
+            loadUserScheduleHydrationFromDb(
+              supabase,
+              user.id,
+              activeTerm,
+              courseMap,
+            ),
+          ]);
           remotePlans = plansRes;
-          dbState = schedRes;
-          dbCompleted = (completedRes.data ?? [])
-            .map((r: { course_code: string }) =>
-              r.course_code.trim().toUpperCase(),
-            )
-            .filter((c: string) => c && !c.startsWith("__"));
-          const priorRows = (priorTermRowsRes.data ?? []) as Array<{
-            course_code: string;
-            semester: string;
-            status: string;
-          }>;
-          dbFallCodes = priorRows
-            .filter(
-              (r) =>
-                r.semester === "202609" &&
-                r.status !== "dropped" &&
-                !r.course_code.startsWith("__"),
-            )
-            .map((r) => r.course_code.trim().toUpperCase())
-            .filter(Boolean);
-          dbWinterCodes = priorRows
-            .filter(
-              (r) =>
-                r.semester === "202701" &&
-                r.status !== "dropped" &&
-                !r.course_code.startsWith("__"),
-            )
-            .map((r) => r.course_code.trim().toUpperCase())
-            .filter(Boolean);
+          dbState = hydrationRes;
+          dbCompleted = hydrationRes.completedCourses;
+          dbFallCodes = hydrationRes.fallCodes;
+          dbWinterCodes = hydrationRes.winterCodes;
         } catch (err) {
           console.error("Failed to hydrate remote student schedule:", err);
         }

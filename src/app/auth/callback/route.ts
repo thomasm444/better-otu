@@ -10,9 +10,30 @@ import { createClient } from "@/lib/supabase/server";
 
 const ALLOWED_EMAIL_DOMAIN = "@ontariotechu.net";
 
+function isValidSingleHost(host: string): boolean {
+  return Boolean(host) && !/[/\\\s,@]/.test(host);
+}
+
+function getAllowedHost(request: Request): string {
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL;
+  if (siteUrl) {
+    try {
+      return new URL(siteUrl).host.toLowerCase();
+    } catch {
+      // Fall back to request URL host if NEXT_PUBLIC_SITE_URL is malformed.
+    }
+  }
+  return new URL(request.url).host.toLowerCase();
+}
+
 function buildRedirectUrl(request: Request, origin: string, path: string): string {
   const forwardedHost = request.headers.get("x-forwarded-host");
-  if (process.env.NODE_ENV !== "development" && forwardedHost) {
+  if (
+    process.env.NODE_ENV !== "development" &&
+    forwardedHost &&
+    isValidSingleHost(forwardedHost) &&
+    forwardedHost.toLowerCase() === getAllowedHost(request)
+  ) {
     return `https://${forwardedHost}${path}`;
   }
   return `${origin}${path}`;

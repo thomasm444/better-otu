@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 interface CalendarExportModalProps {
   isOpen: boolean;
@@ -20,6 +20,25 @@ export function CalendarExportModal({
   activeCrns,
 }: CalendarExportModalProps) {
   const [copied, setCopied] = useState(false);
+  const [feedToken, setFeedToken] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!isOpen || !userId) return;
+    let cancelled = false;
+    fetch("/api/course-schedules/calendar/token")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { token?: string } | null) => {
+        if (!cancelled && data?.token) {
+          setFeedToken(data.token);
+        }
+      })
+      .catch(() => {
+        // Ignored; feed URL remains empty until token is available.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, userId]);
 
   const origin =
     typeof window !== "undefined" ? window.location.origin : "";
@@ -27,11 +46,12 @@ export function CalendarExportModal({
   const subscriptionUrl = useMemo(() => {
     if (!origin) return "";
     if (userId) {
-      return `${origin}/api/course-schedules/calendar?user=${encodeURIComponent(userId)}&term=${encodeURIComponent(term)}`;
+      if (!feedToken) return "";
+      return `${origin}/api/course-schedules/calendar?user=${encodeURIComponent(userId)}&term=${encodeURIComponent(term)}&token=${encodeURIComponent(feedToken)}`;
     }
     const crnsParam = activeCrns.join(",");
     return `${origin}/api/course-schedules/calendar?term=${encodeURIComponent(term)}&crns=${encodeURIComponent(crnsParam)}`;
-  }, [origin, userId, term, activeCrns]);
+  }, [origin, userId, feedToken, term, activeCrns]);
 
   const webcalUrl = useMemo(() => {
     if (!subscriptionUrl) return "";
@@ -50,9 +70,12 @@ export function CalendarExportModal({
       params.set("crns", activeCrns.join(","));
     } else if (userId) {
       params.set("user", userId);
+      if (feedToken) {
+        params.set("token", feedToken);
+      }
     }
     return `${origin}/api/course-schedules/calendar?${params.toString()}`;
-  }, [origin, term, activeCrns, userId]);
+  }, [origin, term, activeCrns, userId, feedToken]);
 
   if (!isOpen) return null;
 

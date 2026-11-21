@@ -85,8 +85,9 @@ export async function POST(request: Request) {
     .maybeSingle();
 
   if (existingProfileError) {
+    console.error("Onboarding profile lookup failed:", existingProfileError);
     return NextResponse.json(
-      { error: existingProfileError.message },
+      { error: "Failed to save onboarding data." },
       { status: 500 },
     );
   }
@@ -112,8 +113,9 @@ export async function POST(request: Request) {
       });
 
       if (insertError) {
+        console.error("Onboarding skip profile insert failed:", insertError);
         return NextResponse.json(
-          { error: insertError.message },
+          { error: "Failed to save onboarding data." },
           { status: 500 },
         );
       }
@@ -126,8 +128,9 @@ export async function POST(request: Request) {
         .eq("id", user.id);
 
       if (updateError) {
+        console.error("Onboarding skip profile update failed:", updateError);
         return NextResponse.json(
-          { error: updateError.message },
+          { error: "Failed to save onboarding data." },
           { status: 500 },
         );
       }
@@ -200,8 +203,9 @@ export async function POST(request: Request) {
       .in("program_id", idsToVerify);
 
     if (programError) {
+      console.error("Onboarding degree_programs lookup failed:", programError);
       return NextResponse.json(
-        { error: programError.message },
+        { error: "Failed to save onboarding data." },
         { status: 500 },
       );
     }
@@ -261,8 +265,9 @@ export async function POST(request: Request) {
         .single();
 
   if (profileSaveError) {
+    console.error("Onboarding profile save failed:", profileSaveError);
     return NextResponse.json(
-      { error: profileSaveError.message },
+      { error: "Failed to save onboarding data." },
       { status: 500 },
     );
   }
@@ -278,8 +283,9 @@ export async function POST(request: Request) {
       .maybeSingle();
 
     if (existingPlanError) {
+      console.error("Onboarding degree_plans lookup failed:", existingPlanError);
       return NextResponse.json(
-        { error: existingPlanError.message },
+        { error: "Failed to save onboarding data." },
         { status: 500 },
       );
     }
@@ -301,8 +307,9 @@ export async function POST(request: Request) {
         });
 
       if (planInsertError) {
+        console.error("Onboarding degree_plans insert failed:", planInsertError);
         return NextResponse.json(
-          { error: planInsertError.message },
+          { error: "Failed to save onboarding data." },
           { status: 500 },
         );
       }
@@ -332,8 +339,9 @@ export async function POST(request: Request) {
           .eq("id", existingPlan.id);
 
         if (planUpdateError) {
+          console.error("Onboarding degree_plans update failed:", planUpdateError);
           return NextResponse.json(
-            { error: planUpdateError.message },
+            { error: "Failed to save onboarding data." },
             { status: 500 },
           );
         }

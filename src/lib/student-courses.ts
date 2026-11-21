@@ -68,20 +68,30 @@ function normalizeCourseCode(code: string): string {
   return code.trim().toUpperCase();
 }
 
-export async function fetchStudentProfile(
+async function resolveUserId(
   supabase: SupabaseClient,
-): Promise<StudentProfile | null> {
+  userId?: string,
+): Promise<string | null> {
+  if (userId) return userId;
   const {
     data: { user },
     error: authError,
   } = await supabase.auth.getUser();
-
   if (authError || !user) return null;
+  return user.id;
+}
+
+export async function fetchStudentProfile(
+  supabase: SupabaseClient,
+  userId?: string,
+): Promise<StudentProfile | null> {
+  const resolvedUserId = await resolveUserId(supabase, userId);
+  if (!resolvedUserId) return null;
 
   const { data, error } = await supabase
     .from("profiles")
     .select("*")
-    .eq("id", user.id)
+    .eq("id", resolvedUserId)
     .maybeSingle();
 
   if (error) throw error;
@@ -97,13 +107,10 @@ function normalizeJoinedProgram(
 
 export async function fetchStudentProfileWithPrograms(
   supabase: SupabaseClient,
+  userId?: string,
 ): Promise<StudentProfileWithPrograms | null> {
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
-
-  if (authError || !user) return null;
+  const resolvedUserId = await resolveUserId(supabase, userId);
+  if (!resolvedUserId) return null;
 
   const { data, error } = await supabase
     .from("profiles")
@@ -130,7 +137,7 @@ export async function fetchStudentProfileWithPrograms(
       )
     `,
     )
-    .eq("id", user.id)
+    .eq("id", resolvedUserId)
     .maybeSingle();
 
   if (error) throw error;
@@ -170,18 +177,16 @@ export async function fetchStudentCourses(
 export async function upsertStudentCourse(
   supabase: SupabaseClient,
   input: UpsertStudentCourseInput,
+  userId?: string,
 ): Promise<StudentCourse> {
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
+  const resolvedUserId = await resolveUserId(supabase, userId);
 
-  if (authError || !user) {
+  if (!resolvedUserId) {
     throw new Error("You must be signed in to save courses.");
   }
 
   const payload = {
-    user_id: user.id,
+    user_id: resolvedUserId,
     course_code: normalizeCourseCode(input.course_code),
     selected_crn: input.selected_crn ?? null,
     semester: input.semester.trim(),

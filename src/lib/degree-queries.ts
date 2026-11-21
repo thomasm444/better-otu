@@ -348,6 +348,91 @@ function toItemNode(row: RawItemRow): ProgramItemNode {
   };
 }
 
+type RawProgramRow = {
+  program_id: string | number;
+  catalog_year?: string | null;
+  name: string;
+  url?: string | null;
+  catalog?: string | null;
+  description?: string | null;
+  faculty?: string | null;
+  degree?: string | null;
+  degree_abbrev?: string | null;
+  credential?: string | null;
+  honours?: boolean | null;
+  total_credit_hours?: number | string | null;
+  required_course_codes?: string[] | null;
+  footnotes?: Record<string, unknown> | null;
+};
+
+function buildProgramDetail(
+  p: RawProgramRow,
+  sectionRows: RawSectionRow[],
+  groupRows: RawGroupRow[],
+  itemRows: RawItemRow[],
+): DegreeProgramDetail {
+  const itemsByGroup = new Map<number, ProgramItemNode[]>();
+  for (const row of itemRows) {
+    const list = itemsByGroup.get(row.group_row_id) ?? [];
+    list.push(toItemNode(row));
+    itemsByGroup.set(row.group_row_id, list);
+  }
+
+  const groupsBySection = new Map<number, ProgramGroup[]>();
+  for (const row of groupRows) {
+    const list = groupsBySection.get(row.section_row_id) ?? [];
+    list.push({
+      group_id: row.group_id,
+      kind: row.kind,
+      required: row.required,
+      label: row.label,
+      credit_hours:
+        row.credit_hours !== null && row.credit_hours !== undefined
+          ? Number(row.credit_hours)
+          : null,
+      items: itemsByGroup.get(row.id) ?? [],
+    });
+    groupsBySection.set(row.section_row_id, list);
+  }
+
+  const sections: ProgramSection[] = sectionRows.map((row) => ({
+    section_id: row.section_id,
+    title: row.title,
+    title_clean: row.title_clean,
+    role: row.role,
+    is_alternative_track: Boolean(row.is_alternative_track),
+    credit_hours:
+      row.credit_hours !== null && row.credit_hours !== undefined
+        ? Number(row.credit_hours)
+        : null,
+    description: row.description,
+    groups: groupsBySection.get(row.id) ?? [],
+  }));
+
+  return {
+    program_id: String(p.program_id),
+    catalog_year: String(p.catalog_year ?? "2026-27"),
+    name: String(p.name),
+    url: p.url ?? null,
+    catalog: p.catalog ?? null,
+    description: p.description ?? null,
+    faculty: p.faculty ?? null,
+    degree: p.degree ?? null,
+    degree_abbrev: p.degree_abbrev ?? null,
+    credential: p.credential ?? null,
+    honours: Boolean(p.honours),
+    total_credit_hours:
+      p.total_credit_hours !== null && p.total_credit_hours !== undefined
+        ? Number(p.total_credit_hours)
+        : null,
+    required_course_codes: Array.isArray(p.required_course_codes)
+      ? (p.required_course_codes as string[])
+      : [],
+    footnotes: (p.footnotes as Record<string, unknown>) ?? {},
+    sections,
+  };
+}
+
 export async function getProgramDetail(
   programId: string,
 ): Promise<DegreeProgramDetail | null> {
@@ -356,6 +441,48 @@ export async function getProgramDetail(
   cacheTag("degree-programs", `degree-program-${programId}`);
 
   const supabase = getPublicClient();
+
+  try {
+    const { data: rpcData, error: rpcError } = await supabase.rpc(
+      "get_program_detail_json",
+      { p_program_id: programId } as never,
+    );
+
+    if (!rpcError && rpcData === null) {
+      return null;
+    }
+
+    if (
+      !rpcError &&
+      rpcData &&
+      typeof rpcData === "object" &&
+      !Array.isArray(rpcData)
+    ) {
+      const payload = rpcData as {
+        program?: RawProgramRow | null;
+        program_sections?: RawSectionRow[] | null;
+        program_groups?: RawGroupRow[] | null;
+        program_items?: RawItemRow[] | null;
+        sections?: RawSectionRow[] | null;
+        groups?: RawGroupRow[] | null;
+        items?: RawItemRow[] | null;
+      };
+      if ("program" in payload) {
+        if (!payload.program) return null;
+        const sections = payload.program_sections ?? payload.sections;
+        const groups = payload.program_groups ?? payload.groups;
+        const items = payload.program_items ?? payload.items;
+        return buildProgramDetail(
+          payload.program,
+          Array.isArray(sections) ? sections : [],
+          Array.isArray(groups) ? groups : [],
+          Array.isArray(items) ? items : [],
+        );
+      }
+    }
+  } catch {
+    // Fall back to the 4-query path if the RPC is not yet deployed.
+  }
 
   const { data: progRow, error: progError } = await supabase
     .from("degree_programs")
@@ -369,22 +496,6 @@ export async function getProgramDetail(
     throw new Error(`getProgramDetail failed: ${progError.message}`);
   }
   if (!progRow) return null;
-  const p = progRow as unknown as {
-    program_id: string | number;
-    catalog_year?: string | null;
-    name: string;
-    url?: string | null;
-    catalog?: string | null;
-    description?: string | null;
-    faculty?: string | null;
-    degree?: string | null;
-    degree_abbrev?: string | null;
-    credential?: string | null;
-    honours?: boolean | null;
-    total_credit_hours?: number | string | null;
-    required_course_codes?: string[] | null;
-    footnotes?: Record<string, unknown> | null;
-  };
 
   const [sectionRows, groupRows, itemRows] = await Promise.all([
     collectPages((from, to) =>
@@ -421,66 +532,10 @@ export async function getProgramDetail(
     ),
   ]);
 
-  const itemsByGroup = new Map<number, ProgramItemNode[]>();
-  for (const row of itemRows as RawItemRow[]) {
-    const list = itemsByGroup.get(row.group_row_id) ?? [];
-    list.push(toItemNode(row));
-    itemsByGroup.set(row.group_row_id, list);
-  }
-
-  const groupsBySection = new Map<number, ProgramGroup[]>();
-  for (const row of groupRows as RawGroupRow[]) {
-    const list = groupsBySection.get(row.section_row_id) ?? [];
-    list.push({
-      group_id: row.group_id,
-      kind: row.kind,
-      required: row.required,
-      label: row.label,
-      credit_hours:
-        row.credit_hours !== null && row.credit_hours !== undefined
-          ? Number(row.credit_hours)
-          : null,
-      items: itemsByGroup.get(row.id) ?? [],
-    });
-    groupsBySection.set(row.section_row_id, list);
-  }
-
-  const sections: ProgramSection[] = (sectionRows as RawSectionRow[]).map(
-    (row) => ({
-      section_id: row.section_id,
-      title: row.title,
-      title_clean: row.title_clean,
-      role: row.role,
-      is_alternative_track: Boolean(row.is_alternative_track),
-      credit_hours:
-        row.credit_hours !== null && row.credit_hours !== undefined
-          ? Number(row.credit_hours)
-          : null,
-      description: row.description,
-      groups: groupsBySection.get(row.id) ?? [],
-    }),
+  return buildProgramDetail(
+    progRow as unknown as RawProgramRow,
+    sectionRows as RawSectionRow[],
+    groupRows as RawGroupRow[],
+    itemRows as RawItemRow[],
   );
-
-  return {
-    program_id: String(p.program_id),
-    catalog_year: String(p.catalog_year ?? "2026-27"),
-    name: String(p.name),
-    url: p.url ?? null,
-    catalog: p.catalog ?? null,
-    description: p.description ?? null,
-    faculty: p.faculty ?? null,
-    degree: p.degree ?? null,
-    degree_abbrev: p.degree_abbrev ?? null,
-    credential: p.credential ?? null,
-    honours: Boolean(p.honours),
-    total_credit_hours:
-      p.total_credit_hours !== null && p.total_credit_hours !== undefined
-        ? Number(p.total_credit_hours)
-        : null,
-    required_course_codes: Array.isArray(p.required_course_codes)
-      ? (p.required_course_codes as string[])
-      : [],
-    footnotes: (p.footnotes as Record<string, unknown>) ?? {},
-    sections,
-  };
 }

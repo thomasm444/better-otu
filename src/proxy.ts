@@ -85,6 +85,12 @@ export default async function proxy(request: NextRequest) {
       return response;
     }
 
+    // Allow external calendar apps (Google Calendar / Apple iCal) to poll the
+    // HMAC-signed .ics feed without session cookies.
+    if (pathname === "/api/course-schedules/calendar") {
+      return response;
+    }
+
     if (pathname.startsWith("/api/")) {
       return NextResponse.json(
         { error: "Authentication required." },

@@ -255,7 +255,7 @@ export function PortalDashboard({ termLabel, footer }: PortalDashboardProps) {
       const [coursesRes, planRes, profileRes] = await Promise.allSettled([
         fetchStudentCourses(supabase),
         user.email ? fetchLatestDegreePlan(supabase, user.email) : Promise.resolve(null),
-        fetchStudentProfileWithPrograms(supabase),
+        fetchStudentProfileWithPrograms(supabase, user.id),
       ]);
 
       if (!active) return;
@@ -316,20 +316,33 @@ export function PortalDashboard({ termLabel, footer }: PortalDashboardProps) {
 
     async function loadLiveRooms() {
       try {
+        const params = new URLSearchParams({
+          weekStart: nowState.weekStart,
+          summary: "freeCount",
+          day: String(nowState.dayIndex),
+          slot: String(nowState.slotStart),
+        });
         const res = await fetch(
-          `/api/campus-map/week?weekStart=${encodeURIComponent(nowState.weekStart)}`,
+          `/api/campus-map/week?${params.toString()}`,
           { signal: controller.signal },
         );
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const weekData = (await res.json()) as CampusMapWeekData;
+        const payload = (await res.json()) as Partial<CampusMapWeekData> & {
+          freeRoomsTotal?: number;
+        };
         if (controller.signal.aborted) return;
+
+        if (typeof payload.freeRoomsTotal === "number") {
+          setFreeRoomsTotal(payload.freeRoomsTotal);
+          return;
+        }
 
         const dayKey = String(nowState.dayIndex);
         const slotStart = nowState.slotStart;
         const slotEnd = slotStart + 30;
         const freeNow: string[] = [];
 
-        for (const [roomId, byDay] of Object.entries(weekData.schedules ?? {})) {
+        for (const [roomId, byDay] of Object.entries(payload.schedules ?? {})) {
           const intervals = byDay?.[dayKey] ?? [];
           const isBusy = intervals.some(
             (ev) => ev.start < slotEnd && ev.end > slotStart,

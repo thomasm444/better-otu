@@ -7,8 +7,8 @@ export async function GET(
   context: { params: Promise<{ programId: string }> },
 ) {
   const { programId } = await context.params;
-  if (!programId) {
-    return NextResponse.json({ error: "Missing programId" }, { status: 400 });
+  if (!programId || programId.length > 64) {
+    return NextResponse.json({ error: "Invalid programId" }, { status: 400 });
   }
 
   const program = await getProgramDetail(programId);
@@ -16,5 +16,9 @@ export async function GET(
     return NextResponse.json({ error: "Program not found" }, { status: 404 });
   }
 
-  return NextResponse.json(program);
+  return NextResponse.json(program, {
+    headers: {
+      "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=86400",
+    },
+  });
 }

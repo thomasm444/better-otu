@@ -318,6 +318,12 @@ def ingest_term_into_supabase(supabase, sections: list[dict]) -> None:
             done += len(batch)
         print(f"  {table}: {done} inserted")
 
+    try:
+        refreshed = supabase.rpc("refresh_course_offerings_summary", {}).execute()
+        print(f"  course_offerings_summary_cache: refreshed ({refreshed.data} rows)")
+    except Exception as exc:
+        print(f"  Warning: failed to refresh course_offerings_summary_cache: {exc}")
+
 
 def current_and_next_term(now: datetime | None = None) -> tuple[str, str]:
     """Return (current_term_code, next_term_code) from the Toronto calendar date."""

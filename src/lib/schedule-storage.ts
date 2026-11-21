@@ -88,32 +88,21 @@ export function resolveSelectedCrnsMap(
   return result;
 }
 
-export async function loadUserTermScheduleFromDb(
-  supabase: SupabaseClient,
-  userId: string,
-  term: string,
+type StudentCourseTermRow = {
+  course_code: string;
+  selected_crn: string | null;
+  status: string;
+};
+
+function parseTermScheduleRows(
+  rows: StudentCourseTermRow[],
   courseMap: Map<string, ScheduleCourseGroup>,
-): Promise<{
+): {
   plannedCourses: PlannedCourseEntry[];
   blockedSlots: BlockedTimeSlot[];
   customBlocks: ScheduleBlock[];
   hasAnyRows: boolean;
-}> {
-  const { data, error } = await supabase
-    .from("student_courses")
-    .select("course_code, selected_crn, status, updated_at")
-    .eq("user_id", userId)
-    .eq("semester", term)
-    .order("created_at", { ascending: true });
-
-  if (error) throw error;
-
-  const rows = (data ?? []) as Array<{
-    course_code: string;
-    selected_crn: string | null;
-    status: string;
-  }>;
-
+} {
   let blockedSlots: BlockedTimeSlot[] = [];
   let customBlocks: ScheduleBlock[] = [];
   const plannedCourses: PlannedCourseEntry[] = [];
@@ -166,6 +155,92 @@ export async function loadUserTermScheduleFromDb(
     blockedSlots,
     customBlocks,
     hasAnyRows: rows.length > 0,
+  };
+}
+
+export async function loadUserTermScheduleFromDb(
+  supabase: SupabaseClient,
+  userId: string,
+  term: string,
+  courseMap: Map<string, ScheduleCourseGroup>,
+): Promise<{
+  plannedCourses: PlannedCourseEntry[];
+  blockedSlots: BlockedTimeSlot[];
+  customBlocks: ScheduleBlock[];
+  hasAnyRows: boolean;
+}> {
+  const { data, error } = await supabase
+    .from("student_courses")
+    .select("course_code, selected_crn, status, updated_at")
+    .eq("user_id", userId)
+    .eq("semester", term)
+    .order("created_at", { ascending: true });
+
+  if (error) throw error;
+
+  const rows = (data ?? []) as StudentCourseTermRow[];
+  return parseTermScheduleRows(rows, courseMap);
+}
+
+/**
+ * Fetches all `student_courses` rows for a user in a single query and derives
+ * the active term's schedule, completed courses, and Fall/Winter planned codes.
+ */
+export async function loadUserScheduleHydrationFromDb(
+  supabase: SupabaseClient,
+  userId: string,
+  term: string,
+  courseMap: Map<string, ScheduleCourseGroup>,
+): Promise<{
+  plannedCourses: PlannedCourseEntry[];
+  blockedSlots: BlockedTimeSlot[];
+  customBlocks: ScheduleBlock[];
+  hasAnyRows: boolean;
+  completedCourses: string[];
+  fallCodes: string[];
+  winterCodes: string[];
+}> {
+  const { data, error } = await supabase
+    .from("student_courses")
+    .select("course_code, selected_crn, semester, status, updated_at")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: true });
+
+  if (error) throw error;
+
+  const rows = (data ?? []) as Array<
+    StudentCourseTermRow & { semester: string }
+  >;
+
+  const termRows: StudentCourseTermRow[] = [];
+  const completedCourses: string[] = [];
+  const fallCodes: string[] = [];
+  const winterCodes: string[] = [];
+
+  for (const row of rows) {
+    if (row.semester === term) {
+      termRows.push(row);
+    }
+
+    const code = row.course_code.trim().toUpperCase();
+    if (!code || code.startsWith("__")) continue;
+
+    if (row.status === "completed") {
+      completedCourses.push(code);
+    }
+    if (row.semester === "202609" && row.status !== "dropped") {
+      fallCodes.push(code);
+    }
+    if (row.semester === "202701" && row.status !== "dropped") {
+      winterCodes.push(code);
+    }
+  }
+
+  return {
+    ...parseTermScheduleRows(termRows, courseMap),
+    completedCourses,
+    fallCodes,
+    winterCodes,
   };
 }
 
@@ -227,25 +302,21 @@ export async function syncUserTermScheduleToDb(
   }
 
   const keepCodes = new Set(upserts.map((u) => u.course_code));
-  const { data: existing, error: fetchErr } = await supabase
+  let deleteQuery = supabase
     .from("student_courses")
-    .select("id, course_code")
+    .delete()
     .eq("user_id", userId)
     .eq("semester", term);
 
-  if (fetchErr) throw fetchErr;
-
-  const toDelete = (existing ?? [])
-    .filter((row: { id: string; course_code: string }) => !keepCodes.has(row.course_code))
-    .map((row: { id: string }) => row.id);
-
-  if (toDelete.length > 0) {
-    const { error: delErr } = await supabase
-      .from("student_courses")
-      .delete()
-      .in("id", toDelete);
-    if (delErr) throw delErr;
+  if (keepCodes.size > 0) {
+    const inList = `(${[...keepCodes]
+      .map((c) => `"${c.replace(/"/g, "")}"`)
+      .join(",")})`;
+    deleteQuery = deleteQuery.not("course_code", "in", inList);
   }
+
+  const { error: delErr } = await deleteQuery;
+  if (delErr) throw delErr;
 }
 
 export function loadLocalDegreePlans(): Array<{

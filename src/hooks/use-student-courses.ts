@@ -37,7 +37,7 @@ export function useStudentCourses(semester?: string) {
       setError(null);
       try {
         const [loadedProfile, loadedCourses] = await Promise.all([
-          fetchStudentProfile(supabase),
+          fetchStudentProfile(supabase, currentUser.id),
           fetchStudentCourses(supabase, semester),
         ]);
         setProfile(loadedProfile);
@@ -84,7 +84,7 @@ export function useStudentCourses(semester?: string) {
 
   const addOrUpdateCourse = useCallback(
     async (input: UpsertStudentCourseInput) => {
-      const saved = await upsertStudentCourse(supabase, input);
+      const saved = await upsertStudentCourse(supabase, input, user?.id);
       setCourses((prev) => {
         const idx = prev.findIndex((c) => c.id === saved.id);
         if (idx >= 0) {
@@ -96,7 +96,7 @@ export function useStudentCourses(semester?: string) {
       });
       return saved;
     },
-    [supabase],
+    [supabase, user?.id],
   );
 
   const updateCourse = useCallback(

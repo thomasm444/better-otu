@@ -306,6 +306,10 @@ export function DegreePlannerClient({
   const menuContainerRef = useRef<HTMLDivElement>(null);
   const plansMenuContainerRef = useRef<HTMLDivElement>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSaveRef = useRef<Parameters<typeof upsertDegreePlan>[1] | null>(
+    null,
+  );
 
   useEffect(() => {
     programRef.current = program;
@@ -332,6 +336,42 @@ export function DegreePlannerClient({
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     toastTimerRef.current = setTimeout(() => setToastMsg(null), 1800);
   }, []);
+
+  const flushPendingSave = useCallback(async () => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+    const payload = pendingSaveRef.current;
+    if (!payload) return;
+    pendingSaveRef.current = null;
+    try {
+      const savedRecord = await upsertDegreePlan(supabase, payload);
+      setSavedPlans((prev) => {
+        const next = [
+          savedRecord,
+          ...prev.filter((p) => p.program_id !== savedRecord.program_id),
+        ];
+        savedPlansRef.current = next;
+        return next;
+      });
+    } catch {
+      showToast("Could not save plan to your account");
+    }
+  }, [supabase, showToast]);
+
+  useEffect(() => {
+    const handleFlush = () => {
+      void flushPendingSave();
+    };
+    window.addEventListener("pagehide", handleFlush);
+    window.addEventListener("beforeunload", handleFlush);
+    return () => {
+      window.removeEventListener("pagehide", handleFlush);
+      window.removeEventListener("beforeunload", handleFlush);
+      void flushPendingSave();
+    };
+  }, [flushPendingSave]);
 
   const applyProgramWithSaved = useCallback(
     (prog: DegreeProgramDetail, saved: SavedPlan, startYearOverride?: number) => {
@@ -502,7 +542,7 @@ export function DegreePlannerClient({
       try {
         const [allPlans, profile] = await Promise.all([
           fetchAllDegreePlans(supabase, nextUser.email),
-          fetchStudentProfile(supabase).catch(() => null),
+          fetchStudentProfile(supabase, nextUser.id).catch(() => null),
         ]);
         if (!active) return;
         savedPlansRef.current = allPlans;
@@ -880,6 +920,7 @@ export function DegreePlannerClient({
     async (summary: ProgramSummary) => {
       setMenuOpen(false);
       setProgramQuery("");
+      await flushPendingSave();
 
       if (summary.program_id !== programRef.current?.program_id) {
         setPreviousPlan(null);
@@ -913,13 +954,14 @@ export function DegreePlannerClient({
         setLoadingProgram(false);
       }
     },
-    [activateProgram, showToast],
+    [activateProgram, flushPendingSave, showToast],
   );
 
   const selectSavedPlan = useCallback(
     async (plan: DegreePlanRecord) => {
       setPlansMenuOpen(false);
       setMenuOpen(false);
+      await flushPendingSave();
 
       if (plan.program_id !== programRef.current?.program_id) {
         setPreviousPlan(null);
@@ -963,7 +1005,13 @@ export function DegreePlannerClient({
         setLoadingProgram(false);
       }
     },
-    [applyProgramWithSaved, loadMinorDetail, loadProgramDetail, showToast],
+    [
+      applyProgramWithSaved,
+      flushPendingSave,
+      loadMinorDetail,
+      loadProgramDetail,
+      showToast,
+    ],
   );
 
   const handleConfirmDeletePlan = useCallback(async () => {
@@ -973,6 +1021,15 @@ export function DegreePlannerClient({
 
     setDeletingPlan(true);
     try {
+      if (pendingSaveRef.current?.programId === planToDelete.program_id) {
+        if (saveTimerRef.current) {
+          clearTimeout(saveTimerRef.current);
+          saveTimerRef.current = null;
+        }
+        pendingSaveRef.current = null;
+      } else {
+        await flushPendingSave();
+      }
       await deleteDegreePlan(supabase, user.email, planToDelete.program_id);
 
       if (typeof window !== "undefined") {
@@ -1022,6 +1079,7 @@ export function DegreePlannerClient({
     user,
     deleteCountdown,
     deletingPlan,
+    flushPendingSave,
     supabase,
     previousPlan,
     showToast,
@@ -1112,7 +1170,7 @@ export function DegreePlannerClient({
       );
 
       if (user?.email) {
-        void upsertDegreePlan(supabase, {
+        pendingSaveRef.current = {
           userId: user.id,
           userEmail: user.email,
           degreeName: effectiveName,
@@ -1122,23 +1180,16 @@ export function DegreePlannerClient({
           minorProgramId: nextMinorProgramId,
           terms: normalizedTerms,
           customs: [...nextCustoms.values()],
-        })
-          .then((savedRecord) => {
-            setSavedPlans((prev) => {
-              const next = [
-                savedRecord,
-                ...prev.filter((p) => p.program_id !== savedRecord.program_id),
-              ];
-              savedPlansRef.current = next;
-              return next;
-            });
-          })
-          .catch(() => {
-            showToast("Could not save plan to your account");
-          });
+        };
+        if (saveTimerRef.current) {
+          clearTimeout(saveTimerRef.current);
+        }
+        saveTimerRef.current = setTimeout(() => {
+          void flushPendingSave();
+        }, 800);
       }
     },
-    [program, showToast, supabase, user, startYear, gapYears, planName],
+    [program, flushPendingSave, user, startYear, gapYears, planName],
   );
 
   const handleSelectMinor = useCallback(
@@ -1613,6 +1664,7 @@ export function DegreePlannerClient({
         const carriedGapYears = [...gapYears];
 
         if (carriedTerms.length === 0 || isTargetAlreadySaved) {
+          await flushPendingSave();
           await activateProgram(detail, undefined, effectiveStartYear);
           showToast(
             isTargetAlreadySaved
@@ -1698,6 +1750,7 @@ export function DegreePlannerClient({
       commitPlan,
       customs,
       equivMap,
+      flushPendingSave,
       gapYears,
       loadMinorDetail,
       loadProgramDetail,

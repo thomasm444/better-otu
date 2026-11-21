@@ -173,6 +173,52 @@ export async function getSearchVocab(
 
   const supabase = getPublicClient();
 
+  try {
+    const { data: rpcData, error: rpcError } = await supabase.rpc(
+      "search_vocab",
+      { p_term: term } as never,
+    );
+
+    if (
+      !rpcError &&
+      rpcData &&
+      typeof rpcData === "object" &&
+      !Array.isArray(rpcData)
+    ) {
+      const raw = rpcData as Record<string, unknown>;
+      const normalizeList = (val: unknown): string[] | null => {
+        if (!Array.isArray(val)) return null;
+        const set = new Set<string>();
+        for (const item of val) {
+          if (typeof item === "string" && item.length > 0) {
+            set.add(item);
+          }
+        }
+        return [...set].sort(compareText);
+      };
+
+      const subjects = normalizeList(raw.subjects);
+      const courseCodes = normalizeList(raw.courseCodes);
+      const classTypes = normalizeList(raw.classTypes);
+      const instructors = normalizeList(raw.instructors);
+
+      if (
+        subjects &&
+        courseCodes &&
+        classTypes &&
+        instructors &&
+        (subjects.length > 0 ||
+          courseCodes.length > 0 ||
+          classTypes.length > 0 ||
+          instructors.length > 0)
+      ) {
+        return { subjects, courseCodes, classTypes, instructors };
+      }
+    }
+  } catch {
+    // Fall back to paginated REST queries if the RPC is not yet deployed.
+  }
+
   const [courseRows, facultyRows] = await Promise.all([
     collectPages((from, to) =>
       supabase
@@ -914,7 +960,7 @@ export async function getCampusMapWeekSchedule(
   rawWeekStart: string,
 ): Promise<CampusMapWeekData> {
   "use cache";
-  cacheLife("minutes");
+  cacheLife({ stale: 300, revalidate: 900, expire: 3600 });
   cacheTag("campus-map-week");
 
   const weekStart = clampWeekStart(rawWeekStart);
@@ -1366,6 +1412,65 @@ export async function getCampusMapWeekSchedule(
     libraryWindowStart,
     libraryWindowEnd,
   };
+}
+
+/**
+ * Counts how many scheduled campus rooms (`hasSchedule === true`) are free
+ * during `[slotStart, slotStart + 30]` on `dayIndex` of `weekStart`, including
+ * scheduled rooms that have 0 events that week.
+ */
+export async function getCampusLiveFreeRoomCount(
+  weekStart: string,
+  dayIndex: number,
+  slotStart: number,
+): Promise<number> {
+  "use cache";
+  cacheLife({ stale: 300, revalidate: 900, expire: 3600 });
+  cacheTag("campus-map-base", "campus-map-week");
+
+  const [mapData, weekData] = await Promise.all([
+    getCampusMapData(),
+    getCampusMapWeekSchedule(weekStart),
+  ]);
+
+  const dayKey = String(dayIndex);
+  const slotEnd = slotStart + 30;
+  const seenRooms = new Set<string>();
+  const seenSubRooms = new Set<string>();
+  let freeCount = 0;
+
+  for (const feature of mapData.features) {
+    const p = feature.properties;
+    if (!p.hasSchedule) continue;
+
+    if (p.isBuildingContainer && p.rooms && p.rooms.length > 0) {
+      for (const rid of p.rooms) {
+        if (seenSubRooms.has(rid)) continue;
+        seenSubRooms.add(rid);
+        const intervals = weekData.subRoomSchedules[rid]?.[dayKey] ?? [];
+        const isBusy = intervals.some(
+          (ev) => ev.start < slotEnd && ev.end > slotStart,
+        );
+        if (!isBusy) freeCount++;
+      }
+      continue;
+    }
+
+    const eid = p.externalId;
+    if (eid) {
+      if (seenRooms.has(eid)) continue;
+      seenRooms.add(eid);
+      const intervals = weekData.schedules[eid]?.[dayKey] ?? [];
+      const isBusy = intervals.some(
+        (ev) => ev.start < slotEnd && ev.end > slotStart,
+      );
+      if (!isBusy) freeCount++;
+    } else {
+      freeCount++;
+    }
+  }
+
+  return freeCount;
 }
 
 const WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday"] as const;

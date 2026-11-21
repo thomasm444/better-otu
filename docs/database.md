@@ -3,7 +3,7 @@
 Supabase (Postgres), all in the `public` schema, populated from Banner course-schedule scrapes, Undergraduate Academic Calendar scrapes, campus map/booking feeds, and authenticated student data.
 
 The authoritative DDL lives in [`supabase/migrations/`](../supabase/migrations/) —
-fifteen committed, idempotent migrations. Apply them oldest first:
+sixteen committed, idempotent migrations. Apply them oldest first:
 
 | migration | what it does |
 | --- | --- |
@@ -22,6 +22,7 @@ fifteen committed, idempotent migrations. Apply them oldest first:
 | `20261119120000_ratemyprof_schema.sql` | creates `rmp_professors` and `rmp_professor_courses`, links `course_faculty` and `exam_schedules` via `rmp_professor_id` FKs + auto-link triggers, and links `rmp_professor_courses` to `catalog_courses` |
 | `20261120000000_degree_plans_minor.sql` | adds `minor_program_id text` to `degree_plans` so an attached minor persists with the saved plan |
 | `20261120160000_profiles_onboarding.sql` | adds student onboarding columns (`year_of_study`, `degree_program_id`, `has_minor`, `minor_program_id`, `onboarding_completed_at`, `onboarding_skipped_at`) to `profiles` with FKs to `degree_programs`, backfills missing profiles, and adds student `INSERT` RLS |
+| `20261121180000_backend_security_and_perf.sql` | adds payload `CHECK` constraints on user-writable tables, tightens `profiles` email RLS, adds `search_vocab(p_term)` & `get_program_detail_json(p_program_id)` RPCs, drops redundant indexes, and adds composite indexes on `exam_schedules` and `degree_plans` |
 
 ```bash
 # With the Supabase CLI
@@ -156,7 +157,6 @@ Indexes:
 | `courses_term_crn_key` (unique) | `(term, crn)` | natural key |
 | `courses_search_order_idx` | `(term, subject, course_number, crn)` | search filter **and** the `ORDER BY subject, course_number, crn LIMIT 10` — no sort step |
 | `courses_term_class_type_idx` | `(term, schedule_type_description)` | class-type filter |
-| `courses_term_idx` | `(term)` | redundant prefix of `courses_search_order_idx`; safe to drop |
 | `courses_subject_idx`, `courses_course_number_idx` | single column | subject/course lookups without a term |
 | `courses_crn_idx` | `(crn)` | CRN lookups for linking `exam_schedules` → `courses` → `course_faculty` |
 | `courses_title_idx` | `(course_title)` | exact title lookups |
@@ -302,6 +302,8 @@ them for a day (`'use cache'`, tag `search-vocab`). Measured for `202609`:
 
 That is ~18 KB in total, so the browser filters them locally and no query runs
 per keystroke — a round trip to Supabase measures ~390 ms, which rules that out.
+`search_vocab(p_term)` returns all four sorted lists (`subjects`, `courseCodes`,
+`classTypes`, `instructors`) in a single `DISTINCT` index-backed RPC call.
 
 `'use cache'` functions may not read cookies, so these queries use
 `src/lib/supabase/public.ts` (cookie-less anon client) rather than
@@ -421,9 +423,10 @@ Created by `20261112120000_degree_planner_schema.sql` and extended for multi-yea
 
 - `degree_subjects` (`code` PK, `name`, `faculty`, `course_count`)
 - `catalog_courses` (`code` PK, `catalog_year`, `formerly_codes`, `subject` FK → `degree_subjects.code`, `prerequisite_codes`, `prerequisite_ast`, `terms_offered`, etc.) — academic calendar definitions across all ingested years (`catalog_year` records the most recent year the course appeared in; `formerly_codes` links renumbered courses such as `CSCI 1050U` ← `CSCI 2050U`; older/retired courses are preserved alongside current ones), distinct from `public.courses` (Banner sections)
-- `degree_programs` (`program_id` PK, `catalog_year`, `name`, `faculty`, `degree`, `total_credit_hours`, `required_course_codes`, etc.) — Ontario Tech's `poid` (`program_id`) is unique per `(program, catalog_year)`, so all calendar years (`2016-17` through `2026-27`) coexist cleanly, indexed on `(catalog_year, name, program_id)`
+- `degree_programs` (`program_id` PK, `catalog_year`, `name`, `faculty`, `degree`, `total_credit_hours`, `required_course_codes`, etc.) — Ontario Tech's `poid` (`program_id`) is unique per `(program, catalog_year)`, so all calendar years (`2016-17` through `2026-27`) coexist cleanly, indexed on `(catalog_year desc, name asc, program_id asc)`
 - `program_sections` → `program_groups` → `program_items` → `program_item_courses` (cascade-deleted hierarchy of degree requirements scoped by `program_id`)
-- `course_offerings_summary_cache` (`subject_course` PK, `subject`, `course_number`, `terms`, `sections`, `credit_hours`, `updated_at`) — precomputed summary table populated from `public.courses` by `refresh_course_offerings_summary()` (service-role RPC, called after Banner ingestion).
+- `get_program_detail_json(p_program_id)` — RPC returning the `degree_programs` row plus ordered `program_sections`, `program_groups`, and `program_items` in a single call (or `null` if not found).
+- `course_offerings_summary_cache` (`subject_course` PK, `subject`, `course_number`, `terms`, `sections`, `credit_hours`, `updated_at`) — precomputed summary table populated from `public.courses` by `refresh_course_offerings_summary()` (service-role RPC, called automatically at the end of `ingest_courses.py`).
 - `course_offerings_summary` — view reading directly from `course_offerings_summary_cache` (so `getCourseOfferings()` does fast primary-key index lookups instead of live `GROUP BY` scans over `public.courses`).
 
 ## Auth & Student tables
@@ -431,9 +434,10 @@ Created by `20261112120000_degree_planner_schema.sql` and extended for multi-yea
 Created by `20261112180000_auth_and_student_courses.sql`, `20261112200000_degree_plans.sql`, `20261113143000_degree_plans_columns.sql`, `20261118000000_degree_catalog_years.sql`, `20261120000000_degree_plans_minor.sql`, and `20261120160000_profiles_onboarding.sql`.
 
 - `hook_before_user_created(event)` — Supabase Auth hook restricting sign-ups to `@ontariotechu.net`.
-- `profiles` (`id` PK → `auth.users.id`, `email`, `full_name`, `avatar_url`, `year_of_study` smallint `1..4`, `degree_program_id` FK → `degree_programs.program_id`, `has_minor` boolean, `minor_program_id` FK → `degree_programs.program_id`, `onboarding_completed_at` timestamptz, `onboarding_skipped_at` timestamptz) — auto-populated on signup via `handle_new_user()`. RLS: users can `SELECT`/`INSERT`/`UPDATE` their own row.
-- `student_courses` (`id` uuid PK, `user_id` → `auth.users.id`, `course_code`, `selected_crn`, `semester`, `status`, `grade`; unique `(user_id, course_code, semester)`). RLS: user-scoped CRUD.
-- `degree_plans` (`user_email`, `degree_name`, `start_year`, `catalog_year`, `program_id`, `minor_program_id`, `terms` jsonb, `customs` jsonb, `user_id`, `id` uuid PK; unique `(user_email, program_id)`). RLS: user-scoped CRUD matching both `auth.uid()` and JWT `email`.
+- `profiles` (`id` PK → `auth.users.id`, `email`, `full_name`, `avatar_url`, `year_of_study` smallint `1..4`, `degree_program_id` FK → `degree_programs.program_id`, `has_minor` boolean, `minor_program_id` FK → `degree_programs.program_id`, `onboarding_completed_at` timestamptz, `onboarding_skipped_at` timestamptz) — auto-populated on signup via `handle_new_user()`. RLS: users can `SELECT`/`INSERT`/`UPDATE` their own row (`INSERT`/`UPDATE` `WITH CHECK` also enforces `lower(email) = lower(coalesce((select auth.jwt() ->> 'email'), ''))`). Caps: `full_name <= 200`, `avatar_url <= 1024` chars.
+- `student_courses` (`id` uuid PK, `user_id` → `auth.users.id`, `course_code`, `selected_crn`, `semester`, `status`, `grade`; unique `(user_id, course_code, semester)`). RLS: user-scoped CRUD. Caps: `selected_crn <= 16384` bytes, `course_code <= 32`, `semester <= 16` chars.
+- `degree_plans` (`user_email`, `degree_name`, `start_year`, `catalog_year`, `program_id`, `minor_program_id`, `terms` jsonb, `customs` jsonb, `user_id`, `id` uuid PK; unique `(user_email, program_id)`). RLS: user-scoped CRUD matching both `auth.uid()` and JWT `email`, indexed on `(user_id, program_id)` and `(user_email, updated_at desc)`. Caps: `pg_column_size(terms) <= 65536`, `pg_column_size(customs) <= 65536`, `degree_name <= 200`, `program_id <= 64` chars.
+- `exam_schedules` also carries composite index `exam_schedules_term_year_season_crn_idx` on `(term_year, term_season, crn)` for `.ics` calendar exports.
 
 ## Example queries
 

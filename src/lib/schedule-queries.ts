@@ -31,6 +31,10 @@ const COMPONENT_ORDER: Record<CourseComponentType, number> = {
   OTHER: 4,
 };
 
+const DAY_ORDER = Object.fromEntries(
+  DAYS_OF_WEEK.map((d, index) => [d.key, index]),
+) as Record<DayOfWeek, number>;
+
 const TERM_WEEK_ANCHORS: Record<
   string,
   { anchorMonday: string; readingWeekMonday: string }
@@ -307,16 +311,17 @@ function normalizeSection(row: RawCourseRow, term: string): ScheduleSection | nu
 
   meetings.sort(
     (a, b) =>
-      DAYS_OF_WEEK.findIndex((d) => d.key === a.day) -
-        DAYS_OF_WEEK.findIndex((d) => d.key === b.day) ||
+      DAY_ORDER[a.day] - DAY_ORDER[b.day] ||
       a.startMinutes - b.startMinutes,
   );
 
-  const sectionWeekPatterns = new Set(meetings.map((m) => m.weekPattern));
-  const sectionWeekPattern: WeekPattern =
-    sectionWeekPatterns.size === 1
-      ? ([...sectionWeekPatterns][0] ?? "both")
-      : "both";
+  let sectionWeekPattern: WeekPattern = "both";
+  if (meetings.length > 0) {
+    const firstPattern = meetings[0].weekPattern;
+    if (meetings.every((m) => m.weekPattern === firstPattern)) {
+      sectionWeekPattern = firstPattern;
+    }
+  }
 
   const method = (row.instructional_method ?? "").trim().toUpperCase();
   const campus = (row.campus_description ?? "").trim();
@@ -436,15 +441,23 @@ export async function getTermScheduleCatalog(
     getDegreeSubjects(),
   ]);
 
-  const catalogByCode = new Map(
-    catalogCourses.map((c) => [c.code.trim().toUpperCase(), c]),
-  );
-  const catalogByCompact = new Map(
-    catalogCourses.map((c) => [c.subject_course.trim().toUpperCase(), c]),
-  );
-  const subjectMeta = new Map(
-    degreeSubjects.map((s) => [s.code.trim().toUpperCase(), s]),
-  );
+  const catalogByCode = new Map<string, (typeof catalogCourses)[number]>();
+  const catalogByCompact = new Map<string, (typeof catalogCourses)[number]>();
+  const allCatalogMap = new Map<string, string>();
+  for (const c of catalogCourses) {
+    const code = c.code.trim().toUpperCase();
+    if (code) {
+      catalogByCode.set(code, c);
+      allCatalogMap.set(code, c.title || code);
+    }
+    const compact = c.subject_course.trim().toUpperCase();
+    if (compact) catalogByCompact.set(compact, c);
+  }
+
+  const subjectMeta = new Map<string, (typeof degreeSubjects)[number]>();
+  for (const s of degreeSubjects) {
+    subjectMeta.set(s.code.trim().toUpperCase(), s);
+  }
 
   const grouped = new Map<string, ScheduleSection[]>();
   const subjectsSet = new Set<string>();
@@ -495,24 +508,20 @@ export async function getTermScheduleCatalog(
       requiredComponents[0] === "LEC" &&
       sections.every((s) => s.scheduleTypeDescription !== "Lecture & Lab");
 
+    const compGroups = [...byComp.values()];
+
     const isFullyOnlineCapable =
-      requiredComponents.length > 0 &&
-      requiredComponents.every((comp) =>
-        (byComp.get(comp) ?? []).some((s) => s.isOnline),
-      );
+      compGroups.length > 0 &&
+      compGroups.every((group) => group.some((s) => s.isOnline));
 
     const isFullyAsyncCapable =
-      requiredComponents.length > 0 &&
-      requiredComponents.every((comp) =>
-        (byComp.get(comp) ?? []).some((s) => s.isAsync),
-      );
+      compGroups.length > 0 &&
+      compGroups.every((group) => group.some((s) => s.isAsync));
 
     const hasOpenSeats =
-      requiredComponents.length > 0 &&
-      requiredComponents.every((comp) =>
-        (byComp.get(comp) ?? []).some(
-          (s) => s.seatsAvailable === null || s.seatsAvailable > 0,
-        ),
+      compGroups.length > 0 &&
+      compGroups.every((group) =>
+        group.some((s) => s.seatsAvailable === null || s.seatsAvailable > 0),
       );
 
     const hasBiweeklyComponent = sections.some(
@@ -559,19 +568,16 @@ export async function getTermScheduleCatalog(
 
   courses.sort((a, b) => a.courseCode.localeCompare(b.courseCode, "en"));
 
-  const allCatalogMap = new Map<string, string>();
-  for (const c of catalogCourses) {
-    const code = c.code.trim().toUpperCase();
-    if (code) allCatalogMap.set(code, c.title || code);
-  }
   for (const c of courses) {
     if (!allCatalogMap.has(c.courseCode)) {
       allCatalogMap.set(c.courseCode, c.title || c.courseCode);
     }
   }
-  const allCatalogCourses = [...allCatalogMap.entries()]
-    .map(([code, title]) => ({ code, title }))
-    .sort((a, b) => a.code.localeCompare(b.code, "en"));
+  const allCatalogCourses: Array<{ code: string; title: string }> = [];
+  for (const [code, title] of allCatalogMap) {
+    allCatalogCourses.push({ code, title });
+  }
+  allCatalogCourses.sort((a, b) => a.code.localeCompare(b.code, "en"));
 
   return {
     term: termInfo.code,
