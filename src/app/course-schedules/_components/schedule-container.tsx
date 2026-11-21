@@ -251,7 +251,7 @@ export function ScheduleContainer({
       }
     };
     document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
+  return () => document.removeEventListener("mousedown", onDown);
   }, [blockMenuOpen]);
 
   // Close degree-plan import popover on outside click
@@ -266,7 +266,7 @@ export function ScheduleContainer({
       }
     };
     document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
+  return () => document.removeEventListener("mousedown", onDown);
   }, [importMenuOpen]);
 
   // Auth listener
@@ -286,7 +286,7 @@ export function ScheduleContainer({
       setAuthReady(true);
     });
 
-    return () => {
+  return () => {
       active = false;
       subscription.unsubscribe();
     };
@@ -563,7 +563,7 @@ export function ScheduleContainer({
 
     void hydrate();
 
-    return () => {
+  return () => {
       cancelled = true;
     };
   }, [activeTerm, authReady, user, terms, supabase, courseMap]);
@@ -608,7 +608,7 @@ export function ScheduleContainer({
         });
     }, 600);
 
-    return () => {
+  return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
   }, [
@@ -1063,7 +1063,7 @@ export function ScheduleContainer({
       }
     };
     window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
+  return () => window.removeEventListener("keydown", onKeyDown);
   }, [isEditMode, markDirty, showToast]);
 
   const handleSetCourseMode = useCallback(
@@ -1410,6 +1410,26 @@ export function ScheduleContainer({
     [markDirty, temporaryPriorCourseCodes],
   );
 
+  const hasBiweeklyClass = useMemo(() => {
+    if (annotatedBlocks.some((b) => b.weekPattern !== "both")) return true;
+    for (const target of gridSectionPickers) {
+      const course = courseMap.get(target.courseCode);
+      if (!course) continue;
+      if (
+        course.sections.some((sec) =>
+          sec.meetings.some((m) => m.weekPattern !== "both"),
+        )
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }, [annotatedBlocks, gridSectionPickers, courseMap]);
+
+  const effectiveViewMode: ScheduleViewMode = hasBiweeklyClass
+    ? viewMode
+    : "combined";
+
   return (
     <div className="space-y-4">
       {/* Mobile 2-Tab Bar (< lg) */}
@@ -1464,29 +1484,31 @@ export function ScheduleContainer({
                 ))}
               </select>
 
-              {/* View Mode Switcher (Combined, Week 1, Week 2 only) */}
-              <div className="inline-flex rounded-lg border border-zinc-300 bg-white p-0.5 text-xs font-medium dark:border-zinc-700 dark:bg-zinc-800">
-                {(
-                  [
-                    { id: "combined", label: "Combined" },
-                    { id: "week1", label: "Week 1" },
-                    { id: "week2", label: "Week 2" },
-                  ] as const
-                ).map((mode) => (
-                  <button
-                    key={mode.id}
-                    type="button"
-                    onClick={() => setViewMode(mode.id)}
-                    className={`rounded-md px-2.5 py-1 transition ${
-                      viewMode === mode.id
-                        ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-                        : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200"
-                    }`}
-                  >
-                    {mode.label}
-                  </button>
-                ))}
-              </div>
+              {/* View Mode Switcher (Combined, Week 1, Week 2 only when biweekly classes exist) */}
+              {hasBiweeklyClass && (
+                <div className="inline-flex rounded-lg border border-zinc-300 bg-white p-0.5 text-xs font-medium dark:border-zinc-700 dark:bg-zinc-800">
+                  {(
+                    [
+                      { id: "combined", label: "Combined" },
+                      { id: "week1", label: "Week 1" },
+                      { id: "week2", label: "Week 2" },
+                    ] as const
+                  ).map((mode) => (
+                    <button
+                      key={mode.id}
+                      type="button"
+                      onClick={() => setViewMode(mode.id)}
+                      className={`rounded-md px-2.5 py-1 transition ${
+                        viewMode === mode.id
+                          ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+                          : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200"
+                      }`}
+                    >
+                      {mode.label}
+                    </button>
+                  ))}
+                </div>
+              )}
 
               {/* RateMyProfessors Star Toggle (off by default) */}
               <button
@@ -1845,7 +1867,7 @@ export function ScheduleContainer({
                   ),
                 ];
                 if (fullCourses.length === 0) return null;
-                return (
+  return (
                   <span
                     title={`0 seats available: ${fullCourses.join(", ")}`}
                     className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800 dark:border-amber-800 dark:bg-amber-950/60 dark:text-amber-300"
@@ -1909,24 +1931,24 @@ export function ScheduleContainer({
 
           {/* Timetable Grid */}
           <WeekScheduleGrid
-            viewMode={viewMode}
+            viewMode={effectiveViewMode}
             title={
-              viewMode === "combined"
+              effectiveViewMode === "combined"
                 ? `${catalog.termLabel} Schedule`
-                : viewMode === "week1"
+                : effectiveViewMode === "week1"
                   ? `${catalog.termLabel} — Week 1`
                   : `${catalog.termLabel} — Week 2`
             }
             subtitle={
-              viewMode === "combined"
+              effectiveViewMode === "combined"
                 ? isEditMode
                   ? "Biweekly W1 (left) & W2 (right) side-by-side · Drag blocks to snap to other sections"
                   : "Biweekly W1 (left) and W2 (right) classes sit side-by-side"
-                : viewMode === "week1"
+                : effectiveViewMode === "week1"
                   ? "Odd Teaching Weeks"
                   : "Even Teaching Weeks"
             }
-            accentColor={viewMode === "combined" ? "purple": viewMode === "week2" ? "red" : "blue"
+            accentColor={effectiveViewMode === "combined" ? "purple": effectiveViewMode === "week2" ? "red" : "blue"
             }
             courses={annotatedBlocks}
             blockedSlots={blockedSlots}
