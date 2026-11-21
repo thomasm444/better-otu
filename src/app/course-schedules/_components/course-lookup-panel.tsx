@@ -243,6 +243,33 @@ export function CourseLookupPanel({
     Record<string, CourseComponentType>
   >({});
   const [visibleLimit, setVisibleLimit] = useState(30);
+  const [profProfile, setProfProfile] = useState<{
+    name: string;
+    courseCode: string;
+    rmp: SectionRmpInfo | null;
+    anchor: { left: number; top?: number; bottom?: number };
+  } | null>(null);
+
+  const openProfProfile = (
+    e: React.MouseEvent<HTMLButtonElement>,
+    name: string,
+    courseCode: string,
+    rmp: SectionRmpInfo | null,
+  ) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const spaceAbove = rect.top;
+    const placeBelow = spaceBelow >= 250 || spaceBelow >= spaceAbove;
+    const left = Math.max(12, Math.min(rect.left, window.innerWidth - 332));
+    setProfProfile({
+      name,
+      courseCode,
+      rmp,
+      anchor: placeBelow
+        ? { left, top: rect.bottom + 6 }
+        : { left, bottom: window.innerHeight - rect.top + 6 },
+    });
+  };
 
   // Completed courses editor popover
   const [completedOpen, setCompletedOpen] = useState(false);
@@ -632,6 +659,12 @@ export function CourseLookupPanel({
         if (prev.some((t) => t.courseCode === course.courseCode)) {
           return prev.filter((t) => t.courseCode !== course.courseCode);
         }
+        setExpandedCourses((curr) => {
+          if (!curr.has(course.courseCode)) return curr;
+          const next = new Set(curr);
+          next.delete(course.courseCode);
+          return next;
+        });
         return [...prev, { courseCode: course.courseCode, component: targetComp }];
       });
       return;
@@ -915,6 +948,34 @@ export function CourseLookupPanel({
         : undefined;
       const isCompOpen = isExpanded && currentComp === comp;
 
+      const label = (
+        <span>
+          {comp}:{" "}
+          {sec
+            ? sec.isAsync
+              ? `CRN ${sec.crn} (Async)`
+              : `CRN ${sec.crn}${sec.weekPattern !== "both" ? ` ${sec.weekPattern === "week1" ? "W1" : "W2"}` : ""}`
+            : isEditMode
+              ? "Pick section"
+              : "Unselected"}
+        </span>
+      );
+
+      if (!isEditMode) {
+        return (
+          <span
+            key={comp}
+            className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10.5px] font-medium ${
+              sec
+                ? "border-zinc-300 bg-white text-zinc-800 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
+                : "border-amber-400 bg-amber-50 text-amber-900 dark:border-amber-700 dark:bg-amber-950/60 dark:text-amber-200"
+            }`}
+          >
+            {label}
+          </span>
+        );
+      }
+
       return (
         <button
           key={comp}
@@ -929,16 +990,7 @@ export function CourseLookupPanel({
                 : "border-amber-400 bg-amber-50 text-amber-900 hover:border-amber-500 hover:bg-amber-100/80 dark:border-amber-700 dark:bg-amber-950/60 dark:text-amber-200 dark:hover:border-amber-500 dark:hover:bg-amber-900/60"
           }`}
         >
-          <span>
-            {comp}:{" "}
-            {sec
-              ? sec.isAsync
-                ? `CRN ${sec.crn} (Async)`
-                : `CRN ${sec.crn}${sec.weekPattern !== "both" ? ` ${sec.weekPattern === "week1" ? "W1" : "W2"}` : ""}`
-              : isEditMode
-                ? "Pick section"
-                : "Unselected"}
-          </span>
+          {label}
           <span className="text-[9px] opacity-65">
             {isCompOpen ? "▴" : "▾"}
           </span>
@@ -1858,7 +1910,7 @@ export function CourseLookupPanel({
             </form>
           )}
 
-          <div className="max-h-[680px] flex-1 space-y-4 overflow-y-auto p-3">
+          <div className="max-h-[680px] flex-1 space-y-4 overflow-y-auto p-3 [scrollbar-gutter:stable]">
             {plannedCourses.length === 0 && customBlocks.length === 0 ? (
               <div className="rounded-lg border border-dashed border-zinc-200 p-6 text-center text-xs text-zinc-500 dark:border-zinc-800">
                 <p className="font-medium text-zinc-700 dark:text-zinc-300">
@@ -1916,6 +1968,38 @@ export function CourseLookupPanel({
                               <p className="truncate text-xs text-zinc-600 dark:text-zinc-400">
                                 {course?.title ?? "Course not offered this term"}
                               </p>
+                              {(() => {
+                                if (!course) return null;
+                                const lecCrn = entry.selectedCrns["LEC"];
+                                const preferredCrn =
+                                  lecCrn ?? Object.values(entry.selectedCrns)[0];
+                                const sec = preferredCrn
+                                  ? course.sections.find(
+                                      (s) => s.crn === preferredCrn,
+                                    )
+                                  : undefined;
+                                const profName = sec?.instructor?.trim();
+                                if (!profName) return null;
+                                return (
+                                  <button
+                                    type="button"
+                                    onClick={(e) =>
+                                      openProfProfile(
+                                        e,
+                                        profName,
+                                        entry.courseCode,
+                                        sec?.rmp ?? selectedRmp ?? null,
+                                      )
+                                    }
+                                    className="mt-0.5 inline-flex max-w-full items-center gap-1 truncate text-[11px] font-medium text-sky-700 hover:underline dark:text-sky-400"
+                                    title={`View ${profName}'s profile`}
+                                  >
+                                    <span className="truncate">
+                                      Prof: {profName}
+                                    </span>
+                                  </button>
+                                );
+                              })()}
                             </div>
                             <div className="flex shrink-0 items-center gap-1">
                               {renderCourseVisibilityButton(entry)}
@@ -1973,13 +2057,14 @@ export function CourseLookupPanel({
                                   }
                                   className="text-[11px] font-medium text-blue-600 hover:underline dark:text-blue-400"
                                 >
-                                  {isExpanded
-                                    ? "Done"
-                                    : isEditMode
-                                      ? "Choose Times"
-                                      : "Sections"}
+                                  <FixedWidthSwapLabel
+                                    label={
+                                      isExpanded ? "Sections ▴" : "Sections ▾"
+                                    }
+                                    first="Sections ▴"
+                                    second="Sections ▾"
+                                  />
                                 </button>
-                                {showRmp && <RmpStarBadge rmp={selectedRmp} />}
                               </div>
                             </div>
                           )}
@@ -2046,6 +2131,38 @@ export function CourseLookupPanel({
                               <p className="truncate text-xs text-zinc-600 dark:text-zinc-400">
                                 {course?.title ?? entry.courseCode}
                               </p>
+                              {(() => {
+                                if (!course) return null;
+                                const lecCrn = entry.selectedCrns["LEC"];
+                                const preferredCrn =
+                                  lecCrn ?? Object.values(entry.selectedCrns)[0];
+                                const sec = preferredCrn
+                                  ? course.sections.find(
+                                      (s) => s.crn === preferredCrn,
+                                    )
+                                  : undefined;
+                                const profName = sec?.instructor?.trim();
+                                if (!profName) return null;
+                                return (
+                                  <button
+                                    type="button"
+                                    onClick={(e) =>
+                                      openProfProfile(
+                                        e,
+                                        profName,
+                                        entry.courseCode,
+                                        sec?.rmp ?? selectedRmp ?? null,
+                                      )
+                                    }
+                                    className="mt-0.5 inline-flex max-w-full items-center gap-1 truncate text-[11px] font-medium text-sky-700 hover:underline dark:text-sky-400"
+                                    title={`View ${profName}'s profile`}
+                                  >
+                                    <span className="truncate">
+                                      Prof: {profName}
+                                    </span>
+                                  </button>
+                                );
+                              })()}
                             </div>
                             <div className="flex shrink-0 items-center gap-1">
                               {renderCourseVisibilityButton(entry)}
@@ -2115,13 +2232,14 @@ export function CourseLookupPanel({
                                   }
                                   className="text-[11px] font-medium text-blue-600 hover:underline dark:text-blue-400"
                                 >
-                                  {isExpanded
-                                    ? "Done"
-                                    : isEditMode
-                                      ? "Choose Times"
-                                      : "Sections"}
+                                  <FixedWidthSwapLabel
+                                    label={
+                                      isExpanded ? "Sections ▴" : "Sections ▾"
+                                    }
+                                    first="Sections ▴"
+                                    second="Sections ▾"
+                                  />
                                 </button>
-                                {showRmp && <RmpStarBadge rmp={selectedRmp} />}
                               </div>
                             </div>
                           )}
@@ -2172,6 +2290,110 @@ export function CourseLookupPanel({
           </div>
         </div>
       )}
+
+      {profProfile && (() => {
+        const rating = profProfile.rmp?.avgRating ?? null;
+        const popoutTone =
+          rating == null
+            ? "border-zinc-200 bg-white text-zinc-900 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
+            : rating >= 4
+              ? "border-emerald-300 bg-emerald-50 text-emerald-950 dark:border-emerald-800/80 dark:bg-emerald-950/95 dark:text-emerald-50"
+              : rating >= 3
+                ? "border-amber-300 bg-amber-50 text-amber-950 dark:border-amber-800/80 dark:bg-amber-950/95 dark:text-amber-50"
+                : "border-rose-300 bg-rose-50 text-rose-950 dark:border-rose-800/80 dark:bg-rose-950/95 dark:text-rose-50";
+
+        return (
+          <>
+            <div
+              className="fixed inset-0 z-40"
+              onClick={() => setProfProfile(null)}
+            />
+            <div
+              style={{
+                left: profProfile.anchor.left,
+                top: profProfile.anchor.top,
+                bottom: profProfile.anchor.bottom,
+              }}
+              className={`fixed z-50 w-80 rounded-2xl border p-4 shadow-2xl backdrop-blur-sm ${popoutTone}`}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="text-[10.5px] font-semibold uppercase tracking-wider opacity-75">
+                    Instructor Profile · {profProfile.courseCode}
+                  </div>
+                  <h3 className="mt-0.5 truncate text-sm font-semibold">
+                    {profProfile.name}
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setProfProfile(null)}
+                  aria-label="Close professor profile"
+                  className="rounded-lg px-1.5 py-0.5 text-sm opacity-60 hover:bg-black/5 hover:opacity-100 dark:hover:bg-white/10"
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="mt-3 space-y-2.5">
+                <div className="rounded-xl border border-black/10 bg-white/75 p-2.5 dark:border-white/10 dark:bg-black/25">
+                  <div className="text-[10.5px] font-semibold uppercase tracking-wider opacity-70">
+                    RateMyProfessors Rating
+                  </div>
+                  {profProfile.rmp && profProfile.rmp.avgRating !== null ? (
+                    <div className="mt-1.5 grid grid-cols-3 gap-1.5 text-center">
+                      <div className="rounded-lg bg-white/90 p-1.5 shadow-2xs dark:bg-zinc-900/80">
+                        <div className="text-sm font-bold">
+                          {profProfile.rmp.avgRating.toFixed(1)}
+                        </div>
+                        <div className="text-[9.5px] opacity-70">Quality</div>
+                      </div>
+                      <div className="rounded-lg bg-white/90 p-1.5 shadow-2xs dark:bg-zinc-900/80">
+                        <div className="text-sm font-bold">
+                          {profProfile.rmp.avgDifficulty !== null
+                            ? profProfile.rmp.avgDifficulty.toFixed(1)
+                            : "—"}
+                        </div>
+                        <div className="text-[9.5px] opacity-70">
+                          Difficulty
+                        </div>
+                      </div>
+                      <div className="rounded-lg bg-white/90 p-1.5 shadow-2xs dark:bg-zinc-900/80">
+                        <div className="text-sm font-bold">
+                          {profProfile.rmp.wouldTakeAgainPercent !== null
+                            ? `${Math.round(profProfile.rmp.wouldTakeAgainPercent)}%`
+                            : "—"}
+                        </div>
+                        <div className="text-[9.5px] opacity-70">
+                          Take Again
+                        </div>
+                      </div>
+                      <div className="col-span-3 text-[10.5px] opacity-75">
+                        Based on {profProfile.rmp.numRatings} rating
+                        {profProfile.rmp.numRatings === 1 ? "" : "s"}
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="mt-1 text-xs opacity-75">
+                      No RateMyProfessors rating available.
+                    </p>
+                  )}
+                </div>
+
+                <div className="rounded-xl border border-black/10 bg-white/75 p-2.5 dark:border-white/10 dark:bg-black/25">
+                  <div className="text-[10.5px] font-semibold uppercase tracking-wider opacity-70">
+                    Salary (Ontario Sunshine List)
+                  </div>
+                  <p className="mt-1 text-xs opacity-75">
+                    Salary data not connected yet.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </>
+        );
+      })()}
     </aside>
   );
 }

@@ -46,6 +46,7 @@ interface GhostTargetSlot {
   isCurrent: boolean;
   multiColorIndex?: number;
   label: string;
+  groupedOptions?: GhostTargetSlot[];
 }
 
 const MULTI_COURSE_GHOST_PALETTE: Array<{
@@ -520,6 +521,10 @@ export function WeekScheduleGrid({
   );
   const [hiddenBlockedId, setHiddenBlockedId] = useState<string | null>(null);
   const [hiddenCustomId, setHiddenCustomId] = useState<string | null>(null);
+  const [slotGroupPicker, setSlotGroupPicker] = useState<{
+    options: GhostTargetSlot[];
+    anchor: { left: number; top?: number; bottom?: number };
+  } | null>(null);
 
   const gridBodyRef = useRef<HTMLDivElement>(null);
   const cleanupDragRef = useRef<(() => void) | null>(null);
@@ -534,6 +539,10 @@ export function WeekScheduleGrid({
     if (gridSectionPickers.length === 0 && !selectedCourse) return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        if (slotGroupPicker) {
+          setSlotGroupPicker(null);
+          return;
+        }
         if (selectedCourse) {
           setSelectedCourse(null);
           return;
@@ -691,7 +700,31 @@ export function WeekScheduleGrid({
       }
     });
 
-    return allGhosts;
+    // Group multiple sections of the same (courseCode, component) in the exact same timeslot
+    const slotGroups = new Map<string, GhostTargetSlot[]>();
+    for (const g of allGhosts) {
+      const key = `${g.courseCode}:${g.component}:${g.day}:${g.startMinutes}:${g.endMinutes}`;
+      const list = slotGroups.get(key) ?? [];
+      list.push(g);
+      slotGroups.set(key, list);
+    }
+
+    const collapsed: GhostTargetSlot[] = [];
+    for (const list of slotGroups.values()) {
+      if (list.length === 1) {
+        collapsed.push(list[0]);
+        continue;
+      }
+      const current = list.find((o) => o.isCurrent);
+      const rep = current ?? list.find((o) => o.fits) ?? list[0];
+      collapsed.push({
+        ...rep,
+        fits: current ? current.fits : list.some((o) => o.fits),
+        groupedOptions: list,
+      });
+    }
+
+    return collapsed;
   }, [
     gridSectionPickers,
     hiddenCourseCodes,
@@ -1917,8 +1950,42 @@ export function WeekScheduleGrid({
                           pickerByCourseCode.get(g.courseCode)?.component ===
                             "ALL";
 
-                        const handleGhostActivate = () => {
+                        const handleGhostActivate = (
+                          ev?: React.SyntheticEvent<HTMLElement>,
+                        ) => {
                           if (!hasGridPickers) return;
+                          if (
+                            canPickOnGrid &&
+                            g.groupedOptions &&
+                            g.groupedOptions.length > 1 &&
+                            !g.isCurrent
+                          ) {
+                            const rect =
+                              ev?.currentTarget.getBoundingClientRect();
+                            const spaceBelow = rect
+                              ? window.innerHeight - rect.bottom
+                              : 300;
+                            const placeBelow =
+                              !rect || spaceBelow >= 240 || spaceBelow >= rect.top;
+                            const left = rect
+                              ? Math.max(
+                                  12,
+                                  Math.min(rect.left, window.innerWidth - 300),
+                                )
+                              : 16;
+                            setSlotGroupPicker({
+                              options: g.groupedOptions,
+                              anchor: rect
+                                ? placeBelow
+                                  ? { left, top: rect.bottom + 6 }
+                                  : {
+                                      left,
+                                      bottom: window.innerHeight - rect.top + 6,
+                                    }
+                                : { left: 16, top: 80 },
+                            });
+                            return;
+                          }
                           if (canPickOnGrid) {
                             onSelectSection?.(g.courseCode, g.component, g.crn);
                             return;
@@ -1978,7 +2045,7 @@ export function WeekScheduleGrid({
                               isPickerOverlay
                                 ? (ev) => {
                                     ev.stopPropagation();
-                                    handleGhostActivate();
+                                    handleGhostActivate(ev);
                                   }
                                 : undefined
                             }
@@ -1988,7 +2055,7 @@ export function WeekScheduleGrid({
                                     if (ev.key === "Enter" || ev.key === " ") {
                                       ev.preventDefault();
                                       ev.stopPropagation();
-                                      handleGhostActivate();
+                                      handleGhostActivate(ev);
                                     }
                                   }
                                 : undefined
@@ -2038,26 +2105,50 @@ export function WeekScheduleGrid({
                           >
                             <div className="flex items-center justify-between gap-1 font-semibold">
                               <span className="truncate">
-                                {isMultiCoursePicker
-                                  ? `${g.courseCode} ${g.component}`
-                                  : showComponentInHeader
-                                    ? `${g.component} ${g.crn}`
-                                    : `CRN ${g.crn}`}
+                                {g.groupedOptions &&
+                                g.groupedOptions.length > 1 &&
+                                !g.isCurrent
+                                  ? (() => {
+                                      const noun =
+                                        g.component === "TUT"
+                                          ? "Tutorials"
+                                          : g.component === "LAB"
+                                            ? "Labs"
+                                            : g.component === "LEC"
+                                              ? "Lectures"
+                                              : g.component === "SEM"
+                                                ? "Seminars"
+                                                : "Sections";
+                                      return isMultiCoursePicker
+                                        ? `${g.courseCode} · ${g.groupedOptions.length} ${noun}`
+                                        : `${g.groupedOptions.length} ${noun}`;
+                                    })()
+                                  : isMultiCoursePicker
+                                    ? `${g.courseCode} ${g.component}`
+                                    : showComponentInHeader
+                                      ? `${g.component} ${g.crn}`
+                                      : `CRN ${g.crn}`}
                               </span>
-                              {g.weekPattern !== "both" && (
-                                <span className="shrink-0 rounded bg-black/15 px-1 text-[8px] uppercase">
-                                  {g.weekPattern === "week1" ? "W1" : "W2"}
-                                </span>
-                              )}
+                              {(!g.groupedOptions ||
+                                g.groupedOptions.length === 1 ||
+                                g.isCurrent) &&
+                                g.weekPattern !== "both" && (
+                                  <span className="shrink-0 rounded bg-black/15 px-1 text-[8px] uppercase">
+                                    {g.weekPattern === "week1" ? "W1" : "W2"}
+                                  </span>
+                                )}
                             </div>
                             <span className="truncate text-[9px] opacity-85">
                               {g.isCurrent
                                 ? `✓ Current ${g.component}`
-                                : compAlreadySelected
-                                  ? `${g.room} • ${g.fits ? "Switch" : "Conflict"}`
-                                  : g.fits
-                                    ? `${g.room} • Fits`
-                                    : `${g.room} • Conflict`}
+                                : g.groupedOptions &&
+                                    g.groupedOptions.length > 1
+                                  ? `Click to choose (${g.groupedOptions.length})`
+                                  : compAlreadySelected
+                                    ? `${g.room} • ${g.fits ? "Switch" : "Conflict"}`
+                                    : g.fits
+                                      ? `${g.room} • Fits`
+                                      : `${g.room} • Conflict`}
                             </span>
                           </div>
                         );
@@ -2249,6 +2340,104 @@ export function WeekScheduleGrid({
           </div>
         </div>
       )}
+      {/* Grouped Timeslot Section Chooser Popover */}
+      {slotGroupPicker && (() => {
+        const first = slotGroupPicker.options[0];
+        const hasDiffWeeks =
+          new Set(slotGroupPicker.options.map((o) => o.weekPattern)).size > 1 ||
+          slotGroupPicker.options.some((o) => o.weekPattern !== "both");
+        return (
+          <>
+            <div
+              className="fixed inset-0 z-40"
+              onClick={() => setSlotGroupPicker(null)}
+            />
+            <div
+              style={{
+                left: slotGroupPicker.anchor.left,
+                top: slotGroupPicker.anchor.top,
+                bottom: slotGroupPicker.anchor.bottom,
+              }}
+              className="fixed z-50 w-72 rounded-xl border border-zinc-200 bg-white p-3 shadow-2xl dark:border-zinc-700 dark:bg-zinc-900"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between border-b border-zinc-200 pb-2 dark:border-zinc-800">
+                <div>
+                  <div className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
+                    {first.courseCode} · Choose {first.component}
+                  </div>
+                  <div className="text-[10.5px] text-zinc-500">
+                    {formatTimeDisplay(first.startTime)}–
+                    {formatTimeDisplay(first.endTime)}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSlotGroupPicker(null)}
+                  className="rounded px-1.5 py-0.5 text-sm text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800"
+                >
+                  ×
+                </button>
+              </div>
+              <div className="mt-2 max-h-56 space-y-1.5 overflow-y-auto">
+                {slotGroupPicker.options.map((opt) => (
+                  <button
+                    key={opt.crn}
+                    type="button"
+                    onClick={() => {
+                      onSelectSection?.(opt.courseCode, opt.component, opt.crn);
+                      setSlotGroupPicker(null);
+                    }}
+                    className={`flex w-full items-center justify-between gap-2 rounded-lg border px-2.5 py-2 text-left text-xs transition ${
+                      opt.fits
+                        ? "border-zinc-200 bg-zinc-50/70 hover:border-emerald-400 hover:bg-emerald-50/60 dark:border-zinc-800 dark:bg-zinc-950/60 dark:hover:border-emerald-700"
+                        : "border-rose-200 bg-rose-50/60 hover:border-rose-400 dark:border-rose-900/60 dark:bg-rose-950/30"
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5 font-semibold text-zinc-900 dark:text-zinc-100">
+                        <span>CRN {opt.crn}</span>
+                        {hasDiffWeeks && (
+                          <span
+                            className={`rounded px-1.5 py-0.5 text-[10px] font-semibold ${
+                              opt.weekPattern === "week1"
+                                ? "bg-blue-100 text-blue-800 dark:bg-blue-950/70 dark:text-blue-200"
+                                : opt.weekPattern === "week2"
+                                  ? "bg-purple-100 text-purple-800 dark:bg-purple-950/70 dark:text-purple-200"
+                                  : "bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+                            }`}
+                          >
+                            {opt.weekPattern === "week1"
+                              ? "Week 1"
+                              : opt.weekPattern === "week2"
+                                ? "Week 2"
+                                : "Every week"}
+                          </span>
+                        )}
+                      </div>
+                      <div className="mt-0.5 truncate text-[10.5px] text-zinc-500">
+                        {opt.room}
+                        {opt.section.seatsAvailable !== null
+                          ? ` · ${opt.section.seatsAvailable} seats`
+                          : ""}
+                      </div>
+                    </div>
+                    <span
+                      className={`shrink-0 text-[10.5px] font-semibold ${
+                        opt.fits
+                          ? "text-emerald-700 dark:text-emerald-400"
+                          : "text-rose-600 dark:text-rose-400"
+                      }`}
+                    >
+                      {opt.fits ? "Pick" : "Conflict"}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </>
+        );
+      })()}
     </div>
   );
 }
