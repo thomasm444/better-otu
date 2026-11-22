@@ -1,27 +1,12 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-import {
-  buildOnboardingCookieOptions,
-  getSafeNextPath,
-  hasResolvedOnboarding,
-  ONBOARDING_COOKIE_NAME,
-} from "@/lib/onboarding";
+import { getSafeNextPath } from "@/lib/onboarding";
 
 const ALLOWED_EMAIL_DOMAIN = "@ontariotechu.net";
 
 function isPublicAuthPath(pathname: string): boolean {
   return pathname === "/login" || pathname.startsWith("/auth/");
-}
-
-function isOnboardingExemptPath(pathname: string): boolean {
-  return (
-    pathname === "/login" ||
-    pathname === "/onboarding" ||
-    pathname.startsWith("/onboarding/") ||
-    pathname.startsWith("/auth/") ||
-    pathname.startsWith("/api/")
-  );
 }
 
 function redirectWithCookies(
@@ -113,44 +98,6 @@ export default async function proxy(request: NextRequest) {
     const destination = getSafeNextPath(request.nextUrl.searchParams.get("next"));
     const targetUrl = new URL(destination, request.url);
     return redirectWithCookies(targetUrl, response);
-  }
-
-  const isPrefetch =
-    Boolean(request.headers.get("next-router-prefetch")) ||
-    request.headers.get("purpose") === "prefetch";
-
-  if (
-    request.method === "GET" &&
-    !isPrefetch &&
-    !isOnboardingExemptPath(pathname) &&
-    request.cookies.get(ONBOARDING_COOKIE_NAME)?.value !== user!.id
-  ) {
-    const { data: profile, error: profileError } = await supabase
-      .from("profiles")
-      .select("onboarding_completed_at, onboarding_skipped_at")
-      .eq("id", user!.id)
-      .maybeSingle();
-
-    if (profileError) {
-      return response;
-    }
-
-    if (hasResolvedOnboarding(profile)) {
-      response.cookies.set(
-        ONBOARDING_COOKIE_NAME,
-        user!.id,
-        buildOnboardingCookieOptions(),
-      );
-      return response;
-    }
-
-    const onboardingUrl = request.nextUrl.clone();
-    onboardingUrl.pathname = "/onboarding";
-    onboardingUrl.search = "";
-    if (pathname !== "/") {
-      onboardingUrl.searchParams.set("next", `${pathname}${search}`);
-    }
-    return redirectWithCookies(onboardingUrl, response);
   }
 
   return response;

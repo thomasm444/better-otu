@@ -1,11 +1,6 @@
 import { NextResponse } from "next/server";
 
-import {
-  buildOnboardingCookieOptions,
-  getSafeNextPath,
-  hasResolvedOnboarding,
-  ONBOARDING_COOKIE_NAME,
-} from "@/lib/onboarding";
+import { getSafeNextPath } from "@/lib/onboarding";
 import { createClient } from "@/lib/supabase/server";
 
 const ALLOWED_EMAIL_DOMAIN = "@ontariotechu.net";
@@ -91,33 +86,7 @@ export async function GET(request: Request) {
     );
   }
 
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("onboarding_completed_at, onboarding_skipped_at")
-    .eq("id", data.user.id)
-    .maybeSingle();
-
-  if (!profileError && !hasResolvedOnboarding(profile)) {
-    const onboardingPath =
-      nextPath !== "/"
-        ? `/onboarding?next=${encodeURIComponent(nextPath)}`
-        : "/onboarding";
-    const response = NextResponse.redirect(
-      buildRedirectUrl(request, origin, onboardingPath),
-    );
-    response.cookies.delete(ONBOARDING_COOKIE_NAME);
-    return response;
-  }
-
-  const response = NextResponse.redirect(
+  return NextResponse.redirect(
     buildRedirectUrl(request, origin, nextPath),
   );
-  if (!profileError) {
-    response.cookies.set(
-      ONBOARDING_COOKIE_NAME,
-      data.user.id,
-      buildOnboardingCookieOptions(),
-    );
-  }
-  return response;
 }
