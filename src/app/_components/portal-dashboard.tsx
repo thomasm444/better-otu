@@ -165,7 +165,7 @@ function computeDegreeProgress(plan: DegreePlanRecord | null): {
 }
 
 export function PortalDashboard({ termLabel, footer }: PortalDashboardProps) {
-  const [homeTheme, setHomeTheme] = useState<HomeTheme>("stacked");
+  const [homeTheme, setHomeTheme] = useState<HomeTheme>("classic");
   const [firstName, setFirstName] = useState<string | null>(null);
   const [profile, setProfile] = useState<StudentProfileWithPrograms | null>(null);
   const [academicStartYear, setAcademicStartYear] = useState<number>(DEFAULT_START_YEAR);
@@ -176,6 +176,8 @@ export function PortalDashboard({ termLabel, footer }: PortalDashboardProps) {
   const [nowLabel, setNowLabel] = useState<string | null>(null);
   const [liveTimeLabel, setLiveTimeLabel] = useState<string | null>(null);
   const [freeRoomsTotal, setFreeRoomsTotal] = useState<number | null>(null);
+  const [freeRoomsSample, setFreeRoomsSample] = useState<string[]>([]);
+  const [roomsLoading, setRoomsLoading] = useState<boolean>(true);
 
   // Custom circular shortcuts for "+" button & Google Workspace shortcuts
   const [customShortcuts, setCustomShortcuts] = useState<CustomShortcut[]>([]);
@@ -329,11 +331,27 @@ export function PortalDashboard({ termLabel, footer }: PortalDashboardProps) {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const payload = (await res.json()) as Partial<CampusMapWeekData> & {
           freeRoomsTotal?: number;
+          freeRooms?: string[];
         };
         if (controller.signal.aborted) return;
 
+        const pickSample = (rooms: string[]) => {
+          const copy = [...rooms];
+          for (let i = copy.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            const tmp = copy[i];
+            copy[i] = copy[j];
+            copy[j] = tmp;
+          }
+          return copy.slice(0, 6);
+        };
+
         if (typeof payload.freeRoomsTotal === "number") {
           setFreeRoomsTotal(payload.freeRoomsTotal);
+          setFreeRoomsSample(
+            Array.isArray(payload.freeRooms) ? pickSample(payload.freeRooms) : [],
+          );
+          setRoomsLoading(false);
           return;
         }
 
@@ -353,9 +371,13 @@ export function PortalDashboard({ termLabel, footer }: PortalDashboardProps) {
         }
 
         setFreeRoomsTotal(freeNow.length);
+        setFreeRoomsSample(pickSample(freeNow));
+        setRoomsLoading(false);
       } catch {
         if (!controller.signal.aborted) {
           setFreeRoomsTotal(null);
+          setFreeRoomsSample([]);
+          setRoomsLoading(false);
         }
       }
     }
@@ -534,47 +556,78 @@ export function PortalDashboard({ termLabel, footer }: PortalDashboardProps) {
         <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-5 py-7 sm:px-8 sm:py-10">
           {/* Shared Top Header: Greeting on left, Account & Theme switch on top-right */}
           <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-            <div className="min-w-0 flex-1">
-              <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl dark:text-white">
-                {firstName ? `Welcome back, ${firstName}` : "Welcome to Better OTU"}
-              </h1>
-              <p className="mt-0.5 text-xs font-medium text-slate-500 dark:text-slate-400">
-                Ontario Tech University &bull; {termLabel}
-              </p>
-              {hasAcademicSummary ? (
-                <p className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-slate-600 dark:text-slate-300">
-                  <span className="font-medium text-[#003C71] dark:text-sky-300">
-                    {[
-                      yearLabel,
-                      profileDegreeName,
-                      profileMinorName ? `Minor: ${profileMinorName}` : null,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")}
+            <div className="min-w-0 flex-1 space-y-2">
+              {homeTheme === "classic" && (
+                <div className="inline-flex items-center gap-2 rounded-full border border-[#003C71]/15 bg-white/85 px-3 py-1 text-xs font-semibold text-[#003C71] shadow-2xs backdrop-blur-sm dark:border-sky-400/20 dark:bg-slate-900/80 dark:text-sky-200">
+                  <span className="flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-full bg-[#003C71] dark:bg-sky-400" />
+                    <span className="h-2 w-2 rounded-full bg-[#E75D2A]" />
                   </span>
-                  <span
-                    aria-hidden="true"
-                    className="text-slate-300 dark:text-slate-600"
-                  >
-                    &bull;
+                  <span>Better OTU</span>
+                  <span className="text-slate-300 dark:text-slate-600">&bull;</span>
+                  <span className="font-medium text-slate-600 dark:text-slate-300">
+                    Ontario Tech University
                   </span>
-                  <Link
-                    href="/profile"
-                    className="font-medium text-slate-500 underline decoration-slate-300 underline-offset-2 transition-colors hover:text-[#003C71] dark:text-slate-400 dark:decoration-slate-700 dark:hover:text-sky-300"
-                  >
-                    Edit
-                  </Link>
+                </div>
+              )}
+
+              <div>
+                <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl dark:text-white">
+                  {firstName ? (
+                    homeTheme === "classic" ? (
+                      <>
+                        Welcome back,{" "}
+                        <span className="bg-gradient-to-r from-[#003C71] via-[#0A5AA3] to-[#E75D2A] bg-clip-text text-transparent dark:from-sky-300 dark:via-blue-300 dark:to-[#FF8B5E]">
+                          {firstName}
+                        </span>
+                      </>
+                    ) : (
+                      `Welcome back, ${firstName}`
+                    )
+                  ) : (
+                    "Welcome to Better OTU"
+                  )}
+                </h1>
+                <p className="mt-0.5 text-xs font-medium text-slate-500 dark:text-slate-400">
+                  {homeTheme === "classic"
+                    ? "Your all-in-one Ontario Tech hub for live room vacancy, course timetables, and degree planning."
+                    : `Ontario Tech University • ${termLabel}`}
                 </p>
-              ) : profile?.onboarding_skipped_at ? (
-                <p className="mt-1 text-xs">
-                  <Link
-                    href="/onboarding"
-                    className="font-medium text-[#003C71] underline decoration-[#9AC0EB] underline-offset-2 transition-colors hover:text-[#002D56] dark:text-sky-300 dark:decoration-sky-700 dark:hover:text-sky-200"
-                  >
-                    Personalize your year &amp; degree &rarr;
-                  </Link>
-                </p>
-              ) : null}
+                {hasAcademicSummary ? (
+                  <p className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-slate-600 dark:text-slate-300">
+                    <span className="font-medium text-[#003C71] dark:text-sky-300">
+                      {[
+                        yearLabel,
+                        profileDegreeName,
+                        profileMinorName ? `Minor: ${profileMinorName}` : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </span>
+                    <span
+                      aria-hidden="true"
+                      className="text-slate-300 dark:text-slate-600"
+                    >
+                      &bull;
+                    </span>
+                    <Link
+                      href="/profile"
+                      className="font-medium text-slate-500 underline decoration-slate-300 underline-offset-2 transition-colors hover:text-[#003C71] dark:text-slate-400 dark:decoration-slate-700 dark:hover:text-sky-300"
+                    >
+                      Edit
+                    </Link>
+                  </p>
+                ) : profile?.onboarding_skipped_at ? (
+                  <p className="mt-1 text-xs">
+                    <Link
+                      href="/onboarding"
+                      className="font-medium text-[#003C71] underline decoration-[#9AC0EB] underline-offset-2 transition-colors hover:text-[#002D56] dark:text-sky-300 dark:decoration-sky-700 dark:hover:text-sky-200"
+                    >
+                      Personalize your year &amp; degree &rarr;
+                    </Link>
+                  </p>
+                ) : null}
+              </div>
             </div>
 
             <div className="flex shrink-0 flex-col items-end gap-2 self-end sm:self-auto">
@@ -597,6 +650,8 @@ export function PortalDashboard({ termLabel, footer }: PortalDashboardProps) {
               nowLabel={nowLabel}
               liveTimeLabel={liveTimeLabel}
               freeRoomsTotal={freeRoomsTotal}
+              freeRoomsSample={freeRoomsSample}
+              roomsLoading={roomsLoading}
               quickBuildings={QUICK_BUILDINGS}
               defaultShortcuts={DEFAULT_SHORTCUTS}
               googleShortcuts={googleShortcuts}

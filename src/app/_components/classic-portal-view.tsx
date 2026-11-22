@@ -52,6 +52,8 @@ interface ClassicPortalViewProps {
   nowLabel: string | null;
   liveTimeLabel: string | null;
   freeRoomsTotal: number | null;
+  freeRoomsSample: string[];
+  roomsLoading: boolean;
   quickBuildings: readonly string[];
   defaultShortcuts: readonly DefaultShortcutItem[];
   googleShortcuts: GoogleShortcutsState;
@@ -173,6 +175,8 @@ export function ClassicPortalView({
   nowLabel,
   liveTimeLabel,
   freeRoomsTotal,
+  freeRoomsSample,
+  roomsLoading,
   quickBuildings,
   defaultShortcuts,
   googleShortcuts,
@@ -315,7 +319,6 @@ export function ClassicPortalView({
 
   const linkCount = bloomEntries.filter((e) => e.kind === "link").length;
   const useRadialBloom = bloomEntries.length <= 6;
-  const activeStudyYear = profile?.year_of_study ?? 3;
   const pulseTimeText = liveTimeLabel ?? nowLabel;
 
   return (
@@ -369,26 +372,26 @@ export function ClassicPortalView({
             </div>
           </div>
 
-          <div className="mt-5 rounded-xl border border-slate-100 bg-slate-50/90 p-3 dark:border-slate-800 dark:bg-slate-950/60">
+          <div className="mt-5 rounded-xl border border-slate-100 bg-slate-50/90 p-3.5 dark:border-slate-800 dark:bg-slate-950/60">
             {visibleCourseCodes.length > 0 ? (
               <>
                 <div className="flex items-center justify-between text-[11px] font-semibold text-slate-600 dark:text-slate-300">
-                  <span>Saved Courses</span>
-                  <span className="tabular-nums text-[#003C71] dark:text-sky-300">
+                  <span>Your Saved Courses</span>
+                  <span className="rounded-full bg-[#003C71]/10 px-2 py-0.5 font-mono text-[10px] font-bold tabular-nums text-[#003C71] dark:bg-sky-500/20 dark:text-sky-200">
                     {savedCourseCodes.length}
                   </span>
                 </div>
-                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
                   {visibleCourseCodes.map((code) => (
                     <span
                       key={code}
-                      className="rounded-md border border-slate-200/90 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-800 shadow-2xs dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                      className="rounded-full border border-slate-200/90 bg-white px-2.5 py-0.5 font-mono text-[11px] font-semibold text-slate-800 shadow-2xs dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
                     >
                       {code}
                     </span>
                   ))}
                   {savedCourseCodes.length > 4 && (
-                    <span className="rounded-md bg-[#003C71]/10 px-2 py-0.5 text-[11px] font-semibold text-[#003C71] dark:bg-sky-500/20 dark:text-sky-200">
+                    <span className="rounded-full bg-[#003C71]/10 px-2 py-0.5 text-[11px] font-semibold text-[#003C71] dark:bg-sky-500/20 dark:text-sky-200">
                       +{savedCourseCodes.length - 4} more
                     </span>
                   )}
@@ -396,45 +399,26 @@ export function ClassicPortalView({
               </>
             ) : (
               <>
-                <div className="flex items-center justify-between text-[11px] font-semibold text-slate-600 dark:text-slate-300">
-                  <span>Bi-weekly Grid</span>
-                  <span className="text-[#003C71] dark:text-sky-300">
-                    W1 &bull; W2 Sync
-                  </span>
-                </div>
-                <div className="mt-2 grid grid-cols-5 gap-1.5">
-                  <div className="space-y-1">
-                    <div className="h-2.5 rounded-xs bg-[#003C71]/80 dark:bg-sky-400/80" />
-                    <div className="h-1.5 rounded-xs bg-slate-200 dark:bg-slate-800" />
-                  </div>
-                  <div className="space-y-1">
-                    <div className="h-1.5 rounded-xs bg-slate-200 dark:bg-slate-800" />
-                    <div className="h-2.5 rounded-xs bg-emerald-500/80" />
-                  </div>
-                  <div className="space-y-1">
-                    <div className="h-2.5 rounded-xs bg-[#003C71]/80 dark:bg-sky-400/80" />
-                    <div className="h-2 rounded-xs bg-[#E75D2A]/80" />
-                  </div>
-                  <div className="space-y-1">
-                    <div className="h-2 rounded-xs bg-indigo-500/75" />
-                    <div className="h-1.5 rounded-xs bg-slate-200 dark:bg-slate-800" />
-                  </div>
-                  <div className="space-y-1">
-                    <div className="h-2.5 rounded-xs bg-emerald-500/75" />
-                    <div className="h-1.5 rounded-xs bg-slate-200 dark:bg-slate-800" />
-                  </div>
-                </div>
+                <p className="text-xs font-semibold text-slate-900 dark:text-slate-100">
+                  Bi-weekly timetable &amp; section lookup
+                </p>
+                <p className="mt-1 text-[11px] leading-relaxed text-slate-600 dark:text-slate-400">
+                  View Week 1 &amp; Week 2 classes, check rooms, and add {termLabel} CRNs
+                </p>
               </>
             )}
           </div>
         </Link>
 
-        {/* 2. Campus Map Card */}
-        <Link
-          href="/campus-map?venue=north"
-          className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-slate-200/90 bg-white/95 p-6 shadow-xs backdrop-blur-xs transition-all duration-200 hover:-translate-y-1 hover:border-emerald-500/45 hover:shadow-[0_18px_38px_-14px_rgba(16,185,129,0.22)] dark:border-slate-800 dark:bg-slate-900/90 dark:hover:border-emerald-400/45"
-        >
-          <div>
+        {/* 2. Campus Map Card (Zainab's layout + Ruhma's Free Rooms Right Now pills) */}
+        <div className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-slate-200/90 bg-white/95 p-6 shadow-xs backdrop-blur-xs transition-all duration-200 hover:-translate-y-1 hover:border-emerald-500/45 hover:shadow-[0_18px_38px_-14px_rgba(16,185,129,0.22)] dark:border-slate-800 dark:bg-slate-900/90 dark:hover:border-emerald-400/45">
+          <Link
+            href="/campus-map?venue=north"
+            aria-label="Open Campus Map"
+            className="absolute inset-0 z-0 rounded-2xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
+          />
+
+          <div className="pointer-events-none relative z-10">
             <div className="flex items-start justify-between gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-500/12 text-emerald-700 ring-1 ring-emerald-500/20 transition-transform duration-200 group-hover:scale-105 dark:bg-emerald-500/15 dark:text-emerald-300 dark:ring-emerald-400/20">
                 <svg
@@ -457,11 +441,7 @@ export function ClassicPortalView({
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
                   <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
                 </span>
-                {freeRoomsTotal !== null ? (
-                  <span className="tabular-nums">{freeRoomsTotal} Free Now</span>
-                ) : (
-                  "Live Room Availability"
-                )}
+                Live Room Availability
               </span>
             </div>
 
@@ -473,25 +453,44 @@ export function ClassicPortalView({
             </div>
           </div>
 
-          <div className="mt-5 rounded-xl border border-slate-100 bg-slate-50/90 p-3 dark:border-slate-800 dark:bg-slate-950/60">
-            <div className="flex items-center justify-between text-[11px] font-semibold text-slate-600 dark:text-slate-300">
-              <span>North Campus</span>
-              <span className="font-mono text-[10.5px] text-emerald-700 dark:text-emerald-300">
-                {nowLabel ?? "B – Fl 4"}
-              </span>
-            </div>
-            <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              {["North", "Downtown", "Whitby"].map((campus) => (
-                <span
-                  key={campus}
-                  className="rounded-md border border-slate-200/90 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 shadow-2xs dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
-                >
-                  {campus}
+          <div className="relative z-10 mt-5 rounded-xl border border-slate-100 bg-slate-50/90 p-3.5 dark:border-slate-800 dark:bg-slate-950/60">
+            <div className="flex items-center justify-between text-[11px] font-semibold text-slate-700 dark:text-slate-200">
+              <span>Free Rooms Right Now</span>
+              {freeRoomsTotal !== null && (
+                <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-mono text-[10px] font-bold tabular-nums text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300">
+                  {freeRoomsTotal}
                 </span>
-              ))}
+              )}
             </div>
+
+            {roomsLoading ? (
+              <div className="mt-2.5 flex flex-wrap gap-1.5">
+                {[1, 2, 3, 4, 5, 6].map((n) => (
+                  <span
+                    key={n}
+                    className="h-6 w-16 animate-pulse rounded-full bg-slate-200/80 dark:bg-slate-800"
+                  />
+                ))}
+              </div>
+            ) : freeRoomsSample.length > 0 ? (
+              <div className="mt-2.5 flex flex-wrap gap-1.5">
+                {freeRoomsSample.map((roomCode) => (
+                  <Link
+                    key={roomCode}
+                    href={`/campus-map?q=${encodeURIComponent(roomCode)}`}
+                    className="rounded-full border border-emerald-200 bg-white px-2.5 py-0.5 font-mono text-[11px] font-semibold text-slate-800 shadow-2xs transition hover:border-emerald-500 hover:bg-emerald-50 hover:text-emerald-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-emerald-500 dark:hover:text-emerald-300"
+                  >
+                    {roomCode}
+                  </Link>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-2 text-[11px] text-slate-600 dark:text-slate-400">
+                Explore live rooms across North, Downtown &amp; Whitby
+              </p>
+            )}
           </div>
-        </Link>
+        </div>
 
         {/* 3. Degree Planner Card */}
         <Link
@@ -532,79 +531,51 @@ export function ClassicPortalView({
             </div>
           </div>
 
-          <div className="mt-5 rounded-xl border border-slate-100 bg-slate-50/90 p-3 dark:border-slate-800 dark:bg-slate-950/60">
+          <div className="mt-5 rounded-xl border border-slate-100 bg-slate-50/90 p-3.5 dark:border-slate-800 dark:bg-slate-950/60">
             {degreeProgress && degreeProgress.plannedCourses > 0 ? (
               <>
                 <div className="flex items-center justify-between gap-2 text-[11px] font-semibold">
-                  <span className="truncate text-slate-700 dark:text-slate-200">
+                  <span className="truncate text-slate-800 dark:text-slate-100">
                     {degreeProgress.title}
                   </span>
-                  <span className="shrink-0 font-mono text-[#C84A1B] dark:text-[#FF8A5C]">
-                    {degreeProgress.plannedCredits}/120 cr
+                  <span className="shrink-0 font-mono font-bold text-[#003C71] dark:text-sky-300">
+                    {degreeProgress.plannedCredits} / 120 cr
                   </span>
                 </div>
-                <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-200/80 dark:bg-slate-800">
+                <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-white ring-1 ring-slate-200/80 dark:bg-slate-800 dark:ring-slate-700">
                   <div
                     className="h-full rounded-full bg-gradient-to-r from-[#003C71] to-[#E75D2A] transition-all duration-500"
                     style={{ width: `${Math.max(degreeProgress.percent, 6)}%` }}
                   />
                 </div>
-                <p className="mt-1.5 truncate text-[10.5px] font-medium text-slate-500 dark:text-slate-400">
-                  {degreeProgress.plannedCourses} courses
+                <p className="mt-1.5 truncate text-[11px] text-slate-600 dark:text-slate-400">
+                  {degreeProgress.plannedCourses} courses planned &bull;{" "}
+                  {degreeProgress.percent}% toward 120-credit degree
                   {profileMinorName ? ` · Minor: ${profileMinorName}` : ""}
                 </p>
               </>
             ) : (
               <>
-                <div className="flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+                <div className="flex items-center justify-between gap-2 text-xs font-semibold text-slate-900 dark:text-slate-100">
                   <span className="truncate">
                     {latestPlan?.degree_name ||
                       profileDegreeName ||
-                      "Term Progression"}
+                      "Progress bar & degree requirements"}
                   </span>
-                  <span className="shrink-0 text-[#C84A1B] tabular-nums dark:text-[#FF8A5C]">
-                    {latestPlan?.start_year || profile?.year_of_study
-                      ? `Start ${latestPlan?.start_year ?? derivedProfileStartYear}`
-                      : "120 Credits"}
-                  </span>
+                  {(latestPlan?.start_year || profile?.year_of_study) && (
+                    <span className="shrink-0 font-mono text-[11px] font-bold text-[#003C71] dark:text-sky-300">
+                      Start {latestPlan?.start_year ?? derivedProfileStartYear}
+                    </span>
+                  )}
                 </div>
-                {profileMinorName && (
-                  <p className="mt-0.5 truncate text-[10.5px] font-medium text-[#003C71] dark:text-sky-300">
-                    Minor: {profileMinorName}
-                  </p>
-                )}
-                <div className="mt-2.5 flex items-center justify-between gap-1">
-                  {[1, 2, 3, 4].map((yr, index) => {
-                    const done = yr < activeStudyYear;
-                    const current = yr === activeStudyYear;
-                    return (
-                      <React.Fragment key={yr}>
-                        <span
-                          className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[9px] font-bold ${
-                            done
-                              ? "bg-[#003C71] text-white dark:bg-sky-500"
-                              : current
-                                ? "border-2 border-[#E75D2A] bg-[#E75D2A]/15 text-[#C84A1B] dark:text-[#FF8A5C]"
-                                : "border border-slate-300 bg-white text-slate-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400"
-                          }`}
-                        >
-                          Y{yr}
-                        </span>
-                        {index < 3 && (
-                          <div
-                            className={`h-0.5 flex-1 rounded-full ${
-                              yr + 1 < activeStudyYear
-                                ? "bg-[#003C71] dark:bg-sky-500"
-                                : yr + 1 === activeStudyYear
-                                  ? "bg-gradient-to-r from-[#003C71] to-[#E75D2A]"
-                                  : "bg-slate-200 dark:bg-slate-800"
-                            }`}
-                          />
-                        )}
-                      </React.Fragment>
-                    );
-                  })}
+                <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-white ring-1 ring-slate-200/80 dark:bg-slate-800 dark:ring-slate-700">
+                  <div className="h-full w-2/5 rounded-full bg-gradient-to-r from-[#003C71] to-[#E75D2A]" />
                 </div>
+                <p className="mt-1.5 text-[11px] text-slate-600 dark:text-slate-400">
+                  {profileMinorName
+                    ? `Minor: ${profileMinorName} · Track prerequisites & credits`
+                    : "Track prerequisites, credits, and multi-year course pathways"}
+                </p>
               </>
             )}
           </div>

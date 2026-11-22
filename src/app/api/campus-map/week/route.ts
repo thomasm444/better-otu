@@ -1,7 +1,7 @@
 import { NextResponse, connection } from "next/server";
 import { clampWeekStart } from "@/lib/campus-map-dates";
 import {
-  getCampusLiveFreeRoomCount,
+  getCampusLiveFreeRoomSummary,
   getCampusMapWeekSchedule,
 } from "@/lib/queries";
 
@@ -22,8 +22,8 @@ export async function GET(request: Request) {
         dayRaw === null ||
         dayRaw.trim() === "" ||
         !Number.isInteger(dayIndex) ||
-        dayIndex < 0 ||
-        dayIndex > 6 ||
+        dayIndex < 1 ||
+        dayIndex > 7 ||
         slotRaw === null ||
         slotRaw.trim() === "" ||
         !Number.isFinite(slotStart) ||
@@ -35,14 +35,14 @@ export async function GET(request: Request) {
         );
       }
 
-      const freeRoomsTotal = await getCampusLiveFreeRoomCount(
+      const { freeRoomsTotal, freeRooms } = await getCampusLiveFreeRoomSummary(
         weekStart,
         dayIndex,
         slotStart,
       );
 
       return NextResponse.json(
-        { freeRoomsTotal },
+        { freeRoomsTotal, freeRooms },
         {
           headers: {
             "Cache-Control":

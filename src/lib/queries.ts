@@ -1419,11 +1419,11 @@ export async function getCampusMapWeekSchedule(
  * during `[slotStart, slotStart + 30]` on `dayIndex` of `weekStart`, including
  * scheduled rooms that have 0 events that week.
  */
-export async function getCampusLiveFreeRoomCount(
+export async function getCampusLiveFreeRoomSummary(
   weekStart: string,
   dayIndex: number,
   slotStart: number,
-): Promise<number> {
+): Promise<{ freeRoomsTotal: number; freeRooms: string[] }> {
   "use cache";
   cacheLife({ stale: 300, revalidate: 900, expire: 3600 });
   cacheTag("campus-map-base", "campus-map-week");
@@ -1437,6 +1437,7 @@ export async function getCampusLiveFreeRoomCount(
   const slotEnd = slotStart + 30;
   const seenRooms = new Set<string>();
   const seenSubRooms = new Set<string>();
+  const freeRooms: string[] = [];
   let freeCount = 0;
 
   for (const feature of mapData.features) {
@@ -1451,7 +1452,10 @@ export async function getCampusLiveFreeRoomCount(
         const isBusy = intervals.some(
           (ev) => ev.start < slotEnd && ev.end > slotStart,
         );
-        if (!isBusy) freeCount++;
+        if (!isBusy) {
+          freeCount++;
+          freeRooms.push(rid);
+        }
       }
       continue;
     }
@@ -1464,13 +1468,29 @@ export async function getCampusLiveFreeRoomCount(
       const isBusy = intervals.some(
         (ev) => ev.start < slotEnd && ev.end > slotStart,
       );
-      if (!isBusy) freeCount++;
+      if (!isBusy) {
+        freeCount++;
+        freeRooms.push(eid);
+      }
     } else {
       freeCount++;
     }
   }
 
-  return freeCount;
+  return { freeRoomsTotal: freeCount, freeRooms };
+}
+
+export async function getCampusLiveFreeRoomCount(
+  weekStart: string,
+  dayIndex: number,
+  slotStart: number,
+): Promise<number> {
+  const { freeRoomsTotal } = await getCampusLiveFreeRoomSummary(
+    weekStart,
+    dayIndex,
+    slotStart,
+  );
+  return freeRoomsTotal;
 }
 
 const WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday"] as const;
