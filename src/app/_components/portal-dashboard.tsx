@@ -53,6 +53,7 @@ const HOME_THEME_STORAGE_KEY = "better-otu:home-theme:v1";
 interface PortalDashboardProps {
   termLabel: string;
   footer?: React.ReactNode;
+  nonStandardCredits?: Record<string, number>;
 }
 
 interface CustomShortcut {
@@ -135,7 +136,10 @@ function getInitials(label: string): string {
   return cleaned.slice(0, 3).toUpperCase();
 }
 
-function computeDegreeProgress(plan: DegreePlanRecord | null): {
+function computeDegreeProgress(
+  plan: DegreePlanRecord | null,
+  nonStandardCredits?: Record<string, number>,
+): {
   title: string;
   plannedCourses: number;
   plannedCredits: number;
@@ -144,15 +148,16 @@ function computeDegreeProgress(plan: DegreePlanRecord | null): {
   if (!plan) return null;
   const customCredits = new Map<string, number>();
   for (const c of plan.customs ?? []) {
-    if (c.code) customCredits.set(c.code.toUpperCase(), c.credit_hours || 3);
+    if (c.code) customCredits.set(c.code.toUpperCase(), c.credit_hours ?? 3);
   }
   let plannedCourses = 0;
   let plannedCredits = 0;
   for (const term of plan.terms ?? []) {
     for (const slot of term.slots ?? []) {
       if (!slot) continue;
+      const key = slot.toUpperCase();
       plannedCourses += 1;
-      plannedCredits += customCredits.get(slot.toUpperCase()) ?? 3;
+      plannedCredits += customCredits.get(key) ?? nonStandardCredits?.[key] ?? 3;
     }
   }
   const percent = Math.min(100, Math.round((plannedCredits / 120) * 100));
@@ -164,7 +169,11 @@ function computeDegreeProgress(plan: DegreePlanRecord | null): {
   };
 }
 
-export function PortalDashboard({ termLabel, footer }: PortalDashboardProps) {
+export function PortalDashboard({
+  termLabel,
+  footer,
+  nonStandardCredits,
+}: PortalDashboardProps) {
   const [homeTheme, setHomeTheme] = useState<HomeTheme>("stacked");
   const [firstName, setFirstName] = useState<string | null>(null);
   const [profile, setProfile] = useState<StudentProfileWithPrograms | null>(null);
@@ -490,7 +499,7 @@ export function PortalDashboard({ termLabel, footer }: PortalDashboardProps) {
     </div>
   );
 
-  const degreeProgress = computeDegreeProgress(latestPlan);
+  const degreeProgress = computeDegreeProgress(latestPlan, nonStandardCredits);
   const visibleCourseCodes = savedCourseCodes.slice(0, 4);
   const yearLabel = formatYearOfStudy(profile?.year_of_study);
   const profileDegreeName = profile?.degree_program?.name ?? null;

@@ -926,9 +926,13 @@ export function ScheduleContainer({
     [courseMap, markDirty, pushUndoSnapshot, clearUnplannedHidden, showToast],
   );
 
-  const handleSelectSection = useCallback(
-    (courseCode: string, component: CourseComponentType, crn: string) => {
-      if (!isEditMode) return;
+  const applySectionSelection = useCallback(
+    (
+      courseCode: string,
+      component: CourseComponentType,
+      crn: string,
+      forceSelect = false,
+    ) => {
       pushUndoSnapshot();
       markDirty();
       clearUnplannedHidden(courseCode);
@@ -938,7 +942,7 @@ export function ScheduleContainer({
         if (existing) {
           const isAlreadySelected = existing.selectedCrns[component] === crn;
           const nextCrns = { ...existing.selectedCrns };
-          if (isAlreadySelected) {
+          if (isAlreadySelected && !forceSelect) {
             delete nextCrns[component];
           } else {
             nextCrns[component] = crn;
@@ -968,7 +972,24 @@ export function ScheduleContainer({
         ];
       });
     },
-    [courseMap, isEditMode, markDirty, pushUndoSnapshot, clearUnplannedHidden],
+    [courseMap, markDirty, pushUndoSnapshot, clearUnplannedHidden],
+  );
+
+  const handleSelectSection = useCallback(
+    (courseCode: string, component: CourseComponentType, crn: string) => {
+      if (!isEditMode) return;
+      applySectionSelection(courseCode, component, crn, false);
+    },
+    [isEditMode, applySectionSelection],
+  );
+
+  const handleEnableEditModeAndSelectSection = useCallback(
+    (courseCode: string, component: CourseComponentType, crn: string) => {
+      setIsEditMode(true);
+      applySectionSelection(courseCode, component, crn, true);
+      showToast(`Switched to Edit Mode and added ${courseCode} (${crn})`);
+    },
+    [applySectionSelection, showToast],
   );
 
   const handleRemoveCourse = useCallback(
@@ -1524,11 +1545,11 @@ export function ScheduleContainer({
                 }}
                 className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold shadow-xs transition ${
                   isEditMode
-                    ? "border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700"
+                    ? "border-orange-500 bg-orange-500 text-white shadow-sm shadow-orange-500/25 hover:bg-orange-600 dark:border-orange-500 dark:bg-orange-500 dark:hover:bg-orange-600"
                     : "border-zinc-300 bg-white text-zinc-900 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700"
                 }`}
               >
-                <span>{isEditMode ? "✓ Done Editing" : "Edit Schedule"}</span>
+                <span>{isEditMode ? "Edit Mode" : "View Mode"}</span>
               </button>
 
               {/* Calendar Export */}
@@ -1938,6 +1959,7 @@ export function ScheduleContainer({
             onCreateCustomBlocksFromDrag={handleCreateCustomBlocksFromDrag}
             onRemoveBlock={handleRemoveBlockFromGrid}
             onSelectSection={handleSelectSection}
+            onEnableEditModeAndSelectSection={handleEnableEditModeAndSelectSection}
             onPromoteCourse={(code) => handleSetCourseMode(code, "planned")}
             onInspectCourse={(code) => {
               setFocusedCourseCode(code);

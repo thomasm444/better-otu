@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 
+import { getCatalogCourses } from "@/lib/degree-queries";
 import { TERM_LABEL, getLastUpdatedInfo } from "@/lib/queries";
 
 import { PortalDashboard } from "./_components/portal-dashboard";
@@ -47,15 +48,38 @@ async function LastUpdatedNotice() {
   );
 }
 
-export default function Home() {
+async function PortalDashboardWithCredits({
+  footer,
+}: {
+  footer: React.ReactNode;
+}) {
+  const catalogCourses = await getCatalogCourses();
+  const nonStandardCredits: Record<string, number> = {};
+  for (const course of catalogCourses) {
+    const credits = Number(course.credit_hours);
+    if (Number.isFinite(credits) && credits !== 3 && course.code) {
+      nonStandardCredits[course.code.trim().toUpperCase()] = credits;
+    }
+  }
   return (
     <PortalDashboard
       termLabel={TERM_LABEL}
-      footer={
-        <Suspense fallback={null}>
-          <LastUpdatedNotice />
-        </Suspense>
-      }
+      nonStandardCredits={nonStandardCredits}
+      footer={footer}
     />
+  );
+}
+
+export default function Home() {
+  const footer = (
+    <Suspense fallback={null}>
+      <LastUpdatedNotice />
+    </Suspense>
+  );
+
+  return (
+    <Suspense fallback={<PortalDashboard termLabel={TERM_LABEL} footer={footer} />}>
+      <PortalDashboardWithCredits footer={footer} />
+    </Suspense>
   );
 }

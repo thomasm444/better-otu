@@ -429,6 +429,12 @@ export interface WeekScheduleProps {
     component: CourseComponentType,
     crn: string,
   ) => void;
+  /** Callback when user confirms adding a section from View Mode (enables Edit Mode + selects section) */
+  onEnableEditModeAndSelectSection?: (
+    courseCode: string,
+    component: CourseComponentType,
+    crn: string,
+  ) => void;
   /** Callback to promote an exploring course to planned */
   onPromoteCourse?: (courseCode: string) => void;
   /** Callback to focus a course in the right-hand lookup panel */

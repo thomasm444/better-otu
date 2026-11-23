@@ -116,27 +116,51 @@ function getFittingGhostClasses(
   component: CourseComponentType,
   isHovered: boolean,
   multiColorIndex?: number,
+  dimmed?: boolean,
+  strongDim?: boolean,
 ): string {
   if (multiColorIndex !== undefined) {
     const entry =
       MULTI_COURSE_GHOST_PALETTE[
         multiColorIndex % MULTI_COURSE_GHOST_PALETTE.length
       ];
-    return isHovered ? entry.hoverClass : entry.defaultClass;
+    if (isHovered) return entry.hoverClass;
+    if (!dimmed) return entry.defaultClass;
+    return strongDim
+      ? `${entry.defaultClass} opacity-40 brightness-75 saturate-75`
+      : `${entry.defaultClass} opacity-60`;
   }
   if (component === "LAB") {
-    return isHovered
-      ? "z-50 border-orange-600 bg-orange-500/35 text-orange-950 ring-2 ring-orange-500 shadow-md dark:border-orange-400 dark:bg-orange-900/80 dark:text-orange-50"
-      : "border-orange-500 bg-orange-500/20 text-orange-950 dark:border-orange-400 dark:bg-orange-950/75 dark:text-orange-100";
+    if (isHovered) {
+      return "z-50 border-orange-600 bg-orange-500/35 text-orange-950 ring-2 ring-orange-500 shadow-md dark:border-orange-400 dark:bg-orange-900/80 dark:text-orange-50";
+    }
+    const base =
+      "border-orange-500 bg-orange-500/20 text-orange-950 dark:border-orange-400 dark:bg-orange-950/75 dark:text-orange-100";
+    if (!dimmed) return base;
+    return strongDim
+      ? "border-orange-700/55 bg-orange-950/15 text-orange-900/70 opacity-45 dark:border-orange-700/50 dark:bg-orange-950/35 dark:text-orange-300/65"
+      : `${base} opacity-60`;
   }
   if (component === "TUT") {
-    return isHovered
-      ? "z-50 border-yellow-600 bg-yellow-400/40 text-yellow-950 ring-2 ring-yellow-500 shadow-md dark:border-yellow-400 dark:bg-yellow-900/80 dark:text-yellow-50"
-      : "border-yellow-500 bg-yellow-400/25 text-yellow-950 dark:border-yellow-400 dark:bg-yellow-950/75 dark:text-yellow-100";
+    if (isHovered) {
+      return "z-50 border-yellow-600 bg-yellow-400/40 text-yellow-950 ring-2 ring-yellow-500 shadow-md dark:border-yellow-400 dark:bg-yellow-900/80 dark:text-yellow-50";
+    }
+    const base =
+      "border-yellow-500 bg-yellow-400/25 text-yellow-950 dark:border-yellow-400 dark:bg-yellow-950/75 dark:text-yellow-100";
+    if (!dimmed) return base;
+    return strongDim
+      ? "border-yellow-700/55 bg-yellow-950/15 text-yellow-900/70 opacity-45 dark:border-yellow-700/50 dark:bg-yellow-950/35 dark:text-yellow-300/65"
+      : `${base} opacity-60`;
   }
-  return isHovered
-    ? "z-50 border-emerald-600 bg-emerald-500/35 text-emerald-950 ring-2 ring-emerald-500 shadow-md dark:border-emerald-400 dark:bg-emerald-900/80 dark:text-emerald-50"
-    : "border-emerald-500 bg-emerald-500/20 text-emerald-950 dark:border-emerald-400 dark:bg-emerald-950/75 dark:text-emerald-100";
+  if (isHovered) {
+    return "z-50 border-emerald-600 bg-emerald-500/35 text-emerald-950 ring-2 ring-emerald-500 shadow-md dark:border-emerald-400 dark:bg-emerald-900/80 dark:text-emerald-50";
+  }
+  const base =
+    "border-emerald-500 bg-emerald-500/20 text-emerald-950 dark:border-emerald-400 dark:bg-emerald-950/75 dark:text-emerald-100";
+  if (!dimmed) return base;
+  return strongDim
+    ? "border-emerald-700/55 bg-emerald-950/15 text-emerald-900/70 opacity-45 dark:border-emerald-700/50 dark:bg-emerald-950/35 dark:text-emerald-300/65"
+    : `${base} opacity-60`;
 }
 
 interface PositionedGhost {
@@ -494,6 +518,7 @@ export function WeekScheduleGrid({
   endHour = 22,
   onRemoveBlock,
   onSelectSection,
+  onEnableEditModeAndSelectSection,
   onPromoteCourse,
   onInspectCourse,
   onRemoveBlockedSlot,
@@ -511,6 +536,11 @@ export function WeekScheduleGrid({
   const [selectedCourse, setSelectedCourse] = useState<ScheduleBlock | null>(
     null,
   );
+  const [confirmViewModeAdd, setConfirmViewModeAdd] = useState(false);
+
+  useEffect(() => {
+    setConfirmViewModeAdd(false);
+  }, [selectedCourse]);
   const [dragCourse, setDragCourse] = useState<CourseDragState | null>(null);
   const [hoveredPickerCrn, setHoveredPickerCrn] = useState<string | null>(null);
   const [dragBlockedPreviews, setDragBlockedPreviews] = useState<
@@ -534,6 +564,33 @@ export function WeekScheduleGrid({
       cleanupDragRef.current?.();
     };
   }, []);
+
+  const openGhostDetails = (g: GhostTargetSlot) => {
+    setSelectedCourse({
+      id: g.id,
+      courseCode: g.section.courseCode,
+      title: g.section.title,
+      type: g.component,
+      component: g.component,
+      crn: g.crn,
+      room: g.room,
+      instructor: g.section.instructor ?? undefined,
+      rmp: g.section.rmp ?? null,
+      day: g.day,
+      startTime: g.startTime,
+      endTime: g.endTime,
+      weekPattern: g.weekPattern,
+      deliveryMode: g.section.deliveryMode,
+      color:
+        g.component === "LAB"
+          ? "orange"
+          : g.component === "TUT"
+            ? "amber"
+            : "emerald",
+      isConflict: !g.fits,
+      conflictWith: g.conflictsWith.length > 0 ? g.conflictsWith : undefined,
+    });
+  };
 
   useEffect(() => {
     if (gridSectionPickers.length === 0 && !selectedCourse) return;
@@ -1737,6 +1794,9 @@ export function WeekScheduleGrid({
                         block.id.startsWith("__draft_custom__");
                       const isExploring = block.mode === "exploring";
                       const isConflict = Boolean(block.isConflict);
+                      const blockDuration = clampedEnd - clampedStart;
+                      const isShortBlock = blockDuration <= 65;
+                      const isVeryShortBlock = blockDuration <= 45;
                       const isHalfWidth = widthPercent <= 55;
                       const blockComp =
                         block.component ??
@@ -1781,7 +1841,9 @@ export function WeekScheduleGrid({
                             left: `calc(${leftPercent}% + 2px)`,
                             width: `calc(${widthPercent}% - 4px)`,
                           }}
-                          className={`pointer-events-auto group absolute overflow-hidden rounded-md p-1 text-[10.5px] transition-all ${
+                          className={`pointer-events-auto group absolute overflow-hidden rounded-md ${
+                            isShortBlock ? "px-1 py-0.5" : "p-1"
+                          } text-[10.5px] transition-all ${
                             isDraggingAny
                               ? isCurrentOverlayBlock
                                 ? "opacity-0 pointer-events-none"
@@ -1871,19 +1933,21 @@ export function WeekScheduleGrid({
                                     )}
                                 </div>
                               </div>
-                              <p className="line-clamp-1 text-[9.5px] opacity-80">
-                                {isConflict ? (
-                                  "⚠ Conflict"
-                                ) : block.isFull ? (
-                                  <span className="font-semibold text-amber-600 dark:text-amber-400">
-                                    ⚠ May be full
-                                  </span>
-                                ) : isExploring ? (
-                                  `Exploring • ${block.type || ""}`
-                                ) : (
-                                  block.title
-                                )}
-                              </p>
+                              {(!isVeryShortBlock || isConflict || block.isFull) && (
+                                <p className="line-clamp-1 text-[9.5px] leading-tight opacity-80">
+                                  {isConflict ? (
+                                    "⚠ Conflict"
+                                  ) : block.isFull ? (
+                                    <span className="font-semibold text-amber-600 dark:text-amber-400">
+                                      ⚠ May be full
+                                    </span>
+                                  ) : isExploring ? (
+                                    `Exploring • ${block.type || ""}`
+                                  ) : (
+                                    block.title
+                                  )}
+                                </p>
+                              )}
                             </div>
 
                             <div className="flex items-center justify-between gap-1 text-[9px]">
@@ -1938,10 +2002,13 @@ export function WeekScheduleGrid({
                         );
                         if (clampedEnd <= clampedStart) return null;
 
+                        const ghostDuration = clampedEnd - clampedStart;
+                        const isShortGhost = ghostDuration <= 65;
+                        const isVeryShortGhost = ghostDuration <= 45;
                         const topPercent =
                           ((clampedStart - startMinutes) / totalMinutes) * 100;
                         const heightPercent =
-                          ((clampedEnd - clampedStart) / totalMinutes) * 100;
+                          (ghostDuration / totalMinutes) * 100;
                         const isHovered = dragCourse
                           ? dragCourse.hoveredCrn === g.crn
                           : hoveredPickerCrn === g.crn;
@@ -1990,33 +2057,7 @@ export function WeekScheduleGrid({
                             onSelectSection?.(g.courseCode, g.component, g.crn);
                             return;
                           }
-                          setSelectedCourse({
-                            id: g.id,
-                            courseCode: g.section.courseCode,
-                            title: g.section.title,
-                            type: g.component,
-                            component: g.component,
-                            crn: g.crn,
-                            room: g.room,
-                            instructor: g.section.instructor ?? undefined,
-                            rmp: g.section.rmp ?? null,
-                            day: g.day,
-                            startTime: g.startTime,
-                            endTime: g.endTime,
-                            weekPattern: g.weekPattern,
-                            deliveryMode: g.section.deliveryMode,
-                            color:
-                              g.component === "LAB"
-                                ? "orange"
-                                : g.component === "TUT"
-                                  ? "amber"
-                                  : "emerald",
-                            isConflict: !g.fits,
-                            conflictWith:
-                              g.conflictsWith.length > 0
-                                ? g.conflictsWith
-                                : undefined,
-                          });
+                          openGhostDetails(g);
                         };
                         const compAlreadySelected =
                           isPickerOverlay &&
@@ -2073,37 +2114,35 @@ export function WeekScheduleGrid({
                                   : `Click to view ${g.label} (${formatTimeDisplay(g.startTime)}–${formatTimeDisplay(g.endTime)} • ${g.room})`
                                 : undefined
                             }
-                            className={`absolute flex flex-col justify-between overflow-hidden rounded-md border-2 border-dashed p-1 text-[10px] transition ${
-                              isPickerOverlay ? "cursor-pointer" : ""
-                            } ${
-                              g.isCurrent
-                                ? `z-40 ${
-                                    g.fits
-                                      ? getFittingGhostClasses(
-                                          g.component,
-                                          isHovered,
-                                          g.multiColorIndex,
-                                        )
-                                      : isHovered
-                                        ? "z-50 border-rose-600 bg-rose-500/35 text-rose-950 ring-2 ring-rose-500 shadow-md dark:border-rose-400 dark:bg-rose-900/80 dark:text-rose-50"
-                                        : "border-rose-500 bg-rose-500/20 text-rose-950 dark:border-rose-400 dark:bg-rose-950/75 dark:text-rose-100"
+                            className={`absolute flex ${
+                              isVeryShortGhost
+                                ? "flex-row items-center justify-between gap-1 px-1 py-0 text-[9px] leading-none"
+                                : `flex-col justify-between leading-tight ${
+                                    isShortGhost ? "px-1 py-0.5 text-[9.5px]" : "p-1 text-[10px]"
                                   }`
+                            } overflow-hidden rounded-md border-2 border-dashed transition ${
+                              isPickerOverlay ? "cursor-pointer" : ""
+                            } ${g.isCurrent ? "z-40 " : ""}${
+                              g.fits
+                                ? getFittingGhostClasses(
+                                    g.component,
+                                    isHovered,
+                                    g.multiColorIndex,
+                                    compAlreadySelected,
+                                    isMultiCoursePicker,
+                                  )
                                 : compAlreadySelected
                                   ? isHovered
-                                    ? "z-50 border-slate-500 bg-slate-300/80 text-slate-900 ring-2 ring-slate-400 shadow-md dark:border-slate-400 dark:bg-slate-700/85 dark:text-slate-100"
-                                    : "border-slate-400/90 bg-slate-200/75 text-slate-700 opacity-80 dark:border-slate-500/80 dark:bg-slate-800/75 dark:text-slate-300"
-                                  : g.fits
-                                    ? getFittingGhostClasses(
-                                        g.component,
-                                        isHovered,
-                                        g.multiColorIndex,
-                                      )
-                                    : isHovered
-                                      ? "z-50 border-rose-600 bg-rose-500/35 text-rose-950 ring-2 ring-rose-500 shadow-md dark:border-rose-400 dark:bg-rose-900/80 dark:text-rose-50"
-                                      : "border-rose-500 bg-rose-500/20 text-rose-950 dark:border-rose-400 dark:bg-rose-950/75 dark:text-rose-100"
+                                    ? "z-50 border-rose-500 bg-rose-500/30 text-rose-950 ring-2 ring-rose-400 shadow-md dark:border-rose-400 dark:bg-rose-900/75 dark:text-rose-50"
+                                    : isMultiCoursePicker
+                                      ? "border-rose-700/55 bg-rose-950/15 text-rose-900/70 opacity-45 dark:border-rose-700/50 dark:bg-rose-950/35 dark:text-rose-300/65"
+                                      : "border-rose-400/70 bg-rose-500/10 text-rose-900/75 opacity-60 dark:border-rose-500/60 dark:bg-rose-950/45 dark:text-rose-200/80"
+                                  : isHovered
+                                    ? "z-50 border-rose-600 bg-rose-500/35 text-rose-950 ring-2 ring-rose-500 shadow-md dark:border-rose-400 dark:bg-rose-900/80 dark:text-rose-50"
+                                    : "border-rose-500 bg-rose-500/20 text-rose-950 dark:border-rose-400 dark:bg-rose-950/75 dark:text-rose-100"
                             }`}
                           >
-                            <div className="flex items-center justify-between gap-1 font-semibold">
+                            <div className="flex min-w-0 items-center justify-between gap-1 font-semibold">
                               <span className="truncate">
                                 {g.groupedOptions &&
                                 g.groupedOptions.length > 1 &&
@@ -2138,17 +2177,33 @@ export function WeekScheduleGrid({
                                   </span>
                                 )}
                             </div>
-                            <span className="truncate text-[9px] opacity-85">
+                            <span
+                              className={`truncate opacity-85 ${
+                                isVeryShortGhost
+                                  ? "shrink-0 text-[8.5px]"
+                                  : isShortGhost
+                                    ? "text-[8.5px]"
+                                    : "text-[9px]"
+                              }`}
+                            >
                               {g.isCurrent
                                 ? `✓ Current ${g.component}`
                                 : g.groupedOptions &&
                                     g.groupedOptions.length > 1
-                                  ? `Click to choose (${g.groupedOptions.length})`
-                                  : compAlreadySelected
-                                    ? `${g.room} • ${g.fits ? "Switch" : "Conflict"}`
-                                    : g.fits
-                                      ? `${g.room} • Fits`
-                                      : `${g.room} • Conflict`}
+                                  ? isVeryShortGhost
+                                    ? `(${g.groupedOptions.length})`
+                                    : `Click to choose (${g.groupedOptions.length})`
+                                  : isVeryShortGhost
+                                    ? g.fits
+                                      ? compAlreadySelected
+                                        ? "Switch"
+                                        : "Fits"
+                                      : "Conflict"
+                                    : compAlreadySelected
+                                      ? `${g.room} • ${g.fits ? "Switch" : "Conflict"}`
+                                      : g.fits
+                                        ? `${g.room} • Fits`
+                                        : `${g.room} • Conflict`}
                             </span>
                           </div>
                         );
@@ -2260,6 +2315,56 @@ export function WeekScheduleGrid({
               )}
             </div>
 
+            {confirmViewModeAdd &&
+              !isEditMode &&
+              !selectedCourse.isCustom &&
+              selectedCourse.crn &&
+              onEnableEditModeAndSelectSection && (
+                <div className="mt-4 rounded-lg border border-orange-300 bg-orange-50/90 p-3 text-xs text-orange-950 dark:border-orange-700/70 dark:bg-orange-950/50 dark:text-orange-100">
+                  <p className="font-semibold">You are currently in View Mode</p>
+                  <p className="mt-1 text-[11px] text-orange-900/90 dark:text-orange-200/90">
+                    Adding{" "}
+                    <span className="font-semibold">
+                      {selectedCourse.courseCode}
+                    </span>{" "}
+                    ({selectedCourse.type || selectedCourse.component} · CRN{" "}
+                    {selectedCourse.crn}) will switch you to{" "}
+                    <span className="font-semibold">Edit Mode</span> and add
+                    this section to your schedule.
+                  </p>
+                  <div className="mt-2.5 flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setConfirmViewModeAdd(false)}
+                      className="rounded-md border border-orange-300 bg-white px-2.5 py-1 text-xs font-medium text-orange-900 transition-colors hover:bg-orange-100 dark:border-orange-700 dark:bg-zinc-900 dark:text-orange-200 dark:hover:bg-orange-900/40"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const comp =
+                          selectedCourse.component ??
+                          (selectedCourse.type as
+                            | CourseComponentType
+                            | undefined);
+                        if (!comp || !selectedCourse.crn) return;
+                        onEnableEditModeAndSelectSection(
+                          selectedCourse.courseCode,
+                          comp,
+                          selectedCourse.crn,
+                        );
+                        setConfirmViewModeAdd(false);
+                        setSelectedCourse(null);
+                      }}
+                      className="rounded-md bg-orange-500 px-3 py-1 text-xs font-semibold text-white transition-colors hover:bg-orange-600"
+                    >
+                      Switch to Edit Mode &amp; Add
+                    </button>
+                  </div>
+                </div>
+              )}
+
             <div className="mt-5 flex flex-wrap items-center justify-between gap-2 pt-2">
               {isEditMode && onRemoveBlock && (
                 <button
@@ -2328,6 +2433,21 @@ export function WeekScheduleGrid({
                     Switch Section
                   </button>
                 )}
+                {!isEditMode &&
+                  hasGridPickers &&
+                  !selectedCourse.isCustom &&
+                  selectedCourse.crn &&
+                  onEnableEditModeAndSelectSection &&
+                  (selectedCourse.component || selectedCourse.type) &&
+                  !confirmViewModeAdd && (
+                    <button
+                      type="button"
+                      onClick={() => setConfirmViewModeAdd(true)}
+                      className="rounded-md bg-orange-500 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-orange-600"
+                    >
+                      Add to Schedule
+                    </button>
+                  )}
                 <button
                   type="button"
                   onClick={() => setSelectedCourse(null)}
@@ -2385,7 +2505,15 @@ export function WeekScheduleGrid({
                     key={opt.crn}
                     type="button"
                     onClick={() => {
-                      onSelectSection?.(opt.courseCode, opt.component, opt.crn);
+                      if (isEditMode) {
+                        onSelectSection?.(
+                          opt.courseCode,
+                          opt.component,
+                          opt.crn,
+                        );
+                      } else {
+                        openGhostDetails(opt);
+                      }
                       setSlotGroupPicker(null);
                     }}
                     className={`flex w-full items-center justify-between gap-2 rounded-lg border px-2.5 py-2 text-left text-xs transition ${
