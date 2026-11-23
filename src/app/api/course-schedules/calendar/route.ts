@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import { connection } from "next/server";
 
 import {
@@ -8,9 +9,33 @@ import {
 import { inferTeachingWeekParity, SCHEDULE_TERMS } from "@/lib/schedule-queries";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getPublicClient } from "@/lib/supabase/public";
+import { createClient } from "@/lib/supabase/server";
 
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function signCalendarUser(userId: string): string {
+  const secret =
+    process.env.SUPABASE_SERVICE_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    "better-otu-cal";
+  return crypto
+    .createHmac("sha256", secret)
+    .update(userId)
+    .digest("hex")
+    .slice(0, 32);
+}
+
+function verifyCalendarToken(userId: string, token: string): boolean {
+  if (!token) return false;
+  const expected = signCalendarUser(userId);
+  const expectedBuf = Buffer.from(expected, "utf8");
+  const providedBuf = Buffer.from(token, "utf8");
+  if (expectedBuf.length !== providedBuf.length) {
+    return false;
+  }
+  return crypto.timingSafeEqual(expectedBuf, providedBuf);
+}
 
 const DAY_COLUMNS = [
   { key: "monday", monIndex: 1, byDay: "MO" },
@@ -151,12 +176,32 @@ export async function GET(request: Request) {
     const termInfo =
       SCHEDULE_TERMS.find((t) => t.code === requestedTerm) ?? SCHEDULE_TERMS[0];
     const userParam = searchParams.get("user")?.trim() || "";
+    const tokenParam = searchParams.get("token")?.trim() || "";
     const crnsParam = searchParams.get("crns")?.trim() || "";
     const isDownload = searchParams.get("download") === "1";
 
     const crnSet = new Set<string>();
 
-    if (userParam && UUID_REGEX.test(userParam)) {
+    if (userParam) {
+      if (!UUID_REGEX.test(userParam)) {
+        return new Response("Invalid user parameter", { status: 400 });
+      }
+
+      let isAuthorized = verifyCalendarToken(userParam, tokenParam);
+      if (!isAuthorized) {
+        const authClient = await createClient();
+        const {
+          data: { user },
+        } = await authClient.auth.getUser();
+        if (user && user.id === userParam) {
+          isAuthorized = true;
+        }
+      }
+
+      if (!isAuthorized) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+
       try {
         const admin = createAdminClient();
         const { data, error } = await admin
@@ -496,7 +541,9 @@ export async function GET(request: Request) {
 
     const headers: Record<string, string> = {
       "Content-Type": "text/calendar; charset=utf-8",
-      "Cache-Control": "no-cache, no-store, must-revalidate",
+      "Cache-Control": isDownload
+        ? "no-cache, no-store, must-revalidate"
+        : "private, max-age=900, stale-while-revalidate=3600",
     };
     if (isDownload) {
       headers["Content-Disposition"] =

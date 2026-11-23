@@ -59,13 +59,13 @@ export interface ScheduleTermInfo {
 export const SCHEDULE_TERMS: ScheduleTermInfo[] = [
   { code: "202609", label: "Fall 2026", season: "Fall", year: 2026 },
   { code: "202701", label: "Winter 2027", season: "Winter", year: 2027 },
-  { code: "202605", label: "Spring/Summer 2026", season: "Summer", year: 2026 },
+  { code: "202605", label: "Spring/Summer 2027", season: "Summer", year: 2027 },
 ];
 
 export function getDefaultScheduleTerm(now: Date = new Date()): string {
   const { date } = getTorontoNowParts(now);
   if (date >= "2027-01-01" && date <= "2027-04-30") return "202701";
-  if (date >= "2026-05-01" && date <= "2026-08-20") return "202605";
+  if (date >= "2027-05-01" && date <= "2027-08-20") return "202605";
   return "202609";
 }
 
@@ -80,6 +80,24 @@ export interface NormalizedMeetingSlot {
   location: string;
   weekPattern: WeekPattern;
   dates: string[];
+}
+
+export interface ProfessorSalaryRecord {
+  calendarYear: number;
+  salaryPaid: number;
+  taxableBenefits: number;
+  jobTitle: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+}
+
+export interface SectionRmpInfo {
+  legacyId: number | null;
+  fullName: string;
+  avgRating: number | null;
+  avgDifficulty: number | null;
+  numRatings: number;
+  wouldTakeAgainPercent: number | null;
 }
 
 export interface ScheduleSection {
@@ -104,6 +122,8 @@ export interface ScheduleSection {
   openSection: boolean;
   creditHours: number | null;
   instructor: string | null;
+  rmp?: SectionRmpInfo | null;
+  salaries?: ProfessorSalaryRecord[];
   weekPattern: WeekPattern;
   meetings: NormalizedMeetingSlot[];
 }
@@ -297,6 +317,7 @@ export interface TermScheduleCatalog {
   term: string;
   termLabel: string;
   courses: ScheduleCourseGroup[];
+  allCatalogCourses?: Array<{ code: string; title: string }>;
   subjects: string[];
   instructors: string[];
   deliveryStats: {
@@ -325,6 +346,8 @@ export interface ScheduleBlock {
   room?: string;
   /** Instructor display name */
   instructor?: string;
+  /** Matched RateMyProfessors summary for the section's instructor */
+  rmp?: SectionRmpInfo | null;
   /** Day of the week */
   day: DayOfWeek;
   /** Start time in 24h format (HH:MM) or ISO time string, e.g. "08:10" or "08:10:00" */
@@ -339,6 +362,10 @@ export interface ScheduleBlock {
   deliveryMode?: DeliveryMode;
   /** Color theme for styling the spreadsheet block */
   color?: ColorTheme;
+  /** Remaining seats from Banner enrollment data */
+  seatsAvailable?: number | null;
+  /** True when the section has 0 or fewer seats available */
+  isFull?: boolean;
   /** Conflict markers computed by annotateScheduleConflicts */
   isConflict?: boolean;
   conflictWith?: string[];
@@ -364,9 +391,11 @@ export interface BlockedTimeSlot {
   label: string;
 }
 
+export type SectionGridPickerComponent = CourseComponentType | "ALL";
+
 export interface SectionGridPickerTarget {
   courseCode: string;
-  component: CourseComponentType;
+  component: SectionGridPickerComponent;
 }
 
 export interface WeekScheduleProps {
@@ -382,12 +411,22 @@ export interface WeekScheduleProps {
   blockedSlots?: BlockedTimeSlot[];
   /** Course catalog map for drag-to-snap ghost targets */
   courseMap?: Map<string, ScheduleCourseGroup>;
-  /** Active course+component whose sections are displayed on the grid for click-to-schedule */
-  gridSectionPicker?: SectionGridPickerTarget | null;
-  /** Callback to open/switch or close the grid section picker overlay */
-  onChangeGridSectionPicker?: (target: SectionGridPickerTarget | null) => void;
+  /** Active course+component targets whose sections are displayed on the grid */
+  gridSectionPickers?: SectionGridPickerTarget[];
+  /** Callback to update the active grid section picker targets */
+  onChangeGridSectionPickers?: (
+    updater:
+      | SectionGridPickerTarget[]
+      | ((prev: SectionGridPickerTarget[]) => SectionGridPickerTarget[]),
+  ) => void;
+  /** Set of course codes currently hidden from the timetable grid */
+  hiddenCourseCodes?: Set<string>;
+  /** Callback to toggle a course's visibility (Hide / Show) on the grid */
+  onToggleCourseVisibility?: (courseCode: string) => void;
   /** Whether edit mode is active */
   isEditMode?: boolean;
+  /** Whether RateMyProfessors ratings are shown (default: false) */
+  showRmp?: boolean;
   /** Earliest start hour on the grid (default: 8 = 8:00 AM) */
   startHour?: number;
   /** Latest end hour on the grid (default: 22 = 10:00 PM) */
@@ -396,6 +435,12 @@ export interface WeekScheduleProps {
   onRemoveBlock?: (block: ScheduleBlock) => void;
   /** Callback when user drags a course block to snap to another section */
   onSelectSection?: (
+    courseCode: string,
+    component: CourseComponentType,
+    crn: string,
+  ) => void;
+  /** Callback when user confirms adding a section from View Mode (enables Edit Mode + selects section) */
+  onEnableEditModeAndSelectSection?: (
     courseCode: string,
     component: CourseComponentType,
     crn: string,
@@ -419,8 +464,28 @@ export interface WeekScheduleProps {
     endTime: string,
     label?: string,
   ) => void;
+  /** Callback to update custom blocks (drag move/resize) */
+  onUpdateCustomBlocks?: (
+    updater: (prev: ScheduleBlock[]) => ScheduleBlock[],
+  ) => void;
+  /** Whether grid drag-to-create-custom-block mode is active */
+  isCustomBlockDragMode?: boolean;
+  /** Template metadata for custom blocks created via grid drag */
+  customBlockDraft?: {
+    courseCode: string;
+    title: string;
+    room?: string;
+    weekPattern: WeekPattern;
+    color: ColorTheme;
+  };
+  /** Callback when user drags across the grid to create custom block(s) across one or more days */
+  onCreateCustomBlocksFromDrag?: (
+    days: DayOfWeek[],
+    startTime: string,
+    endTime: string,
+  ) => void;
   /** Accent color for header badge */
-  accentColor?: "blue" | "purple" | "emerald" | "amber";
+  accentColor?: "blue" | "purple" | "emerald" | "amber" | "rose" | "red";
   /** Week label badge text */
   badgeLabel?: string;
   /** Whether the grid stretches to fit without scrolling (default: true) */
@@ -639,6 +704,7 @@ export function convertScheduleSectionToBlocks(
     crn: section.crn,
     room: m.location || (section.isOnline ? "Online" : undefined),
     instructor: section.instructor ?? undefined,
+    rmp: section.rmp ?? null,
     day: m.day,
     startTime: m.startTime,
     endTime: m.endTime,
@@ -646,6 +712,8 @@ export function convertScheduleSectionToBlocks(
     mode,
     deliveryMode: section.deliveryMode,
     color,
+    seatsAvailable: section.seatsAvailable,
+    isFull: section.seatsAvailable !== null && section.seatsAvailable <= 0,
   }));
 }
 

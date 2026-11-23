@@ -1,3 +1,10 @@
+import {
+  CAMPUS_MAP_MAX_DATE,
+  CAMPUS_MAP_MIN_DATE,
+  clampWeekStart,
+  getDayOfWeekMon1,
+  getTorontoNowParts,
+} from "@/lib/campus-map-dates";
 import type { CampusMapFeature, ScheduleInterval } from "@/lib/queries";
 
 export type PositionedEvent = ScheduleInterval & {
@@ -11,6 +18,8 @@ export type SubRoomStatus = {
   capacity: number | null;
   capacitySource: string | null;
   type?: string;
+  isBookable?: boolean;
+  bookingUuid?: string | null;
   isAvailable: boolean;
   currentBooking: string | null;
   bookingStart: number | null;
@@ -48,14 +57,6 @@ export type RoomStatus =
       nextBooking?: ScheduleInterval | null;
     };
 
-export const FLOOR_COLORS: Record<string, string> = {
-  "-10": "#9333ea", // purple
-  "0": "#0284c7", // blue
-  "20": "#0d9488", // teal
-  "30": "#eab308", // amber
-  "40": "#f43f5e", // rose
-};
-
 export const FLOOR_LABELS: Record<string, string> = {
   ALL: "All",
   "-10": "B",
@@ -68,13 +69,72 @@ export const FLOOR_LABELS: Record<string, string> = {
 /** Ordered top-to-bottom like an indoor map / elevator floor picker, with All at top. */
 export const VERTICAL_FLOOR_KEYS = ["ALL", "40", "30", "20", "0", "-10"] as const;
 
+export const MAP_MIN_ZOOM = 3;
+export const MAP_MAX_ZOOM = 19;
+
 export const VENUES = {
   north: { lat: 43.9454, lng: -78.8968, zoom: 17, label: "North" },
-  downtown: { lat: 43.8978, lng: -78.8608, zoom: 18, label: "Downtown" },
-  whitby: { lat: 43.8723, lng: -78.9016, zoom: 18, label: "Whitby" },
+  downtown: { lat: 43.8978, lng: -78.8608, zoom: 17, label: "Downtown" },
+  whitby: { lat: 43.8723, lng: -78.9016, zoom: 17, label: "Whitby" },
 } as const;
 
 export type VenueKey = keyof typeof VENUES;
+
+export const MAIN_NORTH_BUILDINGS = ["SCI", "ENG", "SIR", "SHA", "ERC", "BIT", "LIB"] as const;
+export const MAIN_DOWNTOWN_BUILDINGS = ["REG", "CHA"] as const;
+export const MAIN_BUILDING_SET = new Set<string>([
+  ...MAIN_NORTH_BUILDINGS,
+  ...MAIN_DOWNTOWN_BUILDINGS,
+]);
+
+/** Verified non-DB building names already established in app copy (e.g. "Find a Library Room"). */
+export const VERIFIED_APP_BUILDING_NAMES: Record<string, string> = {
+  LIB: "Library",
+};
+
+const VENUE_LABELS: Record<string, string> = {
+  OSHAWA_CAMPUS: "Oshawa Campus",
+  WHITBY_CAMPUS: "Whitby Campus",
+  DOWNTOWN_OSHAWA: "Downtown Oshawa",
+  "North Location": "North Campus",
+};
+
+/** Formats raw campus_spaces venue strings into readable labels, dropping unknown underscore codes. */
+export function formatVenueLabel(venue: string | null | undefined): string | null {
+  const trimmed = venue?.trim();
+  if (!trimmed) return null;
+  if (VENUE_LABELS[trimmed]) return VENUE_LABELS[trimmed];
+  const upper = trimmed.toUpperCase();
+  if (VENUE_LABELS[upper]) return VENUE_LABELS[upper];
+  if (trimmed.includes("_")) return null;
+  return trimmed;
+}
+
+/**
+ * Returns live Toronto weekStart, dayIndex, date, and exact minute slotStart
+ * clamped to the academic map range and time scrubber bounds.
+ */
+export function getLiveTorontoMapState(now: Date = new Date()): {
+  weekStart: string;
+  dayIndex: number;
+  date: string;
+  slotStart: number;
+} {
+  const { date: torontoDate, minutes } = getTorontoNowParts(now);
+  let date = torontoDate;
+  if (date < CAMPUS_MAP_MIN_DATE) date = CAMPUS_MAP_MIN_DATE;
+  if (date > CAMPUS_MAP_MAX_DATE) date = CAMPUS_MAP_MAX_DATE;
+
+  const weekStart = clampWeekStart(date);
+  const dayIndex = getDayOfWeekMon1(date);
+  const slotStart = Math.max(480, Math.min(minutes, 1290));
+  return { weekStart, dayIndex, date, slotStart };
+}
+
+/** Strips all whitespace and uppercases text for room/building search comparison. */
+export function normalizeSearchCode(raw: string | null | undefined): string {
+  return (raw ?? "").replace(/\s+/g, "").toUpperCase();
+}
 
 export function formatFloor(fl: string | null | undefined): string {
   const key = String(fl ?? "");
@@ -176,6 +236,26 @@ export function formatMinutesToTime(min: number): string {
   return `${h12}:${m === 0 ? "00" : m < 10 ? "0" + m : m} ${ampm}`;
 }
 
+export function formatMinutesShort(min: number): string {
+  return formatMinutesToTime(min).replace(":00 ", " ");
+}
+
+export function minutesToTimeInputValue(min: number): string {
+  const clamped = Math.max(0, Math.min(1439, Math.round(min)));
+  const h = String(Math.floor(clamped / 60)).padStart(2, "0");
+  const m = String(clamped % 60).padStart(2, "0");
+  return `${h}:${m}`;
+}
+
+export function parseTimeInputToMinutes(val: string): number | null {
+  const match = val.trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return null;
+  const h = Number(match[1]);
+  const m = Number(match[2]);
+  if (!Number.isInteger(h) || !Number.isInteger(m) || h > 23 || m > 59) return null;
+  return Math.max(480, Math.min(1290, h * 60 + m));
+}
+
 export function getContainerColor(ratio: number): string {
   let r: number, g: number, b: number;
   if (ratio <= 0.5) {
@@ -209,4 +289,8 @@ export function getLibraryBookingUrl(
 ): string {
   const bookTime = formatMinutesToTime(slotStartMinutes);
   return `https://apps.library.dc-ot.ca/OTrooms/temp.aspx?starttime=${encodeURIComponent(bookTime)}&room=${encodeURIComponent(roomId)}&next=book.aspx`;
+}
+
+export function getInfosilemBookingUrl(roomUuid: string): string {
+  return `https://campusportal.ca.infosilem.com/ontariotech/p/CreateBooking/i/00000000-0000-0000-0000-000000000000/d/-1/t/-1/r/${encodeURIComponent(roomUuid)}/d/0`;
 }

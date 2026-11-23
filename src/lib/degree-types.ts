@@ -174,6 +174,8 @@ export type PlannerTerm = {
   slots: (string | null)[];
 };
 
+export type TransferKind = "general" | "equivalent";
+
 export type CustomCourse = {
   code: string;
   title: string;
@@ -183,6 +185,8 @@ export type CustomCourse = {
   faculty: string | null;
   custom: true;
   transfer: boolean;
+  transfer_kind?: TransferKind;
+  equivalent_code?: string | null;
 };
 
 export type SubBucket = {
@@ -206,6 +210,11 @@ export type ChooseGroup = {
   required: number;
   options: string[];
   label: string;
+  elective?: {
+    credits: number;
+    match: ElectiveMatch;
+    label: string;
+  } | null;
 };
 
 export type RequirementModel = {

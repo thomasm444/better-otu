@@ -11,8 +11,10 @@ import {
   type DayOfWeek,
   type DeliveryMode,
   type NormalizedMeetingSlot,
+  type ProfessorSalaryRecord,
   type ScheduleCourseGroup,
   type ScheduleSection,
+  type SectionRmpInfo,
   type TermScheduleCatalog,
   type WeekPattern,
 } from "@/app/course-schedules/types";
@@ -29,6 +31,10 @@ const COMPONENT_ORDER: Record<CourseComponentType, number> = {
   SEM: 3,
   OTHER: 4,
 };
+
+const DAY_ORDER = Object.fromEntries(
+  DAYS_OF_WEEK.map((d, index) => [d.key, index]),
+) as Record<DayOfWeek, number>;
 
 const TERM_WEEK_ANCHORS: Record<
   string,
@@ -114,9 +120,30 @@ type RawCourseMeeting = {
   sunday: boolean;
 };
 
+type RawProfessorSalary = {
+  calendar_year: number | null;
+  salary_paid: number | string | null;
+  taxable_benefits: number | string | null;
+  job_title: string | null;
+  first_name: string | null;
+  last_name: string | null;
+};
+
+type RawRmpProfessor = {
+  id: string;
+  legacy_id: number | null;
+  full_name: string;
+  avg_rating: number | string | null;
+  avg_difficulty: number | string | null;
+  num_ratings: number | null;
+  would_take_again_percent: number | string | null;
+  professor_salaries?: RawProfessorSalary[] | null;
+};
+
 type RawCourseFaculty = {
   display_name: string | null;
   primary_indicator: boolean | null;
+  rmp_professors?: RawRmpProfessor | RawRmpProfessor[] | null;
 };
 
 type RawCourseRow = {
@@ -159,6 +186,66 @@ function normalizeSection(row: RawCourseRow, term: string): ScheduleSection | nu
   const faculty =
     row.course_faculty?.find((f) => f.primary_indicator) ??
     row.course_faculty?.[0];
+
+  const rawRmp = faculty?.rmp_professors
+    ? Array.isArray(faculty.rmp_professors)
+      ? faculty.rmp_professors[0]
+      : faculty.rmp_professors
+    : null;
+  const parsedRating =
+    rawRmp?.avg_rating !== null && rawRmp?.avg_rating !== undefined
+      ? Number(rawRmp.avg_rating)
+      : null;
+  const parsedDiff =
+    rawRmp?.avg_difficulty !== null && rawRmp?.avg_difficulty !== undefined
+      ? Number(rawRmp.avg_difficulty)
+      : null;
+  const parsedWta =
+    rawRmp?.would_take_again_percent !== null &&
+    rawRmp?.would_take_again_percent !== undefined
+      ? Number(rawRmp.would_take_again_percent)
+      : null;
+
+  const rmp: SectionRmpInfo | null =
+    rawRmp && parsedRating !== null && Number.isFinite(parsedRating)
+      ? {
+          legacyId: rawRmp.legacy_id ?? null,
+          fullName: rawRmp.full_name,
+          avgRating: parsedRating,
+          avgDifficulty:
+            parsedDiff !== null && Number.isFinite(parsedDiff)
+              ? parsedDiff
+              : null,
+          numRatings: Number(rawRmp.num_ratings ?? 0),
+          wouldTakeAgainPercent:
+            parsedWta !== null && Number.isFinite(parsedWta) ? parsedWta : null,
+        }
+      : null;
+
+  const salaryByYear = new Map<number, ProfessorSalaryRecord>();
+  for (const s of rawRmp?.professor_salaries ?? []) {
+    const year = s.calendar_year != null ? Number(s.calendar_year) : NaN;
+    const paid = s.salary_paid != null ? Number(s.salary_paid) : NaN;
+    if (!Number.isFinite(year) || !Number.isFinite(paid)) continue;
+    const benefits =
+      s.taxable_benefits != null && Number.isFinite(Number(s.taxable_benefits))
+        ? Number(s.taxable_benefits)
+        : 0;
+    const existing = salaryByYear.get(year);
+    if (!existing || paid > existing.salaryPaid) {
+      salaryByYear.set(year, {
+        calendarYear: year,
+        salaryPaid: paid,
+        taxableBenefits: benefits,
+        jobTitle: s.job_title?.trim() || null,
+        firstName: s.first_name?.trim() || null,
+        lastName: s.last_name?.trim() || null,
+      });
+    }
+  }
+  const salaries = Array.from(salaryByYear.values()).sort(
+    (a, b) => a.calendarYear - b.calendarYear,
+  );
 
   // Group meeting rows by (day, startTime, endTime) so biweekly dates & shared rooms merge cleanly.
   const slotGroups = new Map<
@@ -260,16 +347,17 @@ function normalizeSection(row: RawCourseRow, term: string): ScheduleSection | nu
 
   meetings.sort(
     (a, b) =>
-      DAYS_OF_WEEK.findIndex((d) => d.key === a.day) -
-        DAYS_OF_WEEK.findIndex((d) => d.key === b.day) ||
+      DAY_ORDER[a.day] - DAY_ORDER[b.day] ||
       a.startMinutes - b.startMinutes,
   );
 
-  const sectionWeekPatterns = new Set(meetings.map((m) => m.weekPattern));
-  const sectionWeekPattern: WeekPattern =
-    sectionWeekPatterns.size === 1
-      ? ([...sectionWeekPatterns][0] ?? "both")
-      : "both";
+  let sectionWeekPattern: WeekPattern = "both";
+  if (meetings.length > 0) {
+    const firstPattern = meetings[0].weekPattern;
+    if (meetings.every((m) => m.weekPattern === firstPattern)) {
+      sectionWeekPattern = firstPattern;
+    }
+  }
 
   const method = (row.instructional_method ?? "").trim().toUpperCase();
   const campus = (row.campus_description ?? "").trim();
@@ -330,6 +418,8 @@ function normalizeSection(row: RawCourseRow, term: string): ScheduleSection | nu
         ? Number(row.credit_hours)
         : null,
     instructor: faculty?.display_name ?? null,
+    rmp,
+    ...(salaries.length > 0 ? { salaries } : {}),
     weekPattern: sectionWeekPattern,
     meetings,
   };
@@ -374,7 +464,7 @@ export async function getTermScheduleCatalog(
           open_section,
           link_identifier,
           is_section_linked,
-          course_faculty ( display_name, primary_indicator ),
+          course_faculty ( display_name, primary_indicator, rmp_professors ( id, legacy_id, full_name, avg_rating, avg_difficulty, num_ratings, would_take_again_percent, professor_salaries ( calendar_year, salary_paid, taxable_benefits, job_title, first_name, last_name ) ) ),
           course_meetings ( building, room, begin_time, end_time, start_date, end_date, meeting_schedule_type, monday, tuesday, wednesday, thursday, friday, saturday, sunday )
         `,
         )
@@ -388,15 +478,23 @@ export async function getTermScheduleCatalog(
     getDegreeSubjects(),
   ]);
 
-  const catalogByCode = new Map(
-    catalogCourses.map((c) => [c.code.trim().toUpperCase(), c]),
-  );
-  const catalogByCompact = new Map(
-    catalogCourses.map((c) => [c.subject_course.trim().toUpperCase(), c]),
-  );
-  const subjectMeta = new Map(
-    degreeSubjects.map((s) => [s.code.trim().toUpperCase(), s]),
-  );
+  const catalogByCode = new Map<string, (typeof catalogCourses)[number]>();
+  const catalogByCompact = new Map<string, (typeof catalogCourses)[number]>();
+  const allCatalogMap = new Map<string, string>();
+  for (const c of catalogCourses) {
+    const code = c.code.trim().toUpperCase();
+    if (code) {
+      catalogByCode.set(code, c);
+      allCatalogMap.set(code, c.title || code);
+    }
+    const compact = c.subject_course.trim().toUpperCase();
+    if (compact) catalogByCompact.set(compact, c);
+  }
+
+  const subjectMeta = new Map<string, (typeof degreeSubjects)[number]>();
+  for (const s of degreeSubjects) {
+    subjectMeta.set(s.code.trim().toUpperCase(), s);
+  }
 
   const grouped = new Map<string, ScheduleSection[]>();
   const subjectsSet = new Set<string>();
@@ -447,24 +545,20 @@ export async function getTermScheduleCatalog(
       requiredComponents[0] === "LEC" &&
       sections.every((s) => s.scheduleTypeDescription !== "Lecture & Lab");
 
+    const compGroups = [...byComp.values()];
+
     const isFullyOnlineCapable =
-      requiredComponents.length > 0 &&
-      requiredComponents.every((comp) =>
-        (byComp.get(comp) ?? []).some((s) => s.isOnline),
-      );
+      compGroups.length > 0 &&
+      compGroups.every((group) => group.some((s) => s.isOnline));
 
     const isFullyAsyncCapable =
-      requiredComponents.length > 0 &&
-      requiredComponents.every((comp) =>
-        (byComp.get(comp) ?? []).some((s) => s.isAsync),
-      );
+      compGroups.length > 0 &&
+      compGroups.every((group) => group.some((s) => s.isAsync));
 
     const hasOpenSeats =
-      requiredComponents.length > 0 &&
-      requiredComponents.every((comp) =>
-        (byComp.get(comp) ?? []).some(
-          (s) => s.seatsAvailable === null || s.seatsAvailable > 0,
-        ),
+      compGroups.length > 0 &&
+      compGroups.every((group) =>
+        group.some((s) => s.seatsAvailable === null || s.seatsAvailable > 0),
       );
 
     const hasBiweeklyComponent = sections.some(
@@ -511,10 +605,22 @@ export async function getTermScheduleCatalog(
 
   courses.sort((a, b) => a.courseCode.localeCompare(b.courseCode, "en"));
 
+  for (const c of courses) {
+    if (!allCatalogMap.has(c.courseCode)) {
+      allCatalogMap.set(c.courseCode, c.title || c.courseCode);
+    }
+  }
+  const allCatalogCourses: Array<{ code: string; title: string }> = [];
+  for (const [code, title] of allCatalogMap) {
+    allCatalogCourses.push({ code, title });
+  }
+  allCatalogCourses.sort((a, b) => a.code.localeCompare(b.code, "en"));
+
   return {
     term: termInfo.code,
     termLabel: termInfo.label,
     courses,
+    allCatalogCourses,
     subjects: [...subjectsSet].sort((a, b) => a.localeCompare(b, "en")),
     instructors: [...instructorsSet].sort((a, b) => a.localeCompare(b, "en")),
     deliveryStats: {

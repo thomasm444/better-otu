@@ -15,11 +15,12 @@ import type { DegreeProgramDetail, ElectiveMatch } from "@/lib/degree-types";
 import {
   extractAllDegreePlansForTerm,
   loadLocalTermSchedule,
-  loadUserTermScheduleFromDb,
+  loadUserScheduleHydrationFromDb,
   saveLocalTermSchedule,
   syncUserTermScheduleToDb,
   type DegreePlanImportOption,
 } from "@/lib/schedule-storage";
+import { fetchStudentProfileWithPrograms } from "@/lib/student-courses";
 import { createClient } from "@/lib/supabase/client";
 
 import {
@@ -54,6 +55,7 @@ interface ScheduleContainerProps {
 }
 
 const WEEKDAY_KEYS = DAYS_OF_WEEK.slice(0, 5);
+const ACTIVE_DEGREE_PLAN_STORAGE_KEY = "otu-schedule-active-plan-id";
 
 const TIME_BLOCK_PRESETS: Array<{
   id: string;
@@ -126,8 +128,9 @@ export function ScheduleContainer({
   const [authReady, setAuthReady] = useState(false);
 
   const [viewMode, setViewMode] = useState<ScheduleViewMode>("combined");
+  const [showRmp, setShowRmp] = useState(false);
   const [mobileTab, setMobileTab] = useState<"schedule" | "lookup">("schedule");
-  const [fitToHeight, setFitToHeight] = useState(true);
+  const [lookupTabTrigger, setLookupTabTrigger] = useState(0);
   const [isEditMode, setIsEditMode] = useState(false);
 
   const [plannedCourses, setPlannedCourses] = useState<PlannedCourseEntry[]>(
@@ -147,13 +150,71 @@ export function ScheduleContainer({
 
   const [hoverPreviewSection, setHoverPreviewSection] =
     useState<ScheduleSection | null>(null);
-  const [gridSectionPicker, setGridSectionPicker] =
-    useState<SectionGridPickerTarget | null>(null);
+  const [gridSectionPickers, setGridSectionPickers] = useState<
+    SectionGridPickerTarget[]
+  >([]);
+
+  type HistorySnapshot = {
+    plannedCourses: PlannedCourseEntry[];
+    gridSectionPickers: SectionGridPickerTarget[];
+    customBlocks: ScheduleBlock[];
+    blockedSlots: BlockedTimeSlot[];
+  };
+  const plannedCoursesRef = useRef<PlannedCourseEntry[]>(plannedCourses);
+  const gridSectionPickersRef = useRef<SectionGridPickerTarget[]>(gridSectionPickers);
+  const customBlocksRef = useRef<ScheduleBlock[]>(customBlocks);
+  const blockedSlotsRef = useRef<BlockedTimeSlot[]>(blockedSlots);
+  const undoStackRef = useRef<HistorySnapshot[]>([]);
+  const redoStackRef = useRef<HistorySnapshot[]>([]);
+
+  useEffect(() => {
+    plannedCoursesRef.current = plannedCourses;
+  }, [plannedCourses]);
+
+  useEffect(() => {
+    gridSectionPickersRef.current = gridSectionPickers;
+  }, [gridSectionPickers]);
+
+  useEffect(() => {
+    customBlocksRef.current = customBlocks;
+  }, [customBlocks]);
+
+  useEffect(() => {
+    blockedSlotsRef.current = blockedSlots;
+  }, [blockedSlots]);
+
+  useEffect(() => {
+    undoStackRef.current = [];
+    redoStackRef.current = [];
+  }, [activeTerm]);
+  const [hiddenUnplannedCodes, setHiddenUnplannedCodes] = useState<Set<string>>(
+    () => new Set(),
+  );
   const [focusedCourseCode, setFocusedCourseCode] = useState<string | null>(
     null,
   );
+  const [termPlannedCodesMap, setTermPlannedCodesMap] = useState<
+    Record<string, string[]>
+  >({});
+  const [dismissedTempCompleted, setDismissedTempCompleted] = useState<
+    Set<string>
+  >(() => new Set());
 
   const [isBlockingMode, setIsBlockingMode] = useState(false);
+  const [isCustomBlockDragMode, setIsCustomBlockDragMode] = useState(false);
+  const [customBlockDraft, setCustomBlockDraft] = useState<{
+    courseCode: string;
+    title: string;
+    room?: string;
+    weekPattern: "both" | "week1" | "week2";
+    color: ColorTheme;
+  }>({
+    courseCode: "CUSTOM",
+    title: "Custom Block",
+    room: undefined,
+    weekPattern: "both",
+    color: "teal",
+  });
   const [blockMenuOpen, setBlockMenuOpen] = useState(false);
   const [blkDay, setBlkDay] = useState<DayOfWeek>("monday");
   const [blkStart, setBlkStart] = useState("12:00");
@@ -165,6 +226,7 @@ export function ScheduleContainer({
     "idle" | "saving" | "saved" | "local" | "error"
   >("idle");
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [hydratedKey, setHydratedKey] = useState<string | null>(null);
 
   const hydratedKeyRef = useRef<string | null>(null);
   const userDirtyRef = useRef(false);
@@ -191,7 +253,7 @@ export function ScheduleContainer({
       }
     };
     document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
+  return () => document.removeEventListener("mousedown", onDown);
   }, [blockMenuOpen]);
 
   // Close degree-plan import popover on outside click
@@ -206,8 +268,10 @@ export function ScheduleContainer({
       }
     };
     document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
+  return () => document.removeEventListener("mousedown", onDown);
   }, [importMenuOpen]);
+
+  const [userYearOfStudy, setUserYearOfStudy] = useState<number | null>(null);
 
   // Auth listener
   useEffect(() => {
@@ -226,11 +290,32 @@ export function ScheduleContainer({
       setAuthReady(true);
     });
 
-    return () => {
+  return () => {
       active = false;
       subscription.unsubscribe();
     };
   }, [supabase]);
+
+  // Load user's year_of_study from student profile for default course level
+  useEffect(() => {
+    let active = true;
+    if (!user?.id) {
+      setUserYearOfStudy(null);
+      return;
+    }
+    fetchStudentProfileWithPrograms(supabase, user.id)
+      .then((profile) => {
+        if (!active) return;
+        setUserYearOfStudy(profile?.year_of_study ?? null);
+      })
+      .catch(() => {
+        if (!active) return;
+        setUserYearOfStudy(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [supabase, user?.id]);
 
   const courseMap = useMemo(() => {
     const map = new Map<string, ScheduleCourseGroup>();
@@ -277,31 +362,34 @@ export function ScheduleContainer({
     async function hydrate() {
       userDirtyRef.current = false;
       const local = loadLocalTermSchedule(activeTerm);
+      const fallLocal = loadLocalTermSchedule("202609");
+      const winterLocal = loadLocalTermSchedule("202701");
+      const summerLocal = loadLocalTermSchedule("202605");
 
       let remotePlans: Awaited<ReturnType<typeof fetchAllDegreePlans>> = [];
       let dbState: Awaited<
-        ReturnType<typeof loadUserTermScheduleFromDb>
+        ReturnType<typeof loadUserScheduleHydrationFromDb>
       > | null = null;
       let dbCompleted: string[] = [];
+      let dbFallCodes: string[] = [];
+      let dbWinterCodes: string[] = [];
 
       if (user?.email) {
         try {
-          const [plansRes, schedRes, completedRes] = await Promise.all([
+          const [plansRes, hydrationRes] = await Promise.all([
             fetchAllDegreePlans(supabase, user.email),
-            loadUserTermScheduleFromDb(supabase, user.id, activeTerm, courseMap),
-            supabase
-              .from("student_courses")
-              .select("course_code")
-              .eq("user_id", user.id)
-              .eq("status", "completed"),
+            loadUserScheduleHydrationFromDb(
+              supabase,
+              user.id,
+              activeTerm,
+              courseMap,
+            ),
           ]);
           remotePlans = plansRes;
-          dbState = schedRes;
-          dbCompleted = (completedRes.data ?? [])
-            .map((r: { course_code: string }) =>
-              r.course_code.trim().toUpperCase(),
-            )
-            .filter((c: string) => c && !c.startsWith("__"));
+          dbState = hydrationRes;
+          dbCompleted = hydrationRes.completedCourses;
+          dbFallCodes = hydrationRes.fallCodes;
+          dbWinterCodes = hydrationRes.winterCodes;
         } catch (err) {
           console.error("Failed to hydrate remote student schedule:", err);
         }
@@ -311,8 +399,22 @@ export function ScheduleContainer({
 
       const planOptions = extractAllDegreePlansForTerm(remotePlans, termInfo);
       setDegreePlanOptions(planOptions);
+      const savedPlanId =
+        typeof window !== "undefined"
+          ? window.localStorage.getItem(ACTIVE_DEGREE_PLAN_STORAGE_KEY)
+          : null;
       const primaryPlanForPrereqs =
+        (savedPlanId
+          ? planOptions.find(
+              (p) => p.id === savedPlanId || p.programId === savedPlanId,
+            )
+          : undefined) ??
         planOptions.find((p) => p.termCourseCodes.length > 0) ??
+        planOptions.find(
+          (p) =>
+            p.fallTermCourseCodes.length > 0 ||
+            p.winterTermCourseCodes.length > 0,
+        ) ??
         planOptions.find((p) => p.completedPriorCourseCodes.length > 0);
 
       // Optionally load program elective buckets from the active Degree Plan
@@ -348,9 +450,45 @@ export function ScheduleContainer({
           .catch(() => {});
       }
 
+      const fallLocalCodes = (fallLocal?.plannedCourses ?? [])
+        .map((c) => c.courseCode.trim().toUpperCase())
+        .filter(Boolean);
+      const winterLocalCodes = (winterLocal?.plannedCourses ?? [])
+        .map((c) => c.courseCode.trim().toUpperCase())
+        .filter(Boolean);
+
+      const fallCodes = [
+        ...new Set([
+          ...dbFallCodes,
+          ...fallLocalCodes,
+          ...(primaryPlanForPrereqs?.fallTermCourseCodes ?? []),
+        ]),
+      ];
+      const winterCodes = [
+        ...new Set([
+          ...dbWinterCodes,
+          ...winterLocalCodes,
+          ...(primaryPlanForPrereqs?.winterTermCourseCodes ?? []),
+        ]),
+      ];
+
+      setTermPlannedCodesMap((prev) => ({
+        ...prev,
+        "202609": [...new Set([...(prev["202609"] ?? []), ...fallCodes])],
+        "202701": [...new Set([...(prev["202701"] ?? []), ...winterCodes])],
+      }));
+
+      const fallWinterSet = new Set([...fallCodes, ...winterCodes]);
       const mergedCompleted = [
         ...new Set([
-          ...(local?.completedCourses ?? []),
+          ...[
+            ...(local?.completedCourses ?? []),
+            ...(fallLocal?.completedCourses ?? []),
+            ...(winterLocal?.completedCourses ?? []),
+            ...(summerLocal?.completedCourses ?? []),
+          ]
+            .map((c) => c.trim().toUpperCase())
+            .filter((c) => c && !fallWinterSet.has(c)),
           ...(primaryPlanForPrereqs?.completedPriorCourseCodes ?? []),
           ...dbCompleted,
         ]),
@@ -409,11 +547,12 @@ export function ScheduleContainer({
       setBlockedSlots(mergeBlockedSlots(nextBlocked));
       setCustomBlocks(nextCustom);
       hydratedKeyRef.current = hydrationKey;
+      setHydratedKey(hydrationKey);
     }
 
     void hydrate();
 
-    return () => {
+  return () => {
       cancelled = true;
     };
   }, [activeTerm, authReady, user, terms, supabase, courseMap]);
@@ -458,7 +597,7 @@ export function ScheduleContainer({
         });
     }, 600);
 
-    return () => {
+  return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
   }, [
@@ -474,8 +613,48 @@ export function ScheduleContainer({
   const handleTermChange = async (nextTerm: string) => {
     if (nextTerm === activeTerm) return;
     setHoverPreviewSection(null);
-    setGridSectionPicker(null);
+    setGridSectionPickers([]);
+    setHiddenUnplannedCodes(new Set());
+    setDismissedTempCompleted(new Set());
     setImportMenuOpen(false);
+
+    const activePlannedCodes = plannedCourses
+      .map((c) => c.courseCode.trim().toUpperCase())
+      .filter(Boolean);
+    setTermPlannedCodesMap((prev) => ({
+      ...prev,
+      [activeTerm]: [
+        ...new Set([...(prev[activeTerm] ?? []), ...activePlannedCodes]),
+      ],
+    }));
+
+    if (userDirtyRef.current) {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+      saveLocalTermSchedule(activeTerm, {
+        plannedCourses,
+        blockedSlots,
+        customBlocks,
+        completedCourses,
+      });
+      if (user) {
+        try {
+          await syncUserTermScheduleToDb(
+            supabase,
+            user.id,
+            activeTerm,
+            plannedCourses,
+            blockedSlots,
+            customBlocks,
+          );
+        } catch (err) {
+          console.error("Failed to flush schedule before term change:", err);
+        }
+      }
+    }
+
     const cached = catalogCacheRef.current.get(nextTerm);
     if (cached) {
       setCatalog(cached);
@@ -500,9 +679,51 @@ export function ScheduleContainer({
     }
   };
 
+  const temporaryPriorCourseCodes = useMemo(() => {
+    const activePlannedCodes = plannedCourses
+      .map((c) => c.courseCode.trim().toUpperCase())
+      .filter(Boolean);
+    const fallCodes =
+      activeTerm === "202609"
+        ? [
+            ...new Set([
+              ...(termPlannedCodesMap["202609"] ?? []),
+              ...activePlannedCodes,
+            ]),
+          ]
+        : (termPlannedCodesMap["202609"] ?? []);
+    const winterCodes =
+      activeTerm === "202701"
+        ? [
+            ...new Set([
+              ...(termPlannedCodesMap["202701"] ?? []),
+              ...activePlannedCodes,
+            ]),
+          ]
+        : (termPlannedCodesMap["202701"] ?? []);
+
+    let raw: string[] = [];
+    if (activeTerm === "202701") {
+      raw = fallCodes;
+    } else if (activeTerm === "202605") {
+      raw = [...new Set([...fallCodes, ...winterCodes])];
+    }
+    return raw.filter((c) => !dismissedTempCompleted.has(c));
+  }, [activeTerm, plannedCourses, termPlannedCodesMap, dismissedTempCompleted]);
+
+  const effectiveCompletedCourses = useMemo(
+    () =>
+      [
+        ...new Set([...completedCourses, ...temporaryPriorCourseCodes]),
+      ].sort(),
+    [completedCourses, temporaryPriorCourseCodes],
+  );
+
   // Expanded completed courses set (including formerly_codes equivalence)
   const expandedCompletedSet = useMemo(() => {
-    const base = new Set(completedCourses.map((c) => c.trim().toUpperCase()));
+    const base = new Set(
+      effectiveCompletedCourses.map((c) => c.trim().toUpperCase()),
+    );
     const equivAdj = new Map<string, Set<string>>();
     for (const c of catalog.courses) {
       for (const f of c.formerlyCodes) {
@@ -521,7 +742,7 @@ export function ScheduleContainer({
       }
     }
     return expanded;
-  }, [completedCourses, catalog.courses]);
+  }, [effectiveCompletedCourses, catalog.courses]);
 
   // Build active schedule blocks + async sections summary
   const {
@@ -612,10 +833,69 @@ export function ScheduleContainer({
     hoverPreviewSection,
   ]);
 
+  const hiddenCourseCodes = useMemo(() => {
+    const set = new Set<string>(hiddenUnplannedCodes);
+    for (const entry of plannedCourses) {
+      if (entry.hidden) set.add(entry.courseCode);
+    }
+    return set;
+  }, [plannedCourses, hiddenUnplannedCodes]);
+
+  const handleChangeGridSectionPickers = useCallback(
+    (
+      updater:
+        | SectionGridPickerTarget[]
+        | ((prev: SectionGridPickerTarget[]) => SectionGridPickerTarget[]),
+      switchMobileOnAdd = false,
+    ) => {
+      setHoverPreviewSection(null);
+      const next =
+        typeof updater === "function" ? updater(gridSectionPickers) : updater;
+      const nextCodes = new Set(next.map((t) => t.courseCode));
+      setHiddenUnplannedCodes((prev) => {
+        if (prev.size === 0) return prev;
+        let changed = false;
+        const filtered = new Set<string>();
+        for (const code of prev) {
+          if (nextCodes.has(code)) filtered.add(code);
+          else changed = true;
+        }
+        return changed ? filtered : prev;
+      });
+      if (switchMobileOnAdd && next.length > gridSectionPickers.length) {
+        setMobileTab("schedule");
+      }
+      setGridSectionPickers(next);
+    },
+    [gridSectionPickers],
+  );
+
+  const clearUnplannedHidden = useCallback((courseCode: string) => {
+    setHiddenUnplannedCodes((prev) => {
+      if (!prev.has(courseCode)) return prev;
+      const next = new Set(prev);
+      next.delete(courseCode);
+      return next;
+    });
+  }, []);
+
   const markDirty = useCallback(() => {
     userDirtyRef.current = true;
     setSyncStatus(user ? "saving" : "local");
   }, [user]);
+
+  const pushUndoSnapshot = useCallback(() => {
+    undoStackRef.current.push({
+      plannedCourses: plannedCoursesRef.current,
+      gridSectionPickers: gridSectionPickersRef.current,
+      customBlocks: customBlocksRef.current,
+      blockedSlots: blockedSlotsRef.current,
+    });
+    if (undoStackRef.current.length > 50) {
+      undoStackRef.current.shift();
+    }
+    redoStackRef.current = [];
+  }, []);
 
   const handleAddCourse = useCallback(
     (
@@ -631,7 +911,9 @@ export function ScheduleContainer({
         ...(preferredCrns ?? {}),
       };
 
+      pushUndoSnapshot();
       markDirty();
+      clearUnplannedHidden(courseCode);
       setPlannedCourses((prev) => {
         const existingIdx = prev.findIndex((p) => p.courseCode === courseCode);
         if (existingIdx >= 0) {
@@ -666,23 +948,36 @@ export function ScheduleContainer({
           : `Added ${courseCode} to your schedule`,
       );
     },
-    [courseMap, markDirty, showToast],
+    [courseMap, markDirty, pushUndoSnapshot, clearUnplannedHidden, showToast],
   );
 
-  const handleSelectSection = useCallback(
-    (courseCode: string, component: CourseComponentType, crn: string) => {
+  const applySectionSelection = useCallback(
+    (
+      courseCode: string,
+      component: CourseComponentType,
+      crn: string,
+      forceSelect = false,
+    ) => {
+      pushUndoSnapshot();
       markDirty();
-      setIsEditMode(true);
+      clearUnplannedHidden(courseCode);
       setHoverPreviewSection(null);
       setPlannedCourses((prev) => {
         const existing = prev.find((entry) => entry.courseCode === courseCode);
         if (existing) {
+          const isAlreadySelected = existing.selectedCrns[component] === crn;
+          const nextCrns = { ...existing.selectedCrns };
+          if (isAlreadySelected && !forceSelect) {
+            delete nextCrns[component];
+          } else {
+            nextCrns[component] = crn;
+          }
           return prev.map((entry) =>
             entry.courseCode === courseCode
               ? {
                   ...entry,
                   hidden: false,
-                  selectedCrns: { ...entry.selectedCrns, [component]: crn },
+                  selectedCrns: nextCrns,
                 }
               : entry,
           );
@@ -702,21 +997,84 @@ export function ScheduleContainer({
         ];
       });
     },
-    [courseMap, markDirty],
+    [courseMap, markDirty, pushUndoSnapshot, clearUnplannedHidden],
+  );
+
+  const handleSelectSection = useCallback(
+    (courseCode: string, component: CourseComponentType, crn: string) => {
+      if (!isEditMode) return;
+      applySectionSelection(courseCode, component, crn, false);
+    },
+    [isEditMode, applySectionSelection],
+  );
+
+  const handleEnableEditModeAndSelectSection = useCallback(
+    (courseCode: string, component: CourseComponentType, crn: string) => {
+      setIsEditMode(true);
+      applySectionSelection(courseCode, component, crn, true);
+      showToast(`Switched to Edit Mode and added ${courseCode} (${crn})`);
+    },
+    [applySectionSelection, showToast],
   );
 
   const handleRemoveCourse = useCallback(
     (courseCode: string) => {
+      pushUndoSnapshot();
       markDirty();
-      setGridSectionPicker((prev) =>
-        prev?.courseCode === courseCode ? null : prev,
+      setGridSectionPickers((prev) =>
+        prev.filter((t) => t.courseCode !== courseCode),
       );
+      clearUnplannedHidden(courseCode);
       setPlannedCourses((prev) =>
         prev.filter((entry) => entry.courseCode !== courseCode),
       );
     },
-    [markDirty],
+    [markDirty, pushUndoSnapshot, clearUnplannedHidden],
   );
+
+  useEffect(() => {
+    if (!isEditMode) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      const mod = e.ctrlKey || e.metaKey;
+      if (!mod || e.altKey || e.key.toLowerCase() !== "z") return;
+
+      if (e.shiftKey) {
+        const next = redoStackRef.current.pop();
+        if (!next) return;
+        e.preventDefault();
+        undoStackRef.current.push({
+          plannedCourses: plannedCoursesRef.current,
+          gridSectionPickers: gridSectionPickersRef.current,
+          customBlocks: customBlocksRef.current,
+          blockedSlots: blockedSlotsRef.current,
+        });
+        markDirty();
+        setPlannedCourses(next.plannedCourses);
+        setGridSectionPickers(next.gridSectionPickers);
+        setCustomBlocks(next.customBlocks);
+        setBlockedSlots(next.blockedSlots);
+        showToast("Redid schedule change");
+      } else {
+        const prev = undoStackRef.current.pop();
+        if (!prev) return;
+        e.preventDefault();
+        redoStackRef.current.push({
+          plannedCourses: plannedCoursesRef.current,
+          gridSectionPickers: gridSectionPickersRef.current,
+          customBlocks: customBlocksRef.current,
+          blockedSlots: blockedSlotsRef.current,
+        });
+        markDirty();
+        setPlannedCourses(prev.plannedCourses);
+        setGridSectionPickers(prev.gridSectionPickers);
+        setCustomBlocks(prev.customBlocks);
+        setBlockedSlots(prev.blockedSlots);
+        showToast("Undid last change");
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+  return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isEditMode, markDirty, showToast]);
 
   const handleSetCourseMode = useCallback(
     (courseCode: string, mode: "planned" | "exploring") => {
@@ -737,17 +1095,40 @@ export function ScheduleContainer({
 
   const handleToggleCourseVisibility = useCallback(
     (courseCode: string) => {
-      markDirty();
-      setPlannedCourses((prev) =>
-        prev.map((entry) =>
-          entry.courseCode === courseCode
-            ? { ...entry, hidden: !entry.hidden }
-            : entry,
-        ),
+      setHoverPreviewSection(null);
+      const isPlanned = plannedCourses.some(
+        (entry) => entry.courseCode === courseCode,
       );
+      if (isPlanned) {
+        if (isEditMode) markDirty();
+        setPlannedCourses((prev) =>
+          prev.map((entry) =>
+            entry.courseCode === courseCode
+              ? { ...entry, hidden: !entry.hidden }
+              : entry,
+          ),
+        );
+        return;
+      }
+      setHiddenUnplannedCodes((prev) => {
+        const next = new Set(prev);
+        if (next.has(courseCode)) next.delete(courseCode);
+        else next.add(courseCode);
+        return next;
+      });
     },
-    [markDirty],
+    [plannedCourses, isEditMode, markDirty],
   );
+
+  const handleToggleAllCoursesVisibility = useCallback(() => {
+    if (plannedCourses.length === 0) return;
+    setHoverPreviewSection(null);
+    if (isEditMode) markDirty();
+    const allHidden = plannedCourses.every((c) => c.hidden);
+    setPlannedCourses((prev) =>
+      prev.map((entry) => ({ ...entry, hidden: !allHidden })),
+    );
+  }, [plannedCourses, isEditMode, markDirty]);
 
   const handleChangeCourseColor = useCallback(
     (courseCode: string, color: ColorTheme) => {
@@ -774,6 +1155,7 @@ export function ScheduleContainer({
       );
       return;
     }
+    pushUndoSnapshot();
     markDirty();
     setPlannedCourses((prev) =>
       prev.map((entry) =>
@@ -783,7 +1165,15 @@ export function ScheduleContainer({
       ),
     );
     showToast("Updated Lecture/Lab/Tutorial sections with zero conflicts.");
-  }, [plannedCourses, courseMap, blockedSlots, customBlocks, markDirty, showToast]);
+  }, [
+    plannedCourses,
+    courseMap,
+    blockedSlots,
+    customBlocks,
+    pushUndoSnapshot,
+    markDirty,
+    showToast,
+  ]);
 
   const handleRemoveBlockFromGrid = useCallback(
     (block: ScheduleBlock) => {
@@ -825,6 +1215,45 @@ export function ScheduleContainer({
       setCustomBlocks((prev) => prev.filter((b) => b.id !== id));
     },
     [markDirty],
+  );
+
+  const handleClearCustomBlocks = useCallback(() => {
+    markDirty();
+    setCustomBlocks([]);
+  }, [markDirty]);
+
+  const handleUpdateCustomBlocks = useCallback(
+    (updater: (prev: ScheduleBlock[]) => ScheduleBlock[]) => {
+      markDirty();
+      setCustomBlocks((prev) => updater(prev));
+    },
+    [markDirty],
+  );
+
+  const handleCreateCustomBlocksFromDrag = useCallback(
+    (days: DayOfWeek[], startTime: string, endTime: string) => {
+      markDirty();
+      const code = customBlockDraft.courseCode.trim().toUpperCase() || "CUSTOM";
+      const title = customBlockDraft.title.trim() || code;
+      const room = customBlockDraft.room?.trim() || undefined;
+      const now = Date.now();
+      const created: ScheduleBlock[] = days.map((day, idx) => ({
+        id: `custom-${day}-${startTime}-${now}-${idx}-${Math.random().toString(36).slice(2, 5)}`,
+        courseCode: code,
+        title,
+        type: "CUSTOM",
+        day,
+        startTime,
+        endTime,
+        room,
+        weekPattern: customBlockDraft.weekPattern,
+        mode: "planned",
+        color: customBlockDraft.color,
+        isCustom: true,
+      }));
+      setCustomBlocks((prev) => [...prev, ...created]);
+    },
+    [customBlockDraft, markDirty],
   );
 
   const handleUpdateBlockedSlots = useCallback(
@@ -880,29 +1309,61 @@ export function ScheduleContainer({
   );
 
   const handleClearSchedule = useCallback(() => {
+    pushUndoSnapshot();
     markDirty();
     setPlannedCourses([]);
     setCustomBlocks([]);
     setBlockedSlots([]);
     setHoverPreviewSection(null);
-    setGridSectionPicker(null);
+    setGridSectionPickers([]);
+    setHiddenUnplannedCodes(new Set());
+    setDismissedTempCompleted(new Set());
+    setTermPlannedCodesMap((prev) => ({ ...prev, [activeTerm]: [] }));
     showToast("Cleared schedule and blocked times.");
-  }, [markDirty, showToast]);
+  }, [activeTerm, pushUndoSnapshot, markDirty, showToast]);
 
   const handleClearPlanner = useCallback(() => {
+    pushUndoSnapshot();
     markDirty();
     setPlannedCourses([]);
     setCustomBlocks([]);
     setHoverPreviewSection(null);
-    setGridSectionPicker(null);
+    setGridSectionPickers([]);
+    setHiddenUnplannedCodes(new Set());
+    setDismissedTempCompleted(new Set());
+    setTermPlannedCodesMap((prev) => ({ ...prev, [activeTerm]: [] }));
     showToast("Cleared all courses from planner.");
-  }, [markDirty, showToast]);
+  }, [activeTerm, pushUndoSnapshot, markDirty, showToast]);
 
   const handleImportFromDegreePlan = (plan: DegreePlanImportOption) => {
     setImportMenuOpen(false);
+    markDirty();
+    if (typeof window !== "undefined") {
+      try {
+        window.localStorage.setItem(ACTIVE_DEGREE_PLAN_STORAGE_KEY, plan.id);
+      } catch {
+        // Ignore storage quota errors
+      }
+    }
+
+    if (plan.completedPriorCourseCodes.length > 0) {
+      setCompletedCourses((prev) =>
+        [...new Set([...prev, ...plan.completedPriorCourseCodes])].sort(),
+      );
+    }
+    setTermPlannedCodesMap((prev) => ({
+      ...prev,
+      "202609": [
+        ...new Set([...(prev["202609"] ?? []), ...plan.fallTermCourseCodes]),
+      ],
+      "202701": [
+        ...new Set([...(prev["202701"] ?? []), ...plan.winterTermCourseCodes]),
+      ],
+    }));
+
     if (plan.termCourseCodes.length === 0) {
       showToast(
-        `"${plan.label}" has no courses scheduled for ${catalog.termLabel}.`,
+        `Imported completed prerequisite courses from ${plan.label} (no courses scheduled for ${catalog.termLabel}).`,
       );
       return;
     }
@@ -919,29 +1380,28 @@ export function ScheduleContainer({
     if (imported.length === 0) {
       showToast(
         newCodes.length === 0
-          ? `All courses from "${plan.label}" for ${catalog.termLabel} are already added.`
-          : `None of the courses in "${plan.label}" are offered in ${catalog.termLabel}.`,
+          ? `Synced prerequisite courses from "${plan.label}" (all ${catalog.termLabel} courses already added).`
+          : `Synced prerequisite courses from "${plan.label}" (no matching offerings in ${catalog.termLabel}).`,
       );
       return;
     }
 
-    markDirty();
     setPlannedCourses((prev) => [...prev, ...imported]);
 
-    if (plan.completedPriorCourseCodes.length > 0) {
-      setCompletedCourses((prev) =>
-        [...new Set([...prev, ...plan.completedPriorCourseCodes])].sort(),
-      );
-    }
-
     showToast(
-      `Imported ${imported.length} course${imported.length === 1 ? "" : "s"} from ${plan.label}`,
+      `Imported ${imported.length} course${imported.length === 1 ? "" : "s"} and prerequisites from ${plan.label}`,
     );
   };
 
   const handleAddCompletedCourse = useCallback(
     (code: string) => {
       markDirty();
+      setDismissedTempCompleted((prev) => {
+        if (!prev.has(code)) return prev;
+        const next = new Set(prev);
+        next.delete(code);
+        return next;
+      });
       setCompletedCourses((prev) =>
         prev.includes(code) ? prev : [...prev, code].sort(),
       );
@@ -952,33 +1412,59 @@ export function ScheduleContainer({
   const handleRemoveCompletedCourse = useCallback(
     (code: string) => {
       markDirty();
+      if (temporaryPriorCourseCodes.includes(code)) {
+        setDismissedTempCompleted((prev) => new Set(prev).add(code));
+      }
       setCompletedCourses((prev) => prev.filter((c) => c !== code));
     },
-    [markDirty],
+    [markDirty, temporaryPriorCourseCodes],
   );
+
+  const hasBiweeklyClass = useMemo(() => {
+    if (annotatedBlocks.some((b) => b.weekPattern !== "both")) return true;
+    for (const target of gridSectionPickers) {
+      const course = courseMap.get(target.courseCode);
+      if (!course) continue;
+      if (
+        course.sections.some((sec) =>
+          sec.meetings.some((m) => m.weekPattern !== "both"),
+        )
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }, [annotatedBlocks, gridSectionPickers, courseMap]);
+
+  const effectiveViewMode: ScheduleViewMode = hasBiweeklyClass
+    ? viewMode
+    : "combined";
 
   return (
     <div className="space-y-4">
       {/* Mobile 2-Tab Bar (< lg) */}
-      <div className="grid grid-cols-2 rounded-xl border border-zinc-200 bg-zinc-100 p-1 text-xs font-semibold lg:hidden dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="grid grid-cols-2 rounded-2xl border border-slate-200/80 bg-white/85 p-1 text-xs font-semibold shadow-[0_1px_4px_rgba(15,23,42,0.03)] backdrop-blur-sm lg:hidden dark:border-slate-800/80 dark:bg-slate-900/85">
         <button
           type="button"
           onClick={() => setMobileTab("schedule")}
-          className={`rounded-lg py-2 transition ${
+          className={`rounded-xl py-2 transition ${
             mobileTab === "schedule"
-              ? "bg-white text-zinc-900 shadow-xs dark:bg-zinc-800 dark:text-zinc-100"
-              : "text-zinc-500 dark:text-zinc-400"
+              ? "bg-sky-600 text-white shadow-xs dark:bg-sky-500"
+              : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
           }`}
         >
           Schedule ({plannedCourses.length})
         </button>
         <button
           type="button"
-          onClick={() => setMobileTab("lookup")}
-          className={`rounded-lg py-2 transition ${
+          onClick={() => {
+            setMobileTab("lookup");
+            setLookupTabTrigger((n) => n + 1);
+          }}
+          className={`rounded-xl py-2 transition ${
             mobileTab === "lookup"
-              ? "bg-white text-zinc-900 shadow-xs dark:bg-zinc-800 dark:text-zinc-100"
-              : "text-zinc-500 dark:text-zinc-400"
+              ? "bg-sky-600 text-white shadow-xs dark:bg-sky-500"
+              : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
           }`}
         >
           Course Lookup &amp; Explore
@@ -994,7 +1480,7 @@ export function ScheduleContainer({
           }`}
         >
           {/* Control Toolbar */}
-          <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border border-zinc-200 bg-zinc-50/80 p-3 dark:border-zinc-800 dark:bg-zinc-900/50">
+          <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-2xl border border-slate-200/80 bg-white/88 p-3 shadow-[0_2px_10px_rgba(15,23,42,0.04)] backdrop-blur-sm dark:border-slate-800/80 dark:bg-slate-900/85">
             <div className="flex flex-wrap items-center gap-2">
               {/* Semester Selector */}
               <select
@@ -1002,7 +1488,7 @@ export function ScheduleContainer({
                 disabled={loadingTerm}
                 onChange={(e) => void handleTermChange(e.target.value)}
                 aria-label="Select semester"
-                className="rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-zinc-900 shadow-xs focus:border-blue-500 focus:outline-none disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                className="rounded-xl border border-slate-200/90 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-800 shadow-[0_1px_2px_rgba(15,23,42,0.03)] transition focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20 focus:outline-none disabled:opacity-60 dark:border-slate-700/80 dark:bg-slate-800/90 dark:text-slate-100"
               >
                 {terms.map((t) => (
                   <option key={t.code} value={t.code}>
@@ -1011,66 +1497,109 @@ export function ScheduleContainer({
                 ))}
               </select>
 
-              {/* View Mode Switcher (Combined, Week 1, Week 2 only) */}
-              <div className="inline-flex rounded-lg border border-zinc-300 bg-white p-0.5 text-xs font-medium dark:border-zinc-700 dark:bg-zinc-800">
-                {(
-                  [
-                    { id: "combined", label: "Combined" },
-                    { id: "week1", label: "Week 1" },
-                    { id: "week2", label: "Week 2" },
-                  ] as const
-                ).map((mode) => (
-                  <button
-                    key={mode.id}
-                    type="button"
-                    onClick={() => setViewMode(mode.id)}
-                    className={`rounded-md px-2.5 py-1 transition ${
-                      viewMode === mode.id
-                        ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-                        : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200"
-                    }`}
-                  >
-                    {mode.label}
-                  </button>
-                ))}
-              </div>
+              {/* View Mode Switcher (Combined, Week 1, Week 2 only when biweekly classes exist) */}
+              {hasBiweeklyClass && (
+                <div className="inline-flex rounded-xl border border-slate-200/90 bg-slate-100/75 p-0.5 text-xs font-medium dark:border-slate-700/80 dark:bg-slate-800/80">
+                  {(
+                    [
+                      { id: "combined", label: "Combined" },
+                      { id: "week1", label: "Week 1" },
+                      { id: "week2", label: "Week 2" },
+                    ] as const
+                  ).map((mode) => (
+                    <button
+                      key={mode.id}
+                      type="button"
+                      onClick={() => setViewMode(mode.id)}
+                      className={`rounded-lg px-2.5 py-1 transition ${
+                        viewMode === mode.id
+                          ? "bg-sky-600 text-white shadow-xs dark:bg-sky-500 dark:text-white"
+                          : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
+                      }`}
+                    >
+                      {mode.label}
+                    </button>
+                  ))}
+                </div>
+              )}
 
-              {/* Fit vs Expand Toggle */}
+              {/* RateMyProfessors Star Toggle (off by default) */}
               <button
                 type="button"
-                onClick={() => setFitToHeight((v) => !v)}
-                className="hidden items-center gap-1 rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-xs text-zinc-700 hover:bg-zinc-100 xl:inline-flex dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+                onClick={() => setShowRmp((v) => !v)}
+                aria-pressed={showRmp}
+                title={
+                  showRmp
+                    ? "Hide RateMyProfessors ratings"
+                    : "Show RateMyProfessors ratings"
+                }
+                aria-label="Toggle RateMyProfessors ratings"
+                className={`inline-flex cursor-pointer items-center justify-center rounded-xl border px-2.5 py-1.5 text-xs font-medium shadow-[0_1px_2px_rgba(15,23,42,0.03)] transition ${
+                  showRmp
+                    ? "border-amber-400 bg-amber-50 text-amber-800 hover:bg-amber-100 dark:border-amber-600 dark:bg-amber-950/70 dark:text-amber-200"
+                    : "border-slate-200/90 bg-white text-slate-500 hover:border-sky-300 hover:bg-sky-50/60 hover:text-sky-900 dark:border-slate-700/80 dark:bg-slate-800/90 dark:text-slate-400 dark:hover:border-sky-700 dark:hover:text-slate-200"
+                }`}
               >
-                {fitToHeight ? "Fit View" : "Expanded"}
+                <svg
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                  aria-hidden="true"
+                  className={`h-3.5 w-3.5 shrink-0 transition-colors ${
+                    showRmp
+                      ? "text-amber-500 dark:text-amber-400"
+                      : "text-slate-400 dark:text-slate-500"
+                  }`}
+                >
+                  <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                </svg>
               </button>
             </div>
 
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-2">
               {/* Edit Schedule Toggle */}
               <button
                 type="button"
+                aria-pressed={isEditMode}
+                aria-label={isEditMode ? "Done editing" : "Edit schedule"}
+                title={
+                  isEditMode
+                    ? "Done editing schedule"
+                    : "Edit schedule"
+                }
                 onClick={() => {
                   setIsEditMode((prev) => {
                     const next = !prev;
                     if (!next) {
                       setIsBlockingMode(false);
+                      setIsCustomBlockDragMode(false);
                       setBlockMenuOpen(false);
                       setImportMenuOpen(false);
                     }
                     return next;
                   });
                 }}
-                className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold shadow-xs transition ${
+                className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl border px-3 py-1.5 text-xs font-semibold shadow-xs transition ${
                   isEditMode
-                    ? "border-emerald-600 bg-emerald-600 text-white hover:bg-emerald-700"
-                    : "border-zinc-300 bg-white text-zinc-900 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700"
+                    ? "border-orange-500 bg-orange-500 text-white shadow-sm shadow-orange-500/25 hover:bg-orange-600 dark:border-orange-500 dark:bg-orange-500 dark:hover:bg-orange-600"
+                    : "border-slate-200/90 bg-white text-slate-700 hover:border-sky-300 hover:bg-sky-50/50 hover:text-sky-900 dark:border-slate-700/80 dark:bg-slate-800/90 dark:text-slate-100 dark:hover:border-sky-700 dark:hover:bg-slate-800"
                 }`}
               >
-                <span>{isEditMode ? "✓ Done Editing" : "Edit Schedule"}</span>
+                <span>{isEditMode ? "Done editing" : "Edit schedule"}</span>
               </button>
 
-              {isEditMode && (
-                <>
+              {/* Calendar Export */}
+              <button
+                type="button"
+                onClick={() => setIsCalendarModalOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white shadow-xs transition hover:bg-sky-700 dark:bg-sky-500 dark:hover:bg-sky-600"
+              >
+                <span>Export / Sync Calendar</span>
+              </button>
+            </div>
+          </div>
+
+          {isEditMode && (
+            <div className="flex flex-wrap items-center justify-end gap-2">
                   {/* Block Times Menu */}
                   <div className="relative" ref={blockMenuRef}>
                     <button
@@ -1079,10 +1608,10 @@ export function ScheduleContainer({
                         setImportMenuOpen(false);
                         setBlockMenuOpen((v) => !v);
                       }}
-                      className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition ${
+                      className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs font-medium shadow-[0_1px_2px_rgba(15,23,42,0.03)] transition ${
                         isBlockingMode || blockedSlots.length > 0
                           ? "border-rose-300 bg-rose-50 text-rose-800 dark:border-rose-800 dark:bg-rose-950/50 dark:text-rose-200"
-                          : "border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+                          : "border-slate-200/90 bg-white text-slate-700 hover:border-sky-300 hover:bg-sky-50/50 dark:border-slate-700/80 dark:bg-slate-800/90 dark:text-slate-200 dark:hover:bg-slate-800"
                       }`}
                     >
                       <span>Block Times</span>
@@ -1094,9 +1623,9 @@ export function ScheduleContainer({
                     </button>
 
                     {blockMenuOpen && (
-                      <div className="absolute right-0 z-40 mt-2 w-72 rounded-xl border border-zinc-200 bg-white p-3 text-xs shadow-xl dark:border-zinc-800 dark:bg-zinc-900">
-                        <div className="flex items-center justify-between border-b border-zinc-100 pb-2 dark:border-zinc-800">
-                          <span className="font-semibold text-zinc-900 dark:text-zinc-100">
+                      <div className="absolute left-0 z-40 mt-2 w-72 max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200/90 bg-white/98 p-3 text-xs shadow-xl shadow-slate-900/10 backdrop-blur-md dark:border-slate-700 dark:bg-slate-900">
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-2 dark:border-slate-800">
+                          <span className="font-semibold text-slate-900 dark:text-slate-100">
                             Block Off Unavailable Times
                           </span>
                           {blockedSlots.length > 0 && (
@@ -1117,13 +1646,17 @@ export function ScheduleContainer({
                         <button
                           type="button"
                           onClick={() => {
-                            setIsBlockingMode((v) => !v);
+                            setIsBlockingMode((v) => {
+                              const next = !v;
+                              if (next) setIsCustomBlockDragMode(false);
+                              return next;
+                            });
                             setBlockMenuOpen(false);
                           }}
-                          className={`mt-2 w-full rounded-lg border px-2.5 py-1.5 text-left font-medium transition ${
+                          className={`mt-2 w-full rounded-xl border px-2.5 py-1.5 text-left font-medium transition ${
                             isBlockingMode
                               ? "border-rose-500 bg-rose-50 text-rose-800 dark:bg-rose-950 dark:text-rose-200"
-                              : "border-zinc-200 bg-zinc-50 text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
+                              : "border-slate-200 bg-slate-50 text-slate-700 hover:border-sky-300 hover:bg-sky-50/50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
                           }`}
                         >
                           {isBlockingMode
@@ -1133,7 +1666,7 @@ export function ScheduleContainer({
 
                         {/* Quick Presets */}
                         <div className="mt-2.5 space-y-1">
-                          <p className="text-[10.5px] font-medium uppercase tracking-wider text-zinc-400">
+                          <p className="text-[10.5px] font-medium uppercase tracking-wider text-slate-400">
                             Quick Presets
                           </p>
                           {TIME_BLOCK_PRESETS.map((preset) => (
@@ -1141,7 +1674,7 @@ export function ScheduleContainer({
                               key={preset.id}
                               type="button"
                               onClick={() => handleApplyBlockPreset(preset)}
-                              className="block w-full rounded-md px-2 py-1 text-left text-zinc-700 hover:bg-zinc-100 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                              className="block w-full rounded-lg px-2 py-1 text-left text-slate-700 transition-colors hover:bg-sky-50/70 dark:text-slate-300 dark:hover:bg-slate-800"
                             >
                               + {preset.label}
                             </button>
@@ -1160,9 +1693,9 @@ export function ScheduleContainer({
                             );
                             setBlockMenuOpen(false);
                           }}
-                          className="mt-3 space-y-2 border-t border-zinc-100 pt-2.5 dark:border-zinc-800"
+                          className="mt-3 space-y-2 border-t border-slate-100 pt-2.5 dark:border-slate-800"
                         >
-                          <p className="text-[10.5px] font-medium uppercase tracking-wider text-zinc-400">
+                          <p className="text-[10.5px] font-medium uppercase tracking-wider text-slate-400">
                             Custom Block
                           </p>
                           <div className="grid grid-cols-2 gap-1.5">
@@ -1171,7 +1704,7 @@ export function ScheduleContainer({
                               onChange={(e) =>
                                 setBlkDay(e.target.value as DayOfWeek)
                               }
-                              className="rounded border border-zinc-300 bg-white px-2 py-1 text-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+                              className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-slate-900 focus:border-sky-400 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
                             >
                               {DAYS_OF_WEEK.map((d) => (
                                 <option key={d.key} value={d.key}>
@@ -1184,7 +1717,7 @@ export function ScheduleContainer({
                               value={blkLabel}
                               onChange={(e) => setBlkLabel(e.target.value)}
                               placeholder="Reason (e.g. Work)"
-                              className="rounded border border-zinc-300 bg-white px-2 py-1 text-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+                              className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-slate-900 focus:border-sky-400 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
                             />
                           </div>
                           <div className="grid grid-cols-2 gap-1.5">
@@ -1192,18 +1725,18 @@ export function ScheduleContainer({
                               type="time"
                               value={blkStart}
                               onChange={(e) => setBlkStart(e.target.value)}
-                              className="rounded border border-zinc-300 bg-white px-2 py-1 text-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+                              className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-slate-900 focus:border-sky-400 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
                             />
                             <input
                               type="time"
                               value={blkEnd}
                               onChange={(e) => setBlkEnd(e.target.value)}
-                              className="rounded border border-zinc-300 bg-white px-2 py-1 text-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+                              className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-slate-900 focus:border-sky-400 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
                             />
                           </div>
                           <button
                             type="submit"
-                            className="w-full rounded-lg bg-rose-600 py-1.5 font-medium text-white hover:bg-rose-700"
+                            className="w-full rounded-xl bg-rose-600 py-1.5 font-medium text-white transition-colors hover:bg-rose-700"
                           >
                             Add Time Block
                           </button>
@@ -1222,6 +1755,16 @@ export function ScheduleContainer({
                     </button>
                   )}
 
+                  {isCustomBlockDragMode && (
+                    <button
+                      type="button"
+                      onClick={() => setIsCustomBlockDragMode(false)}
+                      className="rounded-lg bg-teal-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-teal-700"
+                    >
+                      Done Custom Block
+                    </button>
+                  )}
+
                   {/* Import from Degree Plan Picker */}
                   {degreePlanOptions.length > 0 && (
                     <div className="relative" ref={importMenuRef}>
@@ -1231,43 +1774,43 @@ export function ScheduleContainer({
                           setBlockMenuOpen(false);
                           setImportMenuOpen((v) => !v);
                         }}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                        className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200/90 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 shadow-[0_1px_2px_rgba(15,23,42,0.03)] transition hover:border-sky-300 hover:bg-sky-50/50 dark:border-slate-700/80 dark:bg-slate-800/90 dark:text-slate-200 dark:hover:bg-slate-800"
                         title={`Choose a saved Degree Plan to import courses for ${catalog.termLabel}`}
                       >
                         <span>Import Degree Plan</span>
-                        <span className="rounded-full bg-zinc-100 px-1.5 text-[10px] font-semibold text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">
+                        <span className="rounded-full bg-sky-100/85 px-1.5 text-[10px] font-semibold text-sky-700 dark:bg-sky-950/70 dark:text-sky-300">
                           {degreePlanOptions.length}
                         </span>
                       </button>
 
                       {importMenuOpen && (
-                        <div className="absolute right-0 z-40 mt-2 max-h-80 w-80 max-w-[calc(100vw-2rem)] overflow-auto rounded-xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-800 dark:bg-zinc-900">
-                          <div className="border-b border-zinc-100 px-3 py-2 dark:border-zinc-800">
-                            <p className="text-[11px] font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
+                        <div className="absolute right-0 z-40 mt-2 max-h-80 w-80 max-w-[calc(100vw-2rem)] overflow-auto rounded-2xl border border-slate-200/90 bg-white/98 shadow-xl shadow-slate-900/10 backdrop-blur-md dark:border-slate-700 dark:bg-slate-900">
+                          <div className="border-b border-slate-100 px-3 py-2 dark:border-slate-800">
+                            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                               Import Degree Plan ({degreePlanOptions.length})
                             </p>
-                            <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400">
                               Pick a plan to import {catalog.termLabel} courses
                             </p>
                           </div>
 
-                          <div className="divide-y divide-zinc-100 dark:divide-zinc-800">
+                          <div className="divide-y divide-slate-100 dark:divide-slate-800">
                             {degreePlanOptions.map((plan) => (
                               <button
                                 key={plan.id}
                                 type="button"
                                 onClick={() => handleImportFromDegreePlan(plan)}
-                                className="flex w-full flex-col gap-1 px-3 py-2.5 text-left transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/60"
+                                className="flex w-full flex-col gap-1 px-3 py-2.5 text-left transition-colors hover:bg-sky-50/60 dark:hover:bg-slate-800/70"
                               >
                                 <div className="flex items-start justify-between gap-2">
-                                  <span className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
+                                  <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">
                                     {plan.label}
                                   </span>
                                   <span
                                     className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
                                       plan.termCourseCodes.length > 0
                                         ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300"
-                                        : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400"
+                                        : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
                                     }`}
                                   >
                                     {plan.termCourseCodes.length} in{" "}
@@ -1275,7 +1818,7 @@ export function ScheduleContainer({
                                   </span>
                                 </div>
 
-                                <span className="text-[10.5px] text-zinc-500 dark:text-zinc-400">
+                                <span className="text-[10.5px] text-slate-500 dark:text-slate-400">
                                   {plan.catalogYear
                                     ? `${plan.catalogYear} plan · `
                                     : ""}
@@ -1286,7 +1829,7 @@ export function ScheduleContainer({
                                     : "courses"}
                                 </span>
 
-                                <span className="line-clamp-2 text-[10.5px] text-zinc-600 dark:text-zinc-300">
+                                <span className="line-clamp-2 text-[10.5px] text-slate-600 dark:text-slate-300">
                                   {plan.termCourseCodes.length > 0
                                     ? plan.termCourseCodes.join(", ")
                                     : `No courses scheduled for ${catalog.termLabel}`}
@@ -1308,29 +1851,18 @@ export function ScheduleContainer({
                       customBlocks.length === 0 &&
                       blockedSlots.length === 0
                     }
-                    className="rounded-lg border border-rose-200 bg-white px-2.5 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-50 disabled:opacity-40 dark:border-rose-900/60 dark:bg-zinc-800 dark:text-rose-400 dark:hover:bg-rose-950/40"
+                    className="rounded-xl border border-rose-200 bg-white px-2.5 py-1.5 text-xs font-medium text-rose-600 transition-colors hover:bg-rose-50 disabled:opacity-40 dark:border-rose-900/60 dark:bg-slate-800/90 dark:text-rose-400 dark:hover:bg-rose-950/40"
                     title="Clear all courses, custom blocks, and blocked times from this semester schedule"
                   >
                     Clear Schedule
                   </button>
-                </>
-              )}
-
-              {/* Calendar Export */}
-              <button
-                type="button"
-                onClick={() => setIsCalendarModalOpen(true)}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white shadow-xs transition hover:bg-blue-700"
-              >
-                <span>Export / Sync Calendar</span>
-              </button>
             </div>
-          </div>
+          )}
 
           {/* Status & Summary Strip */}
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-200/80 bg-white px-3.5 py-2 text-xs dark:border-zinc-800 dark:bg-zinc-950">
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200/80 bg-white/90 px-3.5 py-2 text-xs shadow-[0_1px_4px_rgba(15,23,42,0.03)] backdrop-blur-sm dark:border-slate-800/80 dark:bg-slate-900/85">
             <div className="flex flex-wrap items-center gap-3">
-              <span className="font-medium text-zinc-800 dark:text-zinc-200">
+              <span className="font-semibold text-slate-800 dark:text-slate-200">
                 {plannedCourses.filter((c) => c.mode === "planned").length}{" "}
                 planned ({totalPlannedCredits} cr)
               </span>
@@ -1346,9 +1878,28 @@ export function ScheduleContainer({
                   {conflictCount === 1 ? "block" : "blocks"}
                 </span>
               )}
+              {(() => {
+                const fullCourses = [
+                  ...new Set(
+                    annotatedBlocks
+                      .filter((b) => b.isFull)
+                      .map((b) => `${b.courseCode}${b.type ? ` (${b.type})` : ""}`),
+                  ),
+                ];
+                if (fullCourses.length === 0) return null;
+  return (
+                  <span
+                    title={`0 seats available: ${fullCourses.join(", ")}`}
+                    className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800 dark:border-amber-800 dark:bg-amber-950/60 dark:text-amber-300"
+                  >
+                    ⚠ {fullCourses.length}{" "}
+                    {fullCourses.length === 1 ? "class" : "classes"} may be full
+                  </span>
+                );
+              })()}
             </div>
 
-            <div className="flex items-center gap-2 text-[11px] text-zinc-500">
+            <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
               {loadingTerm && <span>Loading {activeTerm}...</span>}
               {syncStatus === "saving" && <span>Saving to account...</span>}
               {syncStatus === "saved" && (
@@ -1400,42 +1951,50 @@ export function ScheduleContainer({
 
           {/* Timetable Grid */}
           <WeekScheduleGrid
-            viewMode={viewMode}
+            viewMode={effectiveViewMode}
             title={
-              viewMode === "combined"
+              effectiveViewMode === "combined"
                 ? `${catalog.termLabel} Schedule`
-                : viewMode === "week1"
+                : effectiveViewMode === "week1"
                   ? `${catalog.termLabel} — Week 1`
                   : `${catalog.termLabel} — Week 2`
             }
             subtitle={
-              viewMode === "combined"
+              effectiveViewMode === "combined"
                 ? isEditMode
                   ? "Biweekly W1 (left) & W2 (right) side-by-side · Drag blocks to snap to other sections"
                   : "Biweekly W1 (left) and W2 (right) classes sit side-by-side"
-                : viewMode === "week1"
+                : effectiveViewMode === "week1"
                   ? "Odd Teaching Weeks"
                   : "Even Teaching Weeks"
             }
-            accentColor={viewMode === "week2" ? "purple" : "blue"}
+            accentColor={effectiveViewMode === "combined" ? "purple": effectiveViewMode === "week2" ? "red" : "blue"
+            }
             courses={annotatedBlocks}
             blockedSlots={blockedSlots}
             courseMap={courseMap}
-            gridSectionPicker={gridSectionPicker}
-            onChangeGridSectionPicker={(target) => {
-              setHoverPreviewSection(null);
-              setGridSectionPicker(target);
-            }}
+            gridSectionPickers={gridSectionPickers}
+            onChangeGridSectionPickers={(updater) =>
+              handleChangeGridSectionPickers(updater, false)
+            }
+            hiddenCourseCodes={hiddenCourseCodes}
+            onToggleCourseVisibility={handleToggleCourseVisibility}
             isEditMode={isEditMode}
-            fitToHeight={fitToHeight}
+            showRmp={showRmp}
+            fitToHeight={true}
             isBlockingMode={isBlockingMode}
             onCreateBlockedSlot={(d, s, e, l) =>
               handleCreateBlockedSlot(d, s, e, l)
             }
             onUpdateBlockedSlots={handleUpdateBlockedSlots}
             onRemoveBlockedSlot={handleRemoveBlockedSlot}
+            onUpdateCustomBlocks={handleUpdateCustomBlocks}
+            isCustomBlockDragMode={isCustomBlockDragMode}
+            customBlockDraft={customBlockDraft}
+            onCreateCustomBlocksFromDrag={handleCreateCustomBlocksFromDrag}
             onRemoveBlock={handleRemoveBlockFromGrid}
             onSelectSection={handleSelectSection}
+            onEnableEditModeAndSelectSection={handleEnableEditModeAndSelectSection}
             onPromoteCourse={(code) => handleSetCourseMode(code, "planned")}
             onInspectCourse={(code) => {
               setFocusedCourseCode(code);
@@ -1445,8 +2004,10 @@ export function ScheduleContainer({
 
           {/* Active Blocked Times Pills */}
           {blockedSlots.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-zinc-200 bg-zinc-50/70 px-3 py-2 text-[11px] dark:border-zinc-800 dark:bg-zinc-900/40">
-              <span className="font-medium text-zinc-500">Blocked Times:</span>
+            <div className="flex flex-wrap items-center gap-1.5 rounded-2xl border border-slate-200/80 bg-white/85 px-3 py-2 text-[11px] shadow-[0_1px_4px_rgba(15,23,42,0.03)] dark:border-slate-800/80 dark:bg-slate-900/80">
+              <span className="font-medium text-slate-500 dark:text-slate-400">
+                Blocked Times:
+              </span>
               {blockedSlots.map((slot) => (
                 <span
                   key={slot.id}
@@ -1475,7 +2036,7 @@ export function ScheduleContainer({
 
         {/* Right 1/3: Combined Course Lookup, Exploration & Section Planner */}
         <div
-          className={`lg:col-span-4 lg:sticky lg:top-4 ${
+          className={`lg:col-span-4 lg:sticky lg:top-[calc(var(--site-nav-height,2.75rem)+5.25rem)] ${
             mobileTab === "lookup" ? "block" : "hidden lg:block"
           }`}
         >
@@ -1486,18 +2047,15 @@ export function ScheduleContainer({
             activeBlocks={rawScheduleBlocks}
             customBlocks={customBlocks}
             blockedSlots={blockedSlots}
-            completedCourses={completedCourses}
+            completedCourses={effectiveCompletedCourses}
             expandedCompletedSet={expandedCompletedSet}
             programElectives={programElectives}
             focusedCourseCode={focusedCourseCode}
-            gridSectionPicker={gridSectionPicker}
-            onChangeGridSectionPicker={(target) => {
-              setHoverPreviewSection(null);
-              setGridSectionPicker(target);
-              if (target) {
-                setMobileTab("schedule");
-              }
-            }}
+            hydratedKey={hydratedKey}
+            gridSectionPickers={gridSectionPickers}
+            onChangeGridSectionPickers={(updater) =>
+              handleChangeGridSectionPickers(updater, true)
+            }
             isEditMode={isEditMode}
             onEnableEditMode={() => setIsEditMode(true)}
             onClearPlanner={handleClearPlanner}
@@ -1507,13 +2065,27 @@ export function ScheduleContainer({
             onRemoveCourse={handleRemoveCourse}
             onSetCourseMode={handleSetCourseMode}
             onToggleCourseVisibility={handleToggleCourseVisibility}
+            onToggleAllCoursesVisibility={handleToggleAllCoursesVisibility}
             onChangeCourseColor={handleChangeCourseColor}
             onAutoFitAll={handleAutoFitAll}
             onAddCustomBlock={handleAddCustomBlock}
             onRemoveCustomBlock={handleRemoveCustomBlock}
+            onClearCustomBlocks={handleClearCustomBlocks}
+            isCustomBlockDragMode={isCustomBlockDragMode}
+            onToggleCustomBlockDragMode={() => {
+              setIsCustomBlockDragMode((v) => {
+                const next = !v;
+                if (next) setIsBlockingMode(false);
+                return next;
+              });
+            }}
+            onCustomBlockDraftChange={setCustomBlockDraft}
             onAddCompletedCourse={handleAddCompletedCourse}
             onRemoveCompletedCourse={handleRemoveCompletedCourse}
             onHoverSection={setHoverPreviewSection}
+            showRmp={showRmp}
+            defaultYearOfStudy={userYearOfStudy}
+            searchTabTrigger={lookupTabTrigger}
           />
         </div>
       </div>
@@ -1530,7 +2102,7 @@ export function ScheduleContainer({
 
       {/* Toast Notification */}
       {toastMsg && (
-        <div className="fixed bottom-5 right-5 z-50 rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-2.5 text-xs font-medium text-white shadow-xl dark:border-zinc-700 dark:bg-zinc-800">
+        <div className="fixed bottom-5 right-5 z-50 rounded-xl border border-sky-700/80 bg-slate-900 px-4 py-2.5 text-xs font-medium text-white shadow-xl ring-1 ring-sky-400/20 dark:border-sky-800 dark:bg-slate-800">
           {toastMsg}
         </div>
       )}

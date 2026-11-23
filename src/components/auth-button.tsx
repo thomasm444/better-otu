@@ -1,13 +1,20 @@
 "use client";
 
 import type { User } from "@supabase/supabase-js";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { signInWithOntarioTechGoogle, signOut } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/client";
 
-export function AuthButton() {
+export function AuthButton({
+  compact = false,
+  isProfileActive = false,
+}: {
+  compact?: boolean;
+  isProfileActive?: boolean;
+} = {}) {
   const router = useRouter();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -87,6 +94,78 @@ export function AuthButton() {
     user?.email ??
     "Student";
 
+  if (compact) {
+    return (
+      <>
+        <div className="flex items-center gap-1.5">
+          {loading ? (
+            <div className="h-7 w-24 animate-pulse rounded-md bg-zinc-200 dark:bg-zinc-800" />
+          ) : user ? (
+            <div className="flex items-center gap-1 sm:gap-1.5">
+              <span className="hidden max-w-[140px] truncate text-xs font-medium text-zinc-700 dark:text-zinc-300 md:inline">
+                {displayName}
+              </span>
+              <Link
+                href="/profile"
+                aria-current={isProfileActive ? "page" : undefined}
+                className={`whitespace-nowrap rounded-md border px-1.5 py-0.5 text-[11px] font-medium transition-colors sm:px-2 sm:py-1 sm:text-xs ${
+                  isProfileActive
+                    ? "border-[#003C71]/30 bg-[#003C71]/10 text-[#003C71] dark:border-[#0077CA]/40 dark:bg-[#0077CA]/20 dark:text-sky-300"
+                    : "border-zinc-200 text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                }`}
+              >
+                Profile
+              </Link>
+              <button
+                type="button"
+                onClick={handleSignOut}
+                disabled={submitting}
+                className="whitespace-nowrap rounded-md border border-zinc-200 px-1.5 py-0.5 text-[11px] font-medium text-zinc-700 transition-colors hover:bg-zinc-100 disabled:opacity-50 sm:px-2 sm:py-1 sm:text-xs dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+              >
+                {submitting ? "Signing out..." : "Sign out"}
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={handleSignIn}
+              disabled={submitting}
+              className="inline-flex h-7 items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-2.5 text-xs font-medium text-zinc-900 shadow-xs transition-colors hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+            >
+              {submitting ? (
+                "Redirecting..."
+              ) : (
+                <>
+                  <span className="sm:hidden">Sign in</span>
+                  <span className="hidden sm:inline">
+                    Sign in with @ontariotechu.net
+                  </span>
+                </>
+              )}
+            </button>
+          )}
+        </div>
+
+        {errorMessage && (
+          <div
+            role="alert"
+            className="fixed top-12 right-3 z-[2000] flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs text-red-700 shadow-md dark:border-red-900/50 dark:bg-red-950/90 dark:text-red-300"
+          >
+            <span>{errorMessage}</span>
+            <button
+              type="button"
+              onClick={() => setErrorMessage(null)}
+              className="font-semibold hover:underline"
+              aria-label="Dismiss error"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+      </>
+    );
+  }
+
   return (
     <div className="flex flex-col items-end gap-2">
       {loading ? (
@@ -103,6 +182,12 @@ export function AuthButton() {
               </p>
             )}
           </div>
+          <Link
+            href="/profile"
+            className="rounded-lg border border-zinc-200 px-2.5 py-1 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+          >
+            Profile
+          </Link>
           <button
             type="button"
             onClick={handleSignOut}

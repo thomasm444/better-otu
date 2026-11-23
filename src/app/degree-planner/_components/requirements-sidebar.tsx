@@ -4,20 +4,24 @@ import React, { useMemo, useState } from "react";
 
 import {
   allocateBuckets,
+  assignBreadthBuckets,
   type BucketAllocation,
   collectWarnings,
   courseOf,
   creditsOf,
+  earnedCodes,
+  evaluateDegreeRules,
+  evaluatePlanRequirements,
   expandWithEquivalents,
   findEquivalentInSet,
   isOffered,
   matchesBucket,
   MAX_SLOTS_PER_TERM,
   offeredIn,
-  placedCodes,
   placedTermIndex,
   seasonsOf,
   termCalendarYear,
+  transferCodes,
 } from "@/lib/degree-planner";
 import type {
   CatalogCourse,
@@ -44,9 +48,11 @@ type RequirementsSidebarProps = {
   unscheduled: UnscheduledItem[];
   planMismatches?: Map<string, string>;
   equivMap?: Map<string, Set<string>>;
+  plannedCredits?: number;
+  transferCredits?: number;
+  totalTargetCredits?: number;
   onPickBucket: (bucketKey: string) => void;
   onOpenTransferPicker: () => void;
-  onPlaceTransfer: (code: string) => void;
   onRemoveTransfer: (code: string) => void;
   activeTab: "major" | "minor";
   onTabChange: (tab: "major" | "minor") => void;
@@ -92,9 +98,11 @@ export function RequirementsSidebar({
   unscheduled,
   planMismatches,
   equivMap,
+  plannedCredits: plannedCreditsProp,
+  transferCredits: transferCreditsProp,
+  totalTargetCredits,
   onPickBucket,
   onOpenTransferPicker,
-  onPlaceTransfer,
   onRemoveTransfer,
   activeTab,
   onTabChange,
@@ -112,9 +120,22 @@ export function RequirementsSidebar({
   const [changingMinor, setChangingMinor] = useState(false);
   const [pendingAddKey, setPendingAddKey] = useState<string | null>(null);
   const [selectedTermIndex, setSelectedTermIndex] = useState<number>(0);
+  const [breadthOverrides, setBreadthOverrides] = useState<
+    Record<string, string>
+  >({});
+  const [draggingBreadthCode, setDraggingBreadthCode] = useState<string | null>(
+    null,
+  );
+  const [dragOverBucketKey, setDragOverBucketKey] = useState<string | null>(
+    null,
+  );
   const [expandedChoiceGroups, setExpandedChoiceGroups] = useState<
     Record<string, boolean>
   >({});
+
+  const updateBreadthOverride = (code: string, bucketKey: string) => {
+    setBreadthOverrides((prev) => ({ ...prev, [code]: bucketKey }));
+  };
 
   const toggleChoiceGroupExpanded = (groupKey: string) => {
     setExpandedChoiceGroups((prev) => ({
@@ -341,7 +362,11 @@ export function RequirementsSidebar({
             <span className="shrink-0 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[9.5px] font-medium text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
               Y{placedTerm.year} {placedTerm.season}
             </span>
-          ) : !picked ? (
+          ) : picked ? (
+            <span className="shrink-0 rounded-full bg-indigo-50 px-1.5 py-0.5 text-[9.5px] font-medium text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300">
+              Transfer
+            </span>
+          ) : (
             <button
               type="button"
               onClick={() => openInlineTermChooser(rowKey, code)}
@@ -357,53 +382,44 @@ export function RequirementsSidebar({
             >
               {isAdding ? "Close" : "+ Add"}
             </button>
-          ) : null}
+          )}
         </div>
         {!picked && renderInlineTermChooser(rowKey, code, accent)}
       </li>
     );
   };
 
-  const placed = placedCodes(terms);
+  const placed = useMemo(() => earnedCodes(terms, customs), [terms, customs]);
   const doneRequired = model.required.filter((r) =>
     Boolean(findEquivalentInSet(r.code, placed, equivMap)),
   );
 
-  const fixed = new Set(model.required.map((r) => r.code));
-  for (const group of model.chooseGroups) {
-    for (const code of group.options) fixed.add(code);
-  }
-  const fixedWithEquiv = expandWithEquivalents(fixed, equivMap);
-  const freeCodes = [...placed].filter((code) => !fixedWithEquiv.has(code));
+  const { freeCodes, chooseHits } = useMemo(
+    () =>
+      evaluatePlanRequirements(placed, model, catalogMap, customs, equivMap),
+    [placed, model, catalogMap, customs, equivMap],
+  );
+
+  const breadthAssignment = useMemo(
+    () =>
+      assignBreadthBuckets(
+        freeCodes,
+        model.breadth,
+        catalogMap,
+        customs,
+        breadthOverrides,
+      ),
+    [freeCodes, model.breadth, catalogMap, customs, breadthOverrides],
+  );
+
+  const degreeRules = useMemo(
+    () => evaluateDegreeRules(program, placed, catalogMap, customs),
+    [program, placed, catalogMap, customs],
+  );
 
   const majorElectiveAllocations = useMemo(
     () => allocateBuckets(model.buckets, freeCodes, catalogMap, customs),
     [model.buckets, freeCodes, catalogMap, customs],
-  );
-
-  // Exclude courses already consumed by subject/faculty-specific Major elective
-  // buckets (e.g. CSCI 3000+ / 4000+) before allocating general Breadth mix rules.
-  const breadthCandidateCodes = useMemo(() => {
-    const claimedBySpecificElectives = new Set<string>();
-    for (const b of model.buckets) {
-      const isSpecific =
-        Boolean(b.match.subjects?.length) ||
-        Boolean(b.match.faculties?.length) ||
-        Boolean(b.match.min_level) ||
-        Boolean(b.match.max_level);
-      if (!isSpecific) continue;
-      for (const code of majorElectiveAllocations.get(b.key)?.assignedCodes ??
-        []) {
-        claimedBySpecificElectives.add(code);
-      }
-    }
-    return freeCodes.filter((code) => !claimedBySpecificElectives.has(code));
-  }, [model.buckets, majorElectiveAllocations, freeCodes]);
-
-  const breadthAllocations = useMemo(
-    () =>
-      allocateBuckets(model.breadth, breadthCandidateCodes, catalogMap, customs),
-    [model.breadth, breadthCandidateCodes, catalogMap, customs],
   );
 
   const minorCourseSet = useMemo(() => {
@@ -421,12 +437,18 @@ export function RequirementsSidebar({
     const doneReq = minorModel.required.filter((r) =>
       Boolean(findEquivalentInSet(r.code, placed, equivMap)),
     );
+    const { freeCodes: minorFree, chooseHits: minorChooseHits } =
+      evaluatePlanRequirements(
+        placed,
+        minorModel,
+        catalogMap,
+        customs,
+        equivMap,
+      );
     const minorFixed = new Set(minorModel.required.map((r) => r.code));
     for (const g of minorModel.chooseGroups) {
       for (const code of g.options) minorFixed.add(code);
     }
-    const minorFixedEquiv = expandWithEquivalents(minorFixed, equivMap);
-    const minorFree = [...placed].filter((code) => !minorFixedEquiv.has(code));
     const minorBucketAllocations = allocateBuckets(
       minorModel.buckets,
       minorFree,
@@ -442,14 +464,17 @@ export function RequirementsSidebar({
     );
 
     for (const g of minorModel.chooseGroups) {
+      const taken = Math.min(minorChooseHits.get(g.id) ?? 0, g.required);
+      completedSteps += taken;
+      totalSteps += g.required;
       const hits = g.options.filter((c) =>
         Boolean(findEquivalentInSet(c, placed, equivMap)),
       );
-      const taken = Math.min(hits.length, g.required);
-      completedSteps += taken;
-      totalSteps += g.required;
-      for (const c of hits.slice(0, g.required)) {
+      for (const c of hits.slice(0, taken)) {
         placedCredits += creditsOf(c, catalogMap, customs);
+      }
+      if (taken > hits.length && g.elective) {
+        placedCredits += (taken - hits.length) * (g.elective.credits || 3);
       }
     }
 
@@ -503,6 +528,27 @@ export function RequirementsSidebar({
   }, [minorOptions, minorQuery]);
 
   const transfers = [...customs.values()].filter((c) => c.transfer);
+  const creditSummary = useMemo(() => {
+    if (
+      plannedCreditsProp !== undefined &&
+      transferCreditsProp !== undefined
+    ) {
+      return {
+        planned: plannedCreditsProp,
+        transfer: transferCreditsProp,
+        total: plannedCreditsProp + transferCreditsProp,
+      };
+    }
+    const transferSet = transferCodes(customs);
+    let planned = 0;
+    let transfer = 0;
+    for (const code of placed) {
+      const cr = creditsOf(code, catalogMap, customs);
+      if (transferSet.has(code)) transfer += cr;
+      else planned += cr;
+    }
+    return { planned, transfer, total: planned + transfer };
+  }, [plannedCreditsProp, transferCreditsProp, customs, placed, catalogMap]);
   const warnings = collectWarnings(
     terms,
     model,
@@ -649,7 +695,7 @@ export function RequirementsSidebar({
   };
 
   return (
-    <aside className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white/92 shadow-[0_2px_12px_rgba(15,23,42,0.04)] backdrop-blur-sm dark:border-slate-800/80 dark:bg-slate-900/88 lg:max-h-[calc(100vh-170px)] lg:overflow-auto">
+    <aside className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white/92 shadow-[0_2px_12px_rgba(15,23,42,0.04)] backdrop-blur-sm dark:border-slate-800/80 dark:bg-slate-900/88 md:max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-var(--planner-header-h,152px)-24px)] md:overflow-auto">
       <div className="sticky top-0 z-10 border-b border-slate-200/75 bg-gradient-to-r from-sky-50/85 via-white/95 to-violet-50/85 px-4 pt-3 pb-2.5 backdrop-blur-md dark:border-slate-800 dark:from-sky-950/35 dark:via-slate-900/95 dark:to-violet-950/35">
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-xs font-semibold tracking-wider text-slate-600 uppercase dark:text-slate-300">
@@ -661,6 +707,25 @@ export function RequirementsSidebar({
               : minorProgram?.name || "No minor selected"}
           </span>
         </div>
+
+        {activeTab === "major" && (
+          <div className="mt-1 text-[11px] text-slate-500 tabular-nums dark:text-slate-400">
+            {creditSummary.transfer > 0 ? (
+              <span>
+                {creditSummary.planned} cr planned + {creditSummary.transfer} cr transfer ={" "}
+                <strong className="font-semibold text-slate-700 dark:text-slate-200">
+                  {creditSummary.total} cr
+                </strong>
+                {totalTargetCredits ? ` / ${totalTargetCredits} cr` : ""}
+              </span>
+            ) : (
+              <span>
+                {creditSummary.planned}
+                {totalTargetCredits ? ` / ${totalTargetCredits}` : ""} cr planned
+              </span>
+            )}
+          </div>
+        )}
 
         {/* Major | Minor Switcher Tabs */}
         <div className="mt-2.5 grid grid-cols-2 gap-1 rounded-xl bg-slate-100/90 p-1 dark:bg-slate-800/80">
@@ -786,10 +851,7 @@ export function RequirementsSidebar({
               <span>Choice groups</span>
               {(() => {
                 const doneGroups = model.chooseGroups.filter(
-                  (g) =>
-                    g.options.filter((c) =>
-                      Boolean(findEquivalentInSet(c, placed, equivMap)),
-                    ).length >= g.required,
+                  (g) => (chooseHits.get(g.id) ?? 0) >= g.required,
                 ).length;
                 return (
                   <span
@@ -806,10 +868,8 @@ export function RequirementsSidebar({
             </summary>
             <div className="space-y-2 pl-3 pr-1 pb-1">
               {model.chooseGroups.map((group) => {
-                const hits = group.options.filter((c) =>
-                  Boolean(findEquivalentInSet(c, placed, equivMap)),
-                );
-                const ok = hits.length >= group.required;
+                const hitCount = chooseHits.get(group.id) ?? 0;
+                const ok = hitCount >= group.required;
                 const available = group.options.filter((c) =>
                   isOffered(c, offeringsMap, customs),
                 );
@@ -838,7 +898,7 @@ export function RequirementsSidebar({
                             : "text-slate-500 dark:text-slate-400"
                         }`}
                       >
-                        {Math.min(hits.length, group.required)}/{group.required}
+                        {Math.min(hitCount, group.required)}/{group.required}
                       </span>
                     </div>
                     <ul className="space-y-0.5">
@@ -852,6 +912,11 @@ export function RequirementsSidebar({
                         }),
                       )}
                     </ul>
+                    {group.elective && (
+                      <div className="mt-1 pl-4 text-[11px] font-medium text-sky-700 dark:text-sky-300">
+                        Or: {group.elective.label}
+                      </div>
+                    )}
                     {(listCodes.length > 6 || hidden > 0) && (
                       <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 text-[10.5px]">
                         {listCodes.length > 6 ? (
@@ -934,10 +999,15 @@ export function RequirementsSidebar({
               </span>
               <span>Elective mix (Breadth)</span>
               {(() => {
-                const done = model.breadth.filter(
-                  (b) =>
-                    (breadthAllocations.get(b.key)?.credits ?? 0) >= b.credits,
-                ).length;
+                const done = model.breadth.filter((b) => {
+                  const assigned =
+                    breadthAssignment.assignedByBucket.get(b.key) ?? [];
+                  const credits = assigned.reduce(
+                    (sum, code) => sum + creditsOf(code, catalogMap, customs),
+                    0,
+                  );
+                  return credits >= b.credits;
+                }).length;
                 return (
                   <span
                     className={`ml-auto rounded-full px-2 py-0.5 tabular-nums text-[11px] font-semibold ${
@@ -951,22 +1021,262 @@ export function RequirementsSidebar({
                 );
               })()}
             </summary>
-            <p className="px-2 pb-1 pl-5 text-[11px] leading-snug text-slate-500 dark:text-slate-400">
-              Checks the subject mix across your general electives (can overlap
-              with Minor courses).
+            <p className="px-2 pb-1 pl-5 text-[11.5px] text-slate-500 dark:text-slate-400">
+              Mutually exclusive — drag courses between eligible buckets to
+              rearrange.
             </p>
-            <div className="space-y-1">
-              {model.breadth.map((b) =>
-                renderBucket(
-                  b,
-                  breadthAllocations.get(b.key),
-                  breadthCandidateCodes,
-                  onPickBucket,
-                  "major",
-                  b.label === "Any elective"
-                    ? "General electives (any subject)"
-                    : undefined,
-                ),
+            <div className="space-y-1.5">
+              {model.breadth.map((b) => {
+                const assigned =
+                  breadthAssignment.assignedByBucket.get(b.key) ?? [];
+                const credits = assigned.reduce(
+                  (sum, code) => sum + creditsOf(code, catalogMap, customs),
+                  0,
+                );
+                const pct = Math.min(
+                  100,
+                  Math.round((credits / Math.max(1, b.credits)) * 100),
+                );
+                const done = credits >= b.credits;
+                const isNonCsciScience =
+                  Boolean(b.match.faculties?.includes("Faculty of Science")) &&
+                  Boolean(b.match.exclude_subjects?.includes("CSCI"));
+                const canDropHere = Boolean(
+                  draggingBreadthCode &&
+                    matchesBucket(
+                      courseOf(draggingBreadthCode, catalogMap, customs),
+                      b.match,
+                    ),
+                );
+                const isDropTarget = dragOverBucketKey === b.key && canDropHere;
+
+                return (
+                  <details
+                    key={b.key}
+                    open
+                    onDragOver={(e) => {
+                      if (!canDropHere) return;
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = "move";
+                      if (dragOverBucketKey !== b.key) {
+                        setDragOverBucketKey(b.key);
+                      }
+                    }}
+                    onDragLeave={() => {
+                      if (dragOverBucketKey === b.key) {
+                        setDragOverBucketKey(null);
+                      }
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const code =
+                        e.dataTransfer.getData("text/breadth-code") ||
+                        draggingBreadthCode;
+                      setDragOverBucketKey(null);
+                      setDraggingBreadthCode(null);
+                      if (!code) return;
+                      if (
+                        matchesBucket(
+                          courseOf(code, catalogMap, customs),
+                          b.match,
+                        )
+                      ) {
+                        updateBreadthOverride(code, b.key);
+                      }
+                    }}
+                    className={`group/bucket rounded-xl border px-2 py-2 pl-3 transition-all ${
+                      isDropTarget
+                        ? "border-sky-400 bg-sky-50/70 ring-2 ring-sky-400/35 dark:border-sky-600 dark:bg-sky-950/40"
+                        : canDropHere
+                          ? "border-dashed border-sky-300/80 bg-sky-50/25 dark:border-sky-800/70 dark:bg-sky-950/15"
+                          : "border-transparent hover:bg-slate-50/90 dark:hover:bg-slate-800/50"
+                    }`}
+                  >
+                    <summary className="cursor-pointer list-none">
+                      <div className="flex items-baseline gap-2 text-[12.5px]">
+                        <span className="text-[10px] text-slate-400 transition-transform group-open/bucket:rotate-90">
+                          ▸
+                        </span>
+                        <span className="min-w-0 flex-1 text-slate-800 dark:text-slate-200">
+                          {b.label}
+                        </span>
+                        <span
+                          className={`tabular-nums text-[11.5px] ${
+                            done
+                              ? "font-semibold text-emerald-700 dark:text-emerald-400"
+                              : "text-slate-500 dark:text-slate-400"
+                          }`}
+                        >
+                          {credits}/{b.credits}
+                        </span>
+                      </div>
+                      <div className="mt-1.5 ml-4 h-1.5 overflow-hidden rounded-full bg-slate-200/80 dark:bg-slate-800">
+                        <div
+                          className={`h-full rounded-full transition-all duration-300 ${
+                            done
+                              ? "bg-gradient-to-r from-emerald-400 to-teal-400"
+                              : "bg-gradient-to-r from-sky-400 to-teal-400"
+                          }`}
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                    </summary>
+
+                    <div className="mt-1.5 space-y-1.5 pl-4">
+                      {b.subs.map((sub) => {
+                        const subCredits = assigned.reduce(
+                          (sum, code) =>
+                            sum +
+                            (matchesBucket(
+                              courseOf(code, catalogMap, customs),
+                              sub.match,
+                            )
+                              ? creditsOf(code, catalogMap, customs)
+                              : 0),
+                          0,
+                        );
+                        const subDone = subCredits >= sub.credits;
+                        return (
+                          <div
+                            key={sub.key}
+                            className={`text-[11.5px] ${
+                              subDone
+                                ? "text-emerald-700 dark:text-emerald-400"
+                                : "text-slate-500 dark:text-slate-400"
+                            }`}
+                          >
+                            ↳ {sub.label}: {subCredits}/{sub.credits} cr
+                          </div>
+                        );
+                      })}
+
+                      {isNonCsciScience && (
+                        <div className="text-[10.5px] text-slate-400 dark:text-slate-500">
+                          Eligible: MATH, PHY, BIOL, CHEM, ENVS, FSCI, STAT,
+                          SUST 1001U (not CSCI)
+                        </div>
+                      )}
+
+                      {assigned.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 pt-0.5">
+                          {assigned.map((code) => {
+                            const course = courseOf(code, catalogMap, customs);
+                            const eligibleCount = model.breadth.filter((bk) =>
+                              matchesBucket(course, bk.match),
+                            ).length;
+                            const fromMinor = minorCourseSet.has(code);
+                            const displayLabel =
+                              course &&
+                              "transfer" in course &&
+                              course.transfer &&
+                              course.transfer_kind === "general"
+                                ? `General (${course.credit_hours} cr)`
+                                : code;
+                            return (
+                              <span
+                                key={code}
+                                draggable
+                                onDragStart={(e) => {
+                                  e.dataTransfer.setData(
+                                    "text/breadth-code",
+                                    code,
+                                  );
+                                  e.dataTransfer.effectAllowed = "move";
+                                  setDraggingBreadthCode(code);
+                                }}
+                                onDragEnd={() => {
+                                  setDraggingBreadthCode(null);
+                                  setDragOverBucketKey(null);
+                                }}
+                                title={`${
+                                  eligibleCount > 1
+                                    ? "Drag to another eligible bucket"
+                                    : "Only eligible for this bucket"
+                                }${fromMinor ? " (also in Minor)" : ""}`}
+                                className={`inline-flex cursor-grab items-center gap-1 rounded-lg border px-1.5 py-0.5 font-mono text-[10.5px] font-medium shadow-2xs transition-colors active:cursor-grabbing ${
+                                  fromMinor
+                                    ? "border-violet-200/80 bg-violet-50/75 text-violet-700 hover:border-violet-300 dark:border-violet-800/70 dark:bg-violet-950/40 dark:text-violet-300"
+                                    : "border-slate-200/85 bg-white text-slate-700 hover:border-sky-300 dark:border-slate-700/80 dark:bg-slate-800/80 dark:text-slate-300"
+                                }`}
+                              >
+                                <span className="text-[9px] text-slate-400">
+                                  ⋮⋮
+                                </span>
+                                <span>{displayLabel}</span>
+                                {fromMinor && (
+                                  <span className="font-sans text-[9px] font-semibold opacity-80">
+                                    · Minor
+                                  </span>
+                                )}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      <div>
+                        <button
+                          type="button"
+                          onClick={() => onPickBucket(b.key)}
+                          className="text-[11.5px] font-medium text-sky-600 hover:underline dark:text-sky-400"
+                        >
+                          Find a course
+                        </button>
+                      </div>
+                    </div>
+                  </details>
+                );
+              })}
+            </div>
+          </details>
+        )}
+
+        {/* Level & credit rules (from Note:) */}
+        {(degreeRules.rules.maxFirstYearCredits !== null ||
+          degreeRules.rules.min4000CsciCredits !== null) && (
+          <details className="group" open>
+            <summary className="flex cursor-pointer list-none items-center gap-2 rounded-xl px-2 py-2 text-[13px] font-semibold text-slate-800 transition-colors hover:bg-slate-50/90 dark:text-slate-100 dark:hover:bg-slate-800/60">
+              <span className="text-[10px] text-slate-400 transition-transform group-open:rotate-90">
+                ▸
+              </span>
+              <span>Level &amp; credit rules</span>
+            </summary>
+            <div className="space-y-1.5 px-2 pb-2 pl-5">
+              {degreeRules.rules.maxFirstYearCredits !== null && (
+                <div className="flex items-center justify-between text-[12px]">
+                  <span className="text-slate-700 dark:text-slate-300">
+                    First-year (1000-level) limit
+                  </span>
+                  <span
+                    className={`tabular-nums font-semibold ${
+                      degreeRules.firstYearCredits <=
+                      degreeRules.rules.maxFirstYearCredits
+                        ? "text-emerald-700 dark:text-emerald-400"
+                        : "text-rose-600 dark:text-rose-400"
+                    }`}
+                  >
+                    {degreeRules.firstYearCredits}/
+                    {degreeRules.rules.maxFirstYearCredits} max cr
+                  </span>
+                </div>
+              )}
+              {degreeRules.rules.min4000CsciCredits !== null && (
+                <div className="flex items-center justify-between text-[12px]">
+                  <span className="text-slate-700 dark:text-slate-300">
+                    4000-level CSCI minimum
+                  </span>
+                  <span
+                    className={`tabular-nums font-semibold ${
+                      degreeRules.csci4000Credits >=
+                      degreeRules.rules.min4000CsciCredits
+                        ? "text-emerald-700 dark:text-emerald-400"
+                        : "text-amber-700 dark:text-amber-400"
+                    }`}
+                  >
+                    {degreeRules.csci4000Credits}/
+                    {degreeRules.rules.min4000CsciCredits} min cr
+                  </span>
+                </div>
               )}
             </div>
           </details>
@@ -992,42 +1302,44 @@ export function RequirementsSidebar({
           <div className="px-2 pb-2 pt-1">
             {transfers.length === 0 ? (
               <p className="px-1 py-1.5 text-xs text-slate-500 dark:text-slate-400">
-                Credit earned at another institution? Add it here and it counts
-                toward your electives.
+                Credit earned at another institution? Add it here — it counts
+                toward your degree without taking a term slot.
               </p>
             ) : (
               <div className="divide-y divide-slate-100 dark:divide-slate-800">
                 {transfers.map((course) => {
-                  const at = placedTermIndex(terms, course.code);
-                  const where =
-                    at >= 0
-                      ? `Year ${terms[at].year} ${terms[at].season}`
-                      : "not in the plan yet";
+                  const isEquivalent =
+                    course.transfer_kind === "equivalent" ||
+                    Boolean(course.equivalent_code) ||
+                    Boolean(course.subject);
+                  const displayCode = isEquivalent
+                    ? course.equivalent_code || course.code
+                    : "General";
                   return (
                     <div
                       key={course.code}
                       className="flex items-center gap-2 py-1.5"
                     >
-                      <span className="w-24 shrink-0 font-mono text-[11.5px] font-medium text-indigo-700 dark:text-indigo-300">
-                        {course.code}
+                      <span
+                        className={`w-24 shrink-0 font-mono text-[11.5px] font-medium ${
+                          isEquivalent
+                            ? "text-indigo-700 dark:text-indigo-300"
+                            : "text-teal-700 dark:text-teal-300"
+                        }`}
+                      >
+                        {displayCode}
                       </span>
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-[12.5px] text-slate-800 dark:text-slate-200">
                           {course.title}
                         </div>
                         <div className="text-[11px] text-slate-500 dark:text-slate-400">
-                          {course.credit_hours} cr · {course.subject}{" "}
-                          {course.level} · {where}
+                          {course.credit_hours} cr · {course.level} level ·{" "}
+                          {isEquivalent
+                            ? "equivalent class"
+                            : "outside FSci / general"}
                         </div>
                       </div>
-                      <button
-                        type="button"
-                        disabled={at >= 0}
-                        onClick={() => onPlaceTransfer(course.code)}
-                        className="shrink-0 rounded-lg border border-slate-200 bg-white px-2 py-0.5 text-[11.5px] text-slate-600 transition-colors hover:border-sky-400 hover:text-sky-700 disabled:cursor-default disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-                      >
-                        {at >= 0 ? "in plan" : "place"}
-                      </button>
                       <button
                         type="button"
                         onClick={() => onRemoveTransfer(course.code)}

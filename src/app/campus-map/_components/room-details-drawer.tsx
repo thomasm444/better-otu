@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import {
   DAY_NAMES,
   formatShortIsoDate,
@@ -15,7 +15,9 @@ import {
   formatDurationLong,
   formatFloor,
   formatMinutesToTime,
+  formatVenueLabel,
   getEventTypeLabel,
+  getInfosilemBookingUrl,
   getLibraryBookingUrl,
   type RoomStatus,
 } from "../utils";
@@ -29,6 +31,10 @@ interface RoomDetailsDrawerProps {
   selectedDayInfo: WeekDayInfo | null;
   currentSlotStart: number;
   currentDuration: number;
+  selectedSubRoom?: string | null;
+  isMinimized: boolean;
+  onToggleMinimize: () => void;
+  onSelectSubRoom?: (subRoom: string) => void;
   onClose: () => void;
   onOpenWeeklySchedule: (feature: CampusMapFeature, subRoom?: string) => void;
   onFocusRoom: (feature: CampusMapFeature) => void;
@@ -80,6 +86,10 @@ export function RoomDetailsDrawer({
   selectedDayInfo,
   currentSlotStart,
   currentDuration,
+  selectedSubRoom,
+  isMinimized,
+  onToggleMinimize,
+  onSelectSubRoom,
   onClose,
   onOpenWeeklySchedule,
   onFocusRoom,
@@ -87,14 +97,17 @@ export function RoomDetailsDrawer({
   const [selectedSubRoomByFeature, setSelectedSubRoomByFeature] = useState<
     Record<string, string>
   >({});
+  const dragStartYRef = useRef<number | null>(null);
+  const didDragRef = useRef(false);
 
   const activeSubRoom = useMemo(() => {
     if (!feature?.properties.isBuildingContainer) return null;
     const rooms = feature.properties.rooms ?? [];
     if (rooms.length === 0) return null;
+    if (selectedSubRoom && rooms.includes(selectedSubRoom)) return selectedSubRoom;
     const saved = selectedSubRoomByFeature[feature.id];
     return saved && rooms.includes(saved) ? saved : rooms[0];
-  }, [feature, selectedSubRoomByFeature]);
+  }, [feature, selectedSubRoom, selectedSubRoomByFeature]);
 
   const todayIntervals = useMemo<ScheduleInterval[]>(() => {
     if (!feature || !weekData) return [];
@@ -156,16 +169,144 @@ export function RoomDetailsDrawer({
     Math.min(100 - windowLeftPct, (currentDuration / DAY_SPAN_MIN) * 100),
   );
 
+  const activeBookingUuid = p.isBuildingContainer
+    ? activeSubStatus?.bookingUuid ?? null
+    : p.bookingUuid ?? null;
+
+  const venueLabel = formatVenueLabel(p.venue);
+
+  const handleDragStart = (e: React.PointerEvent<HTMLButtonElement>) => {
+    dragStartYRef.current = e.clientY;
+    didDragRef.current = false;
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  };
+
+  const handleDragMove = (e: React.PointerEvent<HTMLButtonElement>) => {
+    if (dragStartYRef.current === null) return;
+    const dy = e.clientY - dragStartYRef.current;
+    if (dy > 20 && !isMinimized) {
+      didDragRef.current = true;
+      dragStartYRef.current = null;
+      onToggleMinimize();
+    } else if (dy < -20 && isMinimized) {
+      didDragRef.current = true;
+      dragStartYRef.current = null;
+      onToggleMinimize();
+    }
+  };
+
+  const handleDragEnd = () => {
+    dragStartYRef.current = null;
+  };
+
+  const handleHandleClick = () => {
+    if (didDragRef.current) {
+      didDragRef.current = false;
+      return;
+    }
+    onToggleMinimize();
+  };
+
   return (
     <aside
       aria-label="Room details"
       onMouseDown={(e) => e.stopPropagation()}
       onTouchStart={(e) => e.stopPropagation()}
       onWheel={(e) => e.stopPropagation()}
-      className="absolute bottom-0 left-0 top-0 z-[1050] flex w-full max-w-[360px] flex-col border-r border-slate-200 bg-white/98 shadow-2xl backdrop-blur-md transition-transform duration-200 dark:border-zinc-800 dark:bg-zinc-900/98 dark:text-zinc-100"
+      className="absolute inset-x-2 bottom-[calc(max(0.75rem,env(safe-area-inset-bottom))+3.5rem)] top-auto z-[1050] flex max-h-[min(60dvh,calc(100%-4.5rem))] flex-col rounded-2xl border border-slate-200 bg-white/98 shadow-2xl backdrop-blur-md transition-all duration-200 lg:inset-x-auto lg:bottom-0 lg:left-0 lg:top-0 lg:max-h-none lg:w-full lg:max-w-[360px] lg:rounded-none lg:border-r lg:border-t-0 dark:border-zinc-800 dark:bg-zinc-900/98 dark:text-zinc-100"
     >
+      {/* Mobile Bottom Sheet Handle (tap or drag to collapse/expand) */}
+      <button
+        type="button"
+        onPointerDown={handleDragStart}
+        onPointerMove={handleDragMove}
+        onPointerUp={handleDragEnd}
+        onPointerCancel={handleDragEnd}
+        onClick={handleHandleClick}
+        aria-expanded={!isMinimized}
+        aria-label={isMinimized ? "Expand room details" : "Minimize room details"}
+        className="flex w-full shrink-0 cursor-pointer touch-none select-none items-center justify-center pb-1 pt-2 lg:hidden"
+      >
+        <span className="h-1 w-10 rounded-full bg-slate-300 dark:bg-zinc-700" />
+      </button>
+
+      {/* Mobile Minimized Summary Bar */}
+      {isMinimized && (
+        <div className="flex items-center justify-between gap-2 px-3.5 pb-2 pt-0.5 lg:hidden">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <h2 className="truncate text-sm font-bold tracking-tight text-slate-900 dark:text-zinc-50">
+              {roomCode}
+            </h2>
+            {status.isBuildingContainer ? (
+              <span
+                className="inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-bold"
+                style={{
+                  backgroundColor: `${status.color}18`,
+                  color: status.color,
+                  borderColor: status.color,
+                }}
+              >
+                <span
+                  className="h-1.5 w-1.5 rounded-full"
+                  style={{ backgroundColor: status.color }}
+                />
+                {status.availableCount}/{status.totalRooms} Free
+              </span>
+            ) : (
+              <span
+                className={`inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${
+                  !status.isScheduled
+                    ? "bg-slate-200 text-slate-700 dark:bg-zinc-700 dark:text-zinc-200"
+                    : status.isAvailable
+                      ? "bg-emerald-600 text-white"
+                      : "bg-rose-600 text-white"
+                }`}
+              >
+                <span
+                  className={`h-1.5 w-1.5 rounded-full ${
+                    !status.isScheduled ? "bg-slate-500" : "bg-white"
+                  }`}
+                />
+                {!status.isScheduled
+                  ? "Unscheduled"
+                  : status.isAvailable
+                    ? "Available"
+                    : "In Use"}
+              </span>
+            )}
+          </div>
+
+          <div className="flex shrink-0 items-center gap-1">
+            <button
+              type="button"
+              onClick={onToggleMinimize}
+              aria-label="Expand room details"
+              className="rounded-lg border border-slate-200 bg-slate-50 p-1 text-slate-600 transition hover:bg-slate-100 hover:text-slate-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700"
+            >
+              <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                <path d="m18 15-6-6-6 6" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close room details"
+              className="rounded-lg p-1 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+            >
+              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+                <path d="M18 6 6 18M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Drawer Header */}
-      <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-4 py-3.5 dark:border-zinc-800">
+      <div
+        className={`${
+          isMinimized ? "hidden lg:flex" : "flex"
+        } items-start justify-between gap-3 border-b border-slate-200 px-4 py-3 lg:py-3.5 dark:border-zinc-800`}
+      >
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <h2 className="truncate text-lg font-bold tracking-tight text-slate-900 dark:text-zinc-50">
@@ -184,7 +325,7 @@ export function RoomDetailsDrawer({
           )}
           <p className="mt-0.5 truncate text-xs text-slate-600 dark:text-zinc-400">
             {p.building ? `${p.building}` : "Campus Space"}
-            {p.venue ? ` • ${p.venue}` : ""}
+            {venueLabel ? ` \u2022 ${venueLabel}` : ""}
           </p>
         </div>
 
@@ -215,7 +356,11 @@ export function RoomDetailsDrawer({
       </div>
 
       {/* Scrollable Body */}
-      <div className="flex-1 space-y-4 overflow-y-auto px-4 py-3.5">
+      <div
+        className={`${
+          isMinimized ? "hidden lg:block" : "block"
+        } flex-1 space-y-4 overflow-y-auto px-4 py-3.5`}
+      >
         {/* Current Availability Card */}
         <div
           className={`rounded-xl border p-3 ${
@@ -392,12 +537,16 @@ export function RoomDetailsDrawer({
                   <button
                     key={sub.roomId}
                     type="button"
-                    onClick={() =>
-                      setSelectedSubRoomByFeature((prev) => ({
-                        ...prev,
-                        [feature.id]: sub.roomId,
-                      }))
-                    }
+                    onClick={() => {
+                      if (onSelectSubRoom) {
+                        onSelectSubRoom(sub.roomId);
+                      } else {
+                        setSelectedSubRoomByFeature((prev) => ({
+                          ...prev,
+                          [feature.id]: sub.roomId,
+                        }));
+                      }
+                    }}
                     className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold transition ${
                       isSelected
                         ? "border-sky-600 bg-sky-600 text-white shadow-xs"
@@ -526,8 +675,32 @@ export function RoomDetailsDrawer({
       </div>
 
       {/* Primary Action Footer */}
-      <div className="border-t border-slate-200 bg-slate-50/90 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900/90">
-        {p.isLibraryRoom ? (
+      <div
+        className={`${
+          isMinimized ? "hidden lg:block" : "block"
+        } border-t border-slate-200 bg-slate-50/90 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:py-3 dark:border-zinc-800 dark:bg-zinc-900/90`}
+      >
+        {activeBookingUuid ? (
+          <div className="flex gap-2">
+            <a
+              href={getInfosilemBookingUrl(activeBookingUuid)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-emerald-700"
+            >
+              <span>Book this room &rarr;</span>
+            </a>
+            {status.isScheduled && (
+              <button
+                type="button"
+                onClick={() => onOpenWeeklySchedule(feature, activeSubRoom ?? undefined)}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 shadow-xs transition hover:bg-slate-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+              >
+                View Schedule
+              </button>
+            )}
+          </div>
+        ) : p.isLibraryRoom ? (
           <div className="flex gap-2">
             <a
               href={getLibraryBookingUrl(p.externalId || roomCode, currentSlotStart)}

@@ -173,6 +173,52 @@ export async function getSearchVocab(
 
   const supabase = getPublicClient();
 
+  try {
+    const { data: rpcData, error: rpcError } = await supabase.rpc(
+      "search_vocab",
+      { p_term: term } as never,
+    );
+
+    if (
+      !rpcError &&
+      rpcData &&
+      typeof rpcData === "object" &&
+      !Array.isArray(rpcData)
+    ) {
+      const raw = rpcData as Record<string, unknown>;
+      const normalizeList = (val: unknown): string[] | null => {
+        if (!Array.isArray(val)) return null;
+        const set = new Set<string>();
+        for (const item of val) {
+          if (typeof item === "string" && item.length > 0) {
+            set.add(item);
+          }
+        }
+        return [...set].sort(compareText);
+      };
+
+      const subjects = normalizeList(raw.subjects);
+      const courseCodes = normalizeList(raw.courseCodes);
+      const classTypes = normalizeList(raw.classTypes);
+      const instructors = normalizeList(raw.instructors);
+
+      if (
+        subjects &&
+        courseCodes &&
+        classTypes &&
+        instructors &&
+        (subjects.length > 0 ||
+          courseCodes.length > 0 ||
+          classTypes.length > 0 ||
+          instructors.length > 0)
+      ) {
+        return { subjects, courseCodes, classTypes, instructors };
+      }
+    }
+  } catch {
+    // Fall back to paginated REST queries if the RPC is not yet deployed.
+  }
+
   const [courseRows, facultyRows] = await Promise.all([
     collectPages((from, to) =>
       supabase
@@ -383,6 +429,8 @@ export type SubRoomMeta = {
   capacity: number | null;
   capacitySource: string | null;
   type: string;
+  isBookable?: boolean;
+  bookingUuid?: string | null;
 };
 
 export type CampusMapFeature = {
@@ -407,6 +455,8 @@ export type CampusMapFeature = {
     isBuildingContainer: boolean;
     hasSchedule: boolean;
     isLibraryRoom: boolean;
+    isBookable?: boolean;
+    bookingUuid?: string | null;
     rooms?: string[];
     roomsData?: Record<string, SubRoomMeta>;
   };
@@ -424,6 +474,7 @@ export type CampusMapData = {
   type: "FeatureCollection";
   features: CampusMapFeature[];
   unmappedDetailedRes: CampusMapUnmappedSpace[];
+  buildingNames?: Record<string, string>;
 };
 
 export type CampusMapWeekData = {
@@ -463,6 +514,7 @@ type RoomBookingDetailRow = {
   building: string | null;
   room_type: string | null;
   capacity: number | null;
+  raw_data: Record<string, unknown> | null;
 };
 
 type CampusUnmappedRow = {
@@ -729,6 +781,16 @@ async function getCampusMapRoomLookup(): Promise<RoomLookupData> {
   };
 }
 
+const ROOM_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function extractBookingUuid(rawData: unknown): string | null {
+  if (!rawData || typeof rawData !== "object") return null;
+  const candidate = (rawData as Record<string, unknown>).rowId;
+  return typeof candidate === "string" && ROOM_UUID_RE.test(candidate.trim())
+    ? candidate.trim()
+    : null;
+}
+
 /**
  * Returns the live GeoJSON FeatureCollection of all campus spaces & rooms directly
  * from `campus_spaces` + `room_booking_details` + `library_study_rooms` + `campus_unmapped_spaces`,
@@ -744,7 +806,7 @@ export async function getCampusMapData(
 
   const supabase = getPublicClient();
 
-  const [spacesRaw, rbdRes, unmappedRes, libRes] = await Promise.all([
+  const [spacesRaw, rbdRowsRaw, unmappedRes, libRes, meetingBuildingRowsRaw] = await Promise.all([
     collectPagesById<string>((lastId, limit) => {
       let query = supabase
         .from("campus_spaces")
@@ -758,17 +820,32 @@ export async function getCampusMapData(
       if (building) query = query.eq("building", building);
       return query;
     }),
-    supabase.from("room_booking_details").select("room, building, room_type, capacity"),
+    collectPages((from, to) =>
+      supabase
+        .from("room_booking_details")
+        .select("room, building, room_type, capacity, raw_data")
+        .order("room", { ascending: true })
+        .range(from, to),
+    ),
     supabase
       .from("campus_unmapped_spaces")
       .select("room_id, building, room_type, capacity, description")
       .order("room_id", { ascending: true }),
     supabase.from("library_study_rooms").select("room_id, min_capacity, max_capacity"),
+    collectPagesById<number>((lastId, limit) => {
+      let query = supabase
+        .from("course_meetings")
+        .select("id, building, building_description")
+        .in("term", ["202609", "202701", "202605"])
+        .not("building", "is", null)
+        .not("building_description", "is", null)
+        .order("id", { ascending: true })
+        .limit(limit);
+      if (lastId !== null) query = query.gt("id", lastId);
+      return query;
+    }),
   ]);
 
-  if (rbdRes.error) {
-    throw new Error(`getCampusMapData rbd failed: ${rbdRes.error.message}`);
-  }
   if (unmappedRes.error) {
     throw new Error(`getCampusMapData unmapped failed: ${unmappedRes.error.message}`);
   }
@@ -779,7 +856,7 @@ export async function getCampusMapData(
   const spaceRows = spacesRaw as CampusSpaceRow[];
   const rbdMap = new Map<string, RoomBookingDetailRow>();
   const rbdBuildingMap: Record<string, string> = {};
-  for (const r of (rbdRes.data ?? []) as RoomBookingDetailRow[]) {
+  for (const r of rbdRowsRaw as RoomBookingDetailRow[]) {
     rbdMap.set(r.room, r);
     const aliased = ROOM_CODE_ALIASES[r.room.toUpperCase()];
     if (aliased && !rbdMap.has(aliased)) {
@@ -857,6 +934,8 @@ export async function getCampusMapData(
           capacity: subRbd?.capacity ?? null,
           capacitySource: subRbd?.capacity != null ? "Room Booking System" : null,
           type: subRbd?.room_type || row.room_type || "Classroom",
+          isBookable: Boolean(subRbd),
+          bookingUuid: extractBookingUuid(subRbd?.raw_data),
         };
       }
     }
@@ -880,6 +959,8 @@ export async function getCampusMapData(
         isBuildingContainer: row.is_building_container,
         hasSchedule,
         isLibraryRoom,
+        isBookable: Boolean(rbdInfo),
+        bookingUuid: extractBookingUuid(rbdInfo?.raw_data),
         ...(rooms ? { rooms } : {}),
         ...(roomsData ? { roomsData } : {}),
       },
@@ -898,10 +979,52 @@ export async function getCampusMapData(
       description: u.description ?? "",
     }));
 
+  const buildingNames: Record<string, string> = {};
+  const stripTrailingCode = (name: string, code: string) => {
+    const suffix = ` (${code})`;
+    return name.toUpperCase().endsWith(suffix)
+      ? name.slice(0, -suffix.length).trim()
+      : name.trim();
+  };
+
+  for (const row of meetingBuildingRowsRaw as Array<{
+    building: string | null;
+    building_description: string | null;
+  }>) {
+    const code = row.building?.trim().toUpperCase();
+    const rawDesc = row.building_description?.trim();
+    if (!code || !rawDesc || code === "SYN" || code === "OFFSIT") continue;
+    // Banner truncates building_description at 30 chars (e.g. SIR -> "Software and Informatics Resea")
+    if (
+      rawDesc.length >= 30 &&
+      !rawDesc.endsWith(")") &&
+      !/\b(Building|Hall|Centre|Theatre|Pavilion|Library|Arena)$/i.test(rawDesc)
+    ) {
+      continue;
+    }
+    const cleaned = stripTrailingCode(rawDesc, code);
+    if (cleaned && cleaned.toUpperCase() !== code && !buildingNames[code]) {
+      buildingNames[code] = cleaned;
+    }
+  }
+
+  for (const feat of features) {
+    const props = feat.properties;
+    if (!props.isBuildingContainer) continue;
+    const code = props.building?.trim().toUpperCase();
+    const rawName = props.name?.trim();
+    if (!code || !rawName) continue;
+    const cleaned = stripTrailingCode(rawName, code);
+    if (cleaned && cleaned.toUpperCase() !== code && !buildingNames[code]) {
+      buildingNames[code] = cleaned;
+    }
+  }
+
   return {
     type: "FeatureCollection",
     features,
     unmappedDetailedRes,
+    buildingNames,
   };
 }
 
@@ -914,7 +1037,7 @@ export async function getCampusMapWeekSchedule(
   rawWeekStart: string,
 ): Promise<CampusMapWeekData> {
   "use cache";
-  cacheLife("minutes");
+  cacheLife({ stale: 300, revalidate: 900, expire: 3600 });
   cacheTag("campus-map-week");
 
   const weekStart = clampWeekStart(rawWeekStart);
@@ -1366,6 +1489,65 @@ export async function getCampusMapWeekSchedule(
     libraryWindowStart,
     libraryWindowEnd,
   };
+}
+
+/**
+ * Counts how many scheduled campus rooms (`hasSchedule === true`) are free
+ * during `[slotStart, slotStart + 30]` on `dayIndex` of `weekStart`, including
+ * scheduled rooms that have 0 events that week.
+ */
+export async function getCampusLiveFreeRoomCount(
+  weekStart: string,
+  dayIndex: number,
+  slotStart: number,
+): Promise<number> {
+  "use cache";
+  cacheLife({ stale: 300, revalidate: 900, expire: 3600 });
+  cacheTag("campus-map-base", "campus-map-week");
+
+  const [mapData, weekData] = await Promise.all([
+    getCampusMapData(),
+    getCampusMapWeekSchedule(weekStart),
+  ]);
+
+  const dayKey = String(dayIndex);
+  const slotEnd = slotStart + 30;
+  const seenRooms = new Set<string>();
+  const seenSubRooms = new Set<string>();
+  let freeCount = 0;
+
+  for (const feature of mapData.features) {
+    const p = feature.properties;
+    if (!p.hasSchedule) continue;
+
+    if (p.isBuildingContainer && p.rooms && p.rooms.length > 0) {
+      for (const rid of p.rooms) {
+        if (seenSubRooms.has(rid)) continue;
+        seenSubRooms.add(rid);
+        const intervals = weekData.subRoomSchedules[rid]?.[dayKey] ?? [];
+        const isBusy = intervals.some(
+          (ev) => ev.start < slotEnd && ev.end > slotStart,
+        );
+        if (!isBusy) freeCount++;
+      }
+      continue;
+    }
+
+    const eid = p.externalId;
+    if (eid) {
+      if (seenRooms.has(eid)) continue;
+      seenRooms.add(eid);
+      const intervals = weekData.schedules[eid]?.[dayKey] ?? [];
+      const isBusy = intervals.some(
+        (ev) => ev.start < slotEnd && ev.end > slotStart,
+      );
+      if (!isBusy) freeCount++;
+    } else {
+      freeCount++;
+    }
+  }
+
+  return freeCount;
 }
 
 const WEEKDAYS = ["monday", "tuesday", "wednesday", "thursday", "friday"] as const;

@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { CampusMapView } from "./campus-map-view";
 
 export const metadata = {
@@ -15,7 +16,15 @@ export default function CampusMapPage() {
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
         crossOrigin=""
       />
-      <CampusMapView />
+      <Suspense
+        fallback={
+          <div className="flex h-[calc(100dvh-var(--site-nav-height,2.75rem))] w-full items-center justify-center bg-slate-100 text-sm font-semibold text-slate-600 dark:bg-zinc-950 dark:text-zinc-300">
+            Loading campus map...
+          </div>
+        }
+      >
+        <CampusMapView />
+      </Suspense>
     </>
   );
 }
