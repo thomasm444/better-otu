@@ -134,15 +134,16 @@ async function collectPagesById<IdType extends string | number>(
     data: unknown;
     error: { message: string } | null;
   }>,
+  pageSize: number = PAGE_SIZE,
 ): Promise<unknown[]> {
   const rows: unknown[] = [];
   let lastId: IdType | null = null;
 
   for (;;) {
-    let result = await fetchPage(lastId, PAGE_SIZE);
+    let result = await fetchPage(lastId, pageSize);
     if (isStatementTimeoutError(result.error)) {
       await new Promise((resolve) => setTimeout(resolve, 250));
-      result = await fetchPage(lastId, PAGE_SIZE);
+      result = await fetchPage(lastId, pageSize);
     }
 
     if (result.error) {
@@ -152,7 +153,7 @@ async function collectPagesById<IdType extends string | number>(
     const page = (result.data ?? []) as Array<{ id: IdType }>;
     rows.push(...page);
 
-    if (page.length < PAGE_SIZE) return rows;
+    if (page.length < pageSize) return rows;
     lastId = page[page.length - 1].id;
   }
 }
@@ -819,7 +820,7 @@ export async function getCampusMapData(
       if (floor) query = query.eq("floor", floor);
       if (building) query = query.eq("building", building);
       return query;
-    }),
+    }, 300),
     collectPages((from, to) =>
       supabase
         .from("room_booking_details")
@@ -836,14 +837,12 @@ export async function getCampusMapData(
       let query = supabase
         .from("course_meetings")
         .select("id, building, building_description")
-        .in("term", ["202609", "202701", "202605"])
-        .not("building", "is", null)
-        .not("building_description", "is", null)
+        .eq("term", CURRENT_TERM)
         .order("id", { ascending: true })
         .limit(limit);
       if (lastId !== null) query = query.gt("id", lastId);
       return query;
-    }),
+    }).catch(() => []),
   ]);
 
   if (unmappedRes.error) {

@@ -1,6 +1,7 @@
 "use client";
 
 import type { User } from "@supabase/supabase-js";
+import Image from "next/image";
 import Link from "next/link";
 import React, { useEffect, useState } from "react";
 
@@ -500,49 +501,68 @@ export function PortalDashboard({
 
       <div className="relative z-10 flex flex-1 flex-col">
         <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-5 py-7 sm:px-8 sm:py-10">
-          {/* Top Header: Greeting, Academic Summary & Layout Switcher */}
-          <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-            <div className="min-w-0 flex-1">
-              <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl dark:text-white">
-                {firstName ? `Welcome back, ${firstName}` : "Welcome to Better OTU"}
-              </h1>
-              <p className="mt-0.5 text-xs font-medium text-slate-500 dark:text-slate-400">
-                Ontario Tech University &bull; {termLabel}
-              </p>
-              {hasAcademicSummary ? (
-                <p className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-slate-600 dark:text-slate-300">
-                  <span className="font-medium text-[#003C71] dark:text-sky-300">
-                    {[
-                      yearLabel,
-                      profileDegreeName,
-                      profileMinorName ? `Minor: ${profileMinorName}` : null,
-                    ]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </span>
-                  <span
-                    aria-hidden="true"
-                    className="text-slate-300 dark:text-slate-600"
-                  >
-                    &bull;
-                  </span>
-                  <Link
-                    href="/profile"
-                    className="font-medium text-slate-500 underline decoration-slate-300 underline-offset-2 transition-colors hover:text-[#003C71] dark:text-slate-400 dark:decoration-slate-700 dark:hover:text-sky-300"
-                  >
-                    Edit
-                  </Link>
+          {/* Top Header: Brand Logo, Greeting, Academic Summary & Layout Switcher */}
+          <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+            <div className="flex min-w-0 flex-1 items-center gap-4">
+              <Image
+                src="/images/better-otu-logo-light.svg"
+                alt="Better OTU logo"
+                width={80}
+                height={80}
+                priority
+                className="block h-16 w-16 shrink-0 object-contain sm:h-20 sm:w-20 dark:hidden"
+              />
+              <Image
+                src="/images/better-otu-logo-dark.svg"
+                alt="Better OTU logo"
+                width={80}
+                height={80}
+                priority
+                className="hidden h-16 w-16 shrink-0 object-contain sm:h-20 sm:w-20 dark:block"
+              />
+
+              <div className="min-w-0 flex-1">
+                <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl dark:text-white">
+                  {firstName ? `Welcome back, ${firstName}` : "Welcome to Better OTU"}
+                </h1>
+                <p className="mt-0.5 text-xs font-medium text-slate-500 dark:text-slate-400">
+                  Ontario Tech University &bull; {termLabel}
                 </p>
-              ) : profile?.onboarding_skipped_at ? (
-                <p className="mt-1 text-xs">
-                  <Link
-                    href="/onboarding"
-                    className="font-medium text-[#003C71] underline decoration-[#9AC0EB] underline-offset-2 transition-colors hover:text-[#002D56] dark:text-sky-300 dark:decoration-sky-700 dark:hover:text-sky-200"
-                  >
-                    Personalize your year &amp; degree &rarr;
-                  </Link>
-                </p>
-              ) : null}
+                {hasAcademicSummary ? (
+                  <p className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-slate-600 dark:text-slate-300">
+                    <span className="font-medium text-[#003C71] dark:text-sky-300">
+                      {[
+                        yearLabel,
+                        profileDegreeName,
+                        profileMinorName ? `Minor: ${profileMinorName}` : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </span>
+                    <span
+                      aria-hidden="true"
+                      className="text-slate-300 dark:text-slate-600"
+                    >
+                      &bull;
+                    </span>
+                    <Link
+                      href="/profile"
+                      className="font-medium text-slate-500 underline decoration-slate-300 underline-offset-2 transition-colors hover:text-[#003C71] dark:text-slate-400 dark:decoration-slate-700 dark:hover:text-sky-300"
+                    >
+                      Edit
+                    </Link>
+                  </p>
+                ) : profile?.onboarding_skipped_at ? (
+                  <p className="mt-1 text-xs">
+                    <Link
+                      href="/onboarding"
+                      className="font-medium text-[#003C71] underline decoration-[#9AC0EB] underline-offset-2 transition-colors hover:text-[#002D56] dark:text-sky-300 dark:decoration-sky-700 dark:hover:text-sky-200"
+                    >
+                      Personalize your year &amp; degree &rarr;
+                    </Link>
+                  </p>
+                ) : null}
+              </div>
             </div>
 
             <div
