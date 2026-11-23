@@ -1,8 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import React, { useMemo } from "react";
-
 import {
   GoogleLogoIcon,
   GoogleMeetIcon,
@@ -16,6 +14,7 @@ import {
   type GoogleShortcutsState,
 } from "@/lib/google-shortcuts";
 import type { StudentProfileWithPrograms } from "@/lib/student-courses";
+import React, { useMemo } from "react";
 
 export interface DefaultShortcutItem {
   readonly id: string;
@@ -70,7 +69,7 @@ const SHORTCUT_RING_CLASSES: Record<ShortcutTone, string> = {
 const SCHEDULE_TERM_LINKS = [
   { code: "202609", label: "Fall 2026", shortLabel: "F2026" },
   { code: "202701", label: "Winter 2027", shortLabel: "W2027" },
-  { code: "202605", label: "Spring/Summer 2027", shortLabel: "S2027" },
+  { code: "202705", label: "Spring/Summer 2027", shortLabel: "S2027" },
 ] as const;
 
 const CAMPUS_VENUE_LINKS = [

@@ -84,6 +84,8 @@ interface CourseLookupPanelProps {
   showRmp?: boolean;
   defaultYearOfStudy?: number | null;
   searchTabTrigger?: number;
+  onSelectPreviewTerm?: (previewTerm: string | null) => void;
+  loadingPreviewTerm?: boolean;
 }
 
 function FixedWidthSwapLabel({
@@ -249,6 +251,8 @@ export function CourseLookupPanel({
   showRmp = false,
   defaultYearOfStudy = null,
   searchTabTrigger = 0,
+  onSelectPreviewTerm,
+  loadingPreviewTerm = false,
 }: CourseLookupPanelProps) {
   const preferredLevel = useMemo(() => {
     if (
@@ -1409,8 +1413,11 @@ export function CourseLookupPanel({
                 <strong className="text-slate-800 dark:text-slate-200">
                   {filteredCourses.length}
                 </strong>{" "}
-                course{filteredCourses.length === 1 ? "" : "s"} in{" "}
-                {catalog.termLabel}
+                {catalog.isPreview ? "preview " : ""}course
+                {filteredCourses.length === 1 ? "" : "s"} in{" "}
+                {catalog.isPreview && catalog.previewTermLabel
+                  ? `${catalog.previewTermLabel} (Unofficial)`
+                  : catalog.termLabel}
               </span>
 
               <div className="flex items-center gap-2">
@@ -1557,9 +1564,37 @@ export function CourseLookupPanel({
           {/* Course Cards List */}
           <div className="min-h-0 max-h-[680px] flex-1 lg:max-h-none space-y-2.5 overflow-y-auto p-3">
             {filteredCourses.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-zinc-200 p-6 text-center text-xs text-zinc-500 dark:border-zinc-800">
-                No courses in {catalog.termLabel} match these filters.
-              </div>
+              catalog.courses.length === 0 && !catalog.hasOfficialCourses ? (
+                <div className="space-y-3 rounded-lg border border-dashed border-amber-300/80 bg-amber-50/50 p-5 text-center text-xs text-zinc-600 dark:border-amber-800/70 dark:bg-amber-950/20 dark:text-zinc-300">
+                  <div className="font-semibold text-zinc-900 dark:text-zinc-100">
+                    No {catalog.termLabel} courses in database yet
+                  </div>
+                  <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+                    Official {catalog.termLabel} sections have not been published yet.
+                    {(catalog.availablePreviewTerms?.length ?? 0) > 0 &&
+                      " Preview a previous year (unofficial reference only):"}
+                  </p>
+                  {(catalog.availablePreviewTerms?.length ?? 0) > 0 && (
+                    <div className="flex flex-wrap items-center justify-center gap-1.5">
+                      {catalog.availablePreviewTerms?.map((p) => (
+                        <button
+                          key={p.code}
+                          type="button"
+                          disabled={loadingPreviewTerm}
+                          onClick={() => onSelectPreviewTerm?.(p.code)}
+                          className="rounded-lg border border-amber-300 bg-white px-2.5 py-1 text-[11px] font-medium text-amber-900 transition hover:bg-amber-100 disabled:opacity-50 dark:border-amber-700 dark:bg-amber-950/60 dark:text-amber-100 dark:hover:bg-amber-900/70"
+                        >
+                          Preview {p.label} (Unofficial)
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="rounded-lg border border-dashed border-zinc-200 p-6 text-center text-xs text-zinc-500 dark:border-zinc-800">
+                  No courses in {catalog.termLabel} match these filters.
+                </div>
+              )
             ) : (
               <>
                 {filteredCourses

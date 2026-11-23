@@ -59,13 +59,13 @@ export interface ScheduleTermInfo {
 export const SCHEDULE_TERMS: ScheduleTermInfo[] = [
   { code: "202609", label: "Fall 2026", season: "Fall", year: 2026 },
   { code: "202701", label: "Winter 2027", season: "Winter", year: 2027 },
-  { code: "202605", label: "Spring/Summer 2027", season: "Summer", year: 2027 },
+  { code: "202705", label: "Spring/Summer 2027", season: "Summer", year: 2027 },
 ];
 
 export function getDefaultScheduleTerm(now: Date = new Date()): string {
   const { date } = getTorontoNowParts(now);
   if (date >= "2027-01-01" && date <= "2027-04-30") return "202701";
-  if (date >= "2027-05-01" && date <= "2027-08-20") return "202605";
+  if (date >= "2027-05-01" && date <= "2027-08-20") return "202705";
   return "202609";
 }
 
@@ -316,6 +316,11 @@ export const ELECTIVE_PRESETS: ElectivePreset[] = [
 export interface TermScheduleCatalog {
   term: string;
   termLabel: string;
+  hasOfficialCourses?: boolean;
+  isPreview?: boolean;
+  previewTerm?: string | null;
+  previewTermLabel?: string | null;
+  availablePreviewTerms?: Array<{ code: string; label: string }>;
   courses: ScheduleCourseGroup[];
   allCatalogCourses?: Array<{ code: string; title: string }>;
   subjects: string[];
