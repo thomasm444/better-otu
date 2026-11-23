@@ -9,13 +9,13 @@ import {
   formatShortIsoDate,
   getAcademicDayStatus,
   getDayOfWeekMon1,
-  getDefaultCampusMapState,
   isDateInMapBounds,
   type WeekDayInfo,
 } from "@/lib/campus-map-dates";
 import {
   formatDuration,
   formatMinutesToTime,
+  getLiveTorontoMapState,
   minutesToTimeInputValue,
   parseTimeInputToMinutes,
 } from "../utils";
@@ -191,7 +191,11 @@ export function TimeScrubber({
         <div
           role="dialog"
           aria-label="Select date, time, and duration"
-          className="absolute bottom-full left-1/2 mb-2 max-h-[calc(100dvh-7rem)] w-[320px] max-w-[calc(100vw-1.5rem)] -translate-x-1/2 overflow-y-auto rounded-2xl border border-slate-200/95 bg-white/98 p-3 text-xs shadow-2xl backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/98 dark:text-zinc-100"
+          className={`absolute left-1/2 w-[320px] max-w-[calc(100vw-1.5rem)] -translate-x-1/2 overflow-y-auto rounded-2xl border border-slate-200/95 bg-white/98 p-3 text-xs shadow-2xl backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/98 dark:text-zinc-100 ${
+            isDrawerOpen
+              ? "bottom-[calc(100%+5.75rem)] max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-14.5rem)] lg:bottom-full lg:mb-2 lg:max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-7.5rem)]"
+              : "bottom-full mb-2 max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-9.5rem)] lg:max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-7.5rem)]"
+          }`}
         >
           {/* Upward-expanding custom calendar (sits at top of bottom-anchored popover) */}
           {isCalendarOpen && (
@@ -275,7 +279,7 @@ export function TimeScrubber({
             <button
               type="button"
               onClick={() => {
-                const nowDate = getDefaultCampusMapState().date;
+                const nowDate = getLiveTorontoMapState().date;
                 setViewYearMonth(parseYearMonth(nowDate));
                 onSetNow();
               }}
@@ -356,7 +360,7 @@ export function TimeScrubber({
                   aria-label="Select exact time"
                   min="08:00"
                   max="21:30"
-                  step={300}
+                  step={60}
                   value={minutesToTimeInputValue(currentSlotStart)}
                   onChange={(e) => {
                     const mins = parseTimeInputToMinutes(e.target.value);

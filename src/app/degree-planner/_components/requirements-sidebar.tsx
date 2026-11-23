@@ -21,6 +21,7 @@ import {
   placedTermIndex,
   seasonsOf,
   termCalendarYear,
+  transferCodes,
 } from "@/lib/degree-planner";
 import type {
   CatalogCourse,
@@ -47,6 +48,9 @@ type RequirementsSidebarProps = {
   unscheduled: UnscheduledItem[];
   planMismatches?: Map<string, string>;
   equivMap?: Map<string, Set<string>>;
+  plannedCredits?: number;
+  transferCredits?: number;
+  totalTargetCredits?: number;
   onPickBucket: (bucketKey: string) => void;
   onOpenTransferPicker: () => void;
   onRemoveTransfer: (code: string) => void;
@@ -94,6 +98,9 @@ export function RequirementsSidebar({
   unscheduled,
   planMismatches,
   equivMap,
+  plannedCredits: plannedCreditsProp,
+  transferCredits: transferCreditsProp,
+  totalTargetCredits,
   onPickBucket,
   onOpenTransferPicker,
   onRemoveTransfer,
@@ -521,6 +528,27 @@ export function RequirementsSidebar({
   }, [minorOptions, minorQuery]);
 
   const transfers = [...customs.values()].filter((c) => c.transfer);
+  const creditSummary = useMemo(() => {
+    if (
+      plannedCreditsProp !== undefined &&
+      transferCreditsProp !== undefined
+    ) {
+      return {
+        planned: plannedCreditsProp,
+        transfer: transferCreditsProp,
+        total: plannedCreditsProp + transferCreditsProp,
+      };
+    }
+    const transferSet = transferCodes(customs);
+    let planned = 0;
+    let transfer = 0;
+    for (const code of placed) {
+      const cr = creditsOf(code, catalogMap, customs);
+      if (transferSet.has(code)) transfer += cr;
+      else planned += cr;
+    }
+    return { planned, transfer, total: planned + transfer };
+  }, [plannedCreditsProp, transferCreditsProp, customs, placed, catalogMap]);
   const warnings = collectWarnings(
     terms,
     model,
@@ -667,7 +695,7 @@ export function RequirementsSidebar({
   };
 
   return (
-    <aside className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white/92 shadow-[0_2px_12px_rgba(15,23,42,0.04)] backdrop-blur-sm dark:border-slate-800/80 dark:bg-slate-900/88 lg:max-h-[calc(100vh-170px)] lg:overflow-auto">
+    <aside className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white/92 shadow-[0_2px_12px_rgba(15,23,42,0.04)] backdrop-blur-sm dark:border-slate-800/80 dark:bg-slate-900/88 md:max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-var(--planner-header-h,152px)-24px)] md:overflow-auto">
       <div className="sticky top-0 z-10 border-b border-slate-200/75 bg-gradient-to-r from-sky-50/85 via-white/95 to-violet-50/85 px-4 pt-3 pb-2.5 backdrop-blur-md dark:border-slate-800 dark:from-sky-950/35 dark:via-slate-900/95 dark:to-violet-950/35">
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-xs font-semibold tracking-wider text-slate-600 uppercase dark:text-slate-300">
@@ -679,6 +707,25 @@ export function RequirementsSidebar({
               : minorProgram?.name || "No minor selected"}
           </span>
         </div>
+
+        {activeTab === "major" && (
+          <div className="mt-1 text-[11px] text-slate-500 tabular-nums dark:text-slate-400">
+            {creditSummary.transfer > 0 ? (
+              <span>
+                {creditSummary.planned} cr planned + {creditSummary.transfer} cr transfer ={" "}
+                <strong className="font-semibold text-slate-700 dark:text-slate-200">
+                  {creditSummary.total} cr
+                </strong>
+                {totalTargetCredits ? ` / ${totalTargetCredits} cr` : ""}
+              </span>
+            ) : (
+              <span>
+                {creditSummary.planned}
+                {totalTargetCredits ? ` / ${totalTargetCredits}` : ""} cr planned
+              </span>
+            )}
+          </div>
+        )}
 
         {/* Major | Minor Switcher Tabs */}
         <div className="mt-2.5 grid grid-cols-2 gap-1 rounded-xl bg-slate-100/90 p-1 dark:bg-slate-800/80">

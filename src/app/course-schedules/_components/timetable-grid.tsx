@@ -470,7 +470,20 @@ function buildSectionGhosts(
   return ghosts;
 }
 
-function DayHeaderStrip({ position }: { position: "top" | "bottom" }) {
+function getGridColsClass(dayCount: number): string {
+  if (dayCount <= 5) return "grid-cols-5";
+  if (dayCount === 6) return "grid-cols-6";
+  return "grid-cols-7";
+}
+
+function DayHeaderStrip({
+  position,
+  days,
+}: {
+  position: "top" | "bottom";
+  days: typeof DAYS_OF_WEEK;
+}) {
+  const gridColsClass = getGridColsClass(days.length);
   return (
     <div
       className={`flex bg-slate-50/90 text-slate-700 select-none dark:bg-slate-900/90 dark:text-slate-200 ${
@@ -482,8 +495,10 @@ function DayHeaderStrip({ position }: { position: "top" | "bottom" }) {
       <div className="flex w-12 shrink-0 items-center justify-center border-r border-slate-200/80 py-1.5 font-mono text-[10px] font-semibold text-slate-400 sm:w-14 dark:border-slate-800 dark:text-slate-500">
         {position === "top" ? "TIME" : "DAY"}
       </div>
-      <div className="grid flex-1 grid-cols-7 divide-x divide-slate-200/80 dark:divide-slate-800">
-        {DAYS_OF_WEEK.map((day) => (
+      <div
+        className={`grid flex-1 ${gridColsClass} divide-x divide-slate-200/80 dark:divide-slate-800`}
+      >
+        {days.map((day) => (
           <div
             key={day.key}
             className="flex flex-col items-center justify-center py-1.5 text-center"
@@ -536,6 +551,11 @@ export function WeekScheduleGrid({
   const [selectedCourse, setSelectedCourse] = useState<ScheduleBlock | null>(
     null,
   );
+  const [pendingRemoval, setPendingRemoval] = useState<
+    | { kind: "block"; block: ScheduleBlock }
+    | { kind: "blockedSlot"; slot: BlockedTimeSlot }
+    | null
+  >(null);
   const [confirmViewModeAdd, setConfirmViewModeAdd] = useState(false);
 
   useEffect(() => {
@@ -593,9 +613,20 @@ export function WeekScheduleGrid({
   };
 
   useEffect(() => {
-    if (gridSectionPickers.length === 0 && !selectedCourse) return;
+    const activePendingRemoval = isEditMode ? pendingRemoval : null;
+    if (
+      gridSectionPickers.length === 0 &&
+      !selectedCourse &&
+      !activePendingRemoval &&
+      !slotGroupPicker
+    )
+      return;
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        if (activePendingRemoval) {
+          setPendingRemoval(null);
+          return;
+        }
         if (slotGroupPicker) {
           setSlotGroupPicker(null);
           return;
@@ -610,6 +641,7 @@ export function WeekScheduleGrid({
       }
       if (
         e.key === "Enter" &&
+        !activePendingRemoval &&
         !selectedCourse &&
         gridSectionPickers.length > 0
       ) {
@@ -629,40 +661,20 @@ export function WeekScheduleGrid({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [gridSectionPickers.length, selectedCourse, onChangeGridSectionPickers]);
+  }, [
+    gridSectionPickers.length,
+    isEditMode,
+    pendingRemoval,
+    selectedCourse,
+    slotGroupPicker,
+    onChangeGridSectionPickers,
+  ]);
 
   const totalHours = endHour - startHour;
   const startMinutes = startHour * 60;
   const endMinutesLimit = endHour * 60;
   const totalMinutes = totalHours * 60;
   const hours = Array.from({ length: totalHours }, (_, i) => startHour + i);
-
-  const getPointerGridCoords = (clientX: number, clientY: number) => {
-    const rect = gridBodyRef.current?.getBoundingClientRect();
-    if (!rect || rect.width <= 0 || rect.height <= 0) return null;
-    const relX = Math.max(0, Math.min(rect.width - 1, clientX - rect.left));
-    const relY = Math.max(0, Math.min(rect.height, clientY - rect.top));
-    const rawCol = (relX / rect.width) * DAYS_OF_WEEK.length;
-    const colIdx = Math.max(
-      0,
-      Math.min(DAYS_OF_WEEK.length - 1, Math.floor(rawCol)),
-    );
-    const dayRelXPercent = Math.max(
-      0,
-      Math.min(100, (rawCol - colIdx) * 100),
-    );
-    const rawMinutes = startMinutes + (relY / rect.height) * totalMinutes;
-    const snapped30 = Math.max(
-      startMinutes,
-      Math.min(endMinutesLimit, Math.round(rawMinutes / 30) * 30),
-    );
-    return {
-      day: DAYS_OF_WEEK[colIdx].key,
-      dayRelXPercent,
-      rawMinutes,
-      snapped30,
-    };
-  };
 
   const visibleCount = useMemo(() => {
     return courses.filter((b) => {
@@ -827,6 +839,54 @@ export function WeekScheduleGrid({
       sunday: layoutDayGhosts(grouped.sunday, viewMode),
     };
   }, [dragCourse, gridSectionPickers.length, pickerGhosts, viewMode]);
+
+  const visibleDays = useMemo(
+    () =>
+      DAYS_OF_WEEK.filter((day) => {
+        if (day.key !== "saturday" && day.key !== "sunday") return true;
+        const hasCourseBlock = courses.some(
+          (b) =>
+            b.day === day.key &&
+            (viewMode === "combined" ||
+              b.weekPattern === "both" ||
+              b.weekPattern === viewMode),
+        );
+        return (
+          hasCourseBlock ||
+          positionedByDay[day.key].length > 0 ||
+          ghostsByDay[day.key].length > 0
+        );
+      }),
+    [courses, viewMode, positionedByDay, ghostsByDay],
+  );
+
+  const getPointerGridCoords = (clientX: number, clientY: number) => {
+    const rect = gridBodyRef.current?.getBoundingClientRect();
+    if (!rect || rect.width <= 0 || rect.height <= 0 || visibleDays.length === 0)
+      return null;
+    const relX = Math.max(0, Math.min(rect.width - 1, clientX - rect.left));
+    const relY = Math.max(0, Math.min(rect.height, clientY - rect.top));
+    const rawCol = (relX / rect.width) * visibleDays.length;
+    const colIdx = Math.max(
+      0,
+      Math.min(visibleDays.length - 1, Math.floor(rawCol)),
+    );
+    const dayRelXPercent = Math.max(
+      0,
+      Math.min(100, (rawCol - colIdx) * 100),
+    );
+    const rawMinutes = startMinutes + (relY / rect.height) * totalMinutes;
+    const snapped30 = Math.max(
+      startMinutes,
+      Math.min(endMinutesLimit, Math.round(rawMinutes / 30) * 30),
+    );
+    return {
+      day: visibleDays[colIdx].key,
+      dayRelXPercent,
+      rawMinutes,
+      snapped30,
+    };
+  };
 
   const startCoursePointerDown = (
     e: React.PointerEvent<HTMLDivElement>,
@@ -1082,14 +1142,15 @@ export function WeekScheduleGrid({
       return;
     if (
       (e.target as HTMLElement).closest(
-        "[data-blocked-slot='true'], [data-custom-block='true']",
+        "[data-blocked-slot='true'], [data-custom-block='true'], [data-no-drag='true']",
       )
     )
       return;
 
     const initial = getPointerGridCoords(e.clientX, e.clientY);
     if (!initial) return;
-    const anchorColIdx = DAYS_OF_WEEK.findIndex((d) => d.key === initial.day);
+    const anchorColIdx = visibleDays.findIndex((d) => d.key === initial.day);
+    if (anchorColIdx === -1) return;
     const anchorStart = Math.max(
       startMinutes,
       Math.min(endMinutesLimit - 30, Math.floor(initial.rawMinutes / 30) * 30),
@@ -1116,10 +1177,11 @@ export function WeekScheduleGrid({
     const onMove = (ev: PointerEvent) => {
       const coords = getPointerGridCoords(ev.clientX, ev.clientY);
       if (!coords) return;
-      const curColIdx = DAYS_OF_WEEK.findIndex((d) => d.key === coords.day);
+      const curColIdx = visibleDays.findIndex((d) => d.key === coords.day);
+      if (curColIdx === -1) return;
       const minCol = Math.min(anchorColIdx, curColIdx);
       const maxCol = Math.max(anchorColIdx, curColIdx);
-      selectedDays = DAYS_OF_WEEK.slice(minCol, maxCol + 1).map((d) => d.key);
+      selectedDays = visibleDays.slice(minCol, maxCol + 1).map((d) => d.key);
 
       const curSlot = Math.max(
         startMinutes,
@@ -1640,8 +1702,8 @@ export function WeekScheduleGrid({
           fitToHeight ? "min-h-[560px] max-h-[700px]" : "min-h-[820px]"
         }`}
       >
-        {/* Top Days Header (Mon–Sun) */}
-        <DayHeaderStrip position="top" />
+        {/* Top Days Header */}
+        <DayHeaderStrip position="top" days={visibleDays} />
 
         <div className="relative flex flex-1 select-none">
           {/* Times Column on the Left */}
@@ -1656,13 +1718,13 @@ export function WeekScheduleGrid({
             ))}
           </div>
 
-          {/* 7 Day Columns */}
+          {/* Visible Day Columns */}
           <div
             ref={gridBodyRef}
             onPointerDown={startCreateBlockedDrag}
-            className="grid flex-1 grid-cols-7 divide-x divide-slate-200/80 dark:divide-slate-800/80"
+            className={`grid flex-1 ${getGridColsClass(visibleDays.length)} divide-x divide-slate-200/80 dark:divide-slate-800/80`}
           >
-            {DAYS_OF_WEEK.map((day) => {
+            {visibleDays.map((day) => {
               const dayBlocks = positionedByDay[day.key];
               const dayBlocked = blockedByDay[day.key];
               const dayGhosts = ghostsByDay[day.key];
@@ -1743,9 +1805,13 @@ export function WeekScheduleGrid({
                                 <button
                                   type="button"
                                   data-no-drag="true"
+                                  onPointerDown={(e) => e.stopPropagation()}
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    onRemoveBlockedSlot(slot.id);
+                                    setPendingRemoval({
+                                      kind: "blockedSlot",
+                                      slot,
+                                    });
                                   }}
                                   className="shrink-0 rounded px-1 text-[11px] font-bold text-rose-600 hover:bg-rose-200/70 dark:text-rose-300 dark:hover:bg-rose-900/60"
                                   title="Remove blocked time"
@@ -1921,9 +1987,13 @@ export function WeekScheduleGrid({
                                       <button
                                         type="button"
                                         data-no-drag="true"
+                                        onPointerDown={(e) => e.stopPropagation()}
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          onRemoveBlock(block);
+                                          setPendingRemoval({
+                                            kind: "block",
+                                            block,
+                                          });
                                         }}
                                         className="rounded px-1 text-[11px] font-bold leading-none text-zinc-600 hover:bg-rose-500 hover:text-white dark:text-zinc-300"
                                         title={`Remove ${block.courseCode} ${block.type ?? ""}`}
@@ -2216,9 +2286,124 @@ export function WeekScheduleGrid({
           </div>
         </div>
 
-        {/* Bottom Days Header (Mon–Sun) */}
-        <DayHeaderStrip position="bottom" />
+        {/* Bottom Days Header */}
+        <DayHeaderStrip position="bottom" days={visibleDays} />
       </div>
+
+      {/* Confirm Remove Block Modal */}
+      {isEditMode &&
+        pendingRemoval &&
+        (() => {
+          const isBlock = pendingRemoval.kind === "block";
+          const compLabel = isBlock
+            ? pendingRemoval.block.component || pendingRemoval.block.type
+            : undefined;
+          const courseOrBlockLabel = isBlock
+            ? pendingRemoval.block.isCustom
+              ? pendingRemoval.block.courseCode
+              : `${pendingRemoval.block.courseCode}${compLabel ? ` (${compLabel})` : ""}`
+            : null;
+          const title = isBlock
+            ? `Remove ${courseOrBlockLabel}?`
+            : "Remove blocked time?";
+          const subtitle = isBlock
+            ? pendingRemoval.block.title
+            : pendingRemoval.slot.label || "Blocked";
+          const day = isBlock
+            ? pendingRemoval.block.day
+            : pendingRemoval.slot.day;
+          const startTime = isBlock
+            ? pendingRemoval.block.startTime
+            : pendingRemoval.slot.startTime;
+          const endTime = isBlock
+            ? pendingRemoval.block.endTime
+            : pendingRemoval.slot.endTime;
+          const room = isBlock ? pendingRemoval.block.room : undefined;
+          const note = isBlock
+            ? pendingRemoval.block.isCustom
+              ? "This custom block will be removed from your timetable."
+              : `This will remove ${courseOrBlockLabel} from your schedule.`
+            : null;
+
+          return (
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="confirm-remove-block-title"
+              className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                if (e.target === e.currentTarget) setPendingRemoval(null);
+              }}
+            >
+              <div
+                className="w-full max-w-sm rounded-2xl border border-slate-200/90 bg-white p-5 shadow-2xl dark:border-slate-700 dark:bg-slate-900"
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3
+                      id="confirm-remove-block-title"
+                      className="text-base font-semibold text-slate-900 dark:text-slate-100"
+                    >
+                      {title}
+                    </h3>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      {subtitle}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setPendingRemoval(null)}
+                    aria-label="Cancel removal"
+                    className="rounded-xl p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                  >
+                    &times;
+                  </button>
+                </div>
+
+                <div className="mt-3 rounded-xl border border-slate-200/80 bg-slate-50/80 px-3 py-2 text-xs text-slate-700 dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-300">
+                  <span className="font-medium capitalize">{day}</span> &bull;{" "}
+                  {formatTimeDisplay(startTime)} &ndash;{" "}
+                  {formatTimeDisplay(endTime)}
+                  {room ? ` · ${room}` : ""}
+                </div>
+
+                {note && (
+                  <p className="mt-3 text-xs text-slate-600 dark:text-slate-400">
+                    {note}
+                  </p>
+                )}
+
+                <div className="mt-4 flex items-center justify-end gap-2">
+                  <button
+                    type="button"
+                    autoFocus
+                    onClick={() => setPendingRemoval(null)}
+                    className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (pendingRemoval.kind === "block") {
+                        onRemoveBlock?.(pendingRemoval.block);
+                      } else {
+                        onRemoveBlockedSlot?.(pendingRemoval.slot.id);
+                      }
+                      setPendingRemoval(null);
+                    }}
+                    className="rounded-xl bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-rose-700"
+                  >
+                    Remove
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
       {/* Selected Block Inspector Modal */}
       {selectedCourse && (

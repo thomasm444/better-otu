@@ -24,6 +24,8 @@ import {
 import { createClient } from "@/lib/supabase/client";
 
 import {
+  allocateBuckets,
+  assignBreadthBuckets,
   buildDefaultPlan,
   buildEquivalenceMap,
   buildModel,
@@ -35,11 +37,12 @@ import {
   CREDIT_CAP,
   DEFAULT_START_YEAR,
   earnedCodes,
+  evaluatePlanRequirements,
   expandWithEquivalents,
   findEquivalentInSet,
   findProgramInCatalogYear,
   firstFreeSlot,
-  matchingBuckets,
+  matchesBucket,
   MAX_SLOTS_PER_TERM,
   MAX_START_YEAR,
   MIN_PLAN_CATALOG_YEAR,
@@ -55,15 +58,21 @@ import {
   STORE_PREFIX,
   termCalendarYear,
   termCredits,
+  transferCodes,
 } from "@/lib/degree-planner";
 import type {
   CatalogCourse,
   CustomCourse,
   DegreeBootstrapData,
   DegreeProgramDetail,
+  ElectiveBucket,
+  ElectiveMatch,
+  OfferingContext,
+  OfferingEntry,
   PickerState,
   PlannerTerm,
   ProgramSummary,
+  RequirementModel,
   UnscheduledItem,
 } from "@/lib/degree-types";
 
@@ -304,7 +313,23 @@ export function DegreePlannerClient({
 
   const menuContainerRef = useRef<HTMLDivElement>(null);
   const plansMenuContainerRef = useRef<HTMLDivElement>(null);
+  const headerRef = useRef<HTMLElement>(null);
+  const [headerHeight, setHeaderHeight] = useState(152);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const el = headerRef.current;
+    if (!el) return;
+    const update = () => {
+      const next = Math.ceil(el.getBoundingClientRect().height);
+      if (next > 0) setHeaderHeight(next);
+    };
+    update();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingSaveRef = useRef<Parameters<typeof upsertDegreePlan>[1] | null>(
     null,
@@ -1126,13 +1151,24 @@ export function DegreePlannerClient({
     );
   }, [program, model, catalogMap, customs]);
 
-  const totalPlacedCredits = useMemo(() => {
-    let total = 0;
-    for (const code of earnedCodes(terms, customs)) {
-      total += creditsOf(code, catalogMap, customs);
+  const creditBreakdown = useMemo(() => {
+    const earned = earnedCodes(terms, customs);
+    const transferSet = transferCodes(customs);
+    let planned = 0;
+    let transfer = 0;
+    for (const code of earned) {
+      const cr = creditsOf(code, catalogMap, customs);
+      if (transferSet.has(code)) transfer += cr;
+      else planned += cr;
     }
-    return total;
+    return {
+      planned,
+      transfer,
+      total: planned + transfer,
+    };
   }, [terms, catalogMap, customs]);
+
+  const totalPlacedCredits = creditBreakdown.total;
 
   const commitPlan = useCallback(
     (
@@ -2026,12 +2062,20 @@ export function DegreePlannerClient({
     : 0;
 
   return (
-    <div className="min-h-screen bg-[#F7F8FC] bg-[radial-gradient(ellipse_80%_45%_at_50%_-10%,rgba(186,230,253,0.40),transparent_65%),radial-gradient(ellipse_55%_40%_at_92%_6%,rgba(221,214,254,0.32),transparent_60%)] text-slate-800 dark:bg-[#0B0F19] dark:bg-[radial-gradient(ellipse_80%_45%_at_50%_-10%,rgba(56,189,248,0.11),transparent_65%),radial-gradient(ellipse_55%_40%_at_92%_6%,rgba(167,139,250,0.10),transparent_60%)] dark:text-slate-100">
+    <div
+      style={
+        { "--planner-header-h": `${headerHeight}px` } as React.CSSProperties
+      }
+      className="min-h-screen bg-[#F7F8FC] bg-[radial-gradient(ellipse_80%_45%_at_50%_-10%,rgba(186,230,253,0.40),transparent_65%),radial-gradient(ellipse_55%_40%_at_92%_6%,rgba(221,214,254,0.32),transparent_60%)] text-slate-800 dark:bg-[#0B0F19] dark:bg-[radial-gradient(ellipse_80%_45%_at_50%_-10%,rgba(56,189,248,0.11),transparent_65%),radial-gradient(ellipse_55%_40%_at_92%_6%,rgba(167,139,250,0.10),transparent_60%)] dark:text-slate-100"
+    >
       {/* Sticky Top Header */}
-      <header className="sticky top-0 z-40 border-b border-slate-200/80 bg-white/82 px-4 py-3 shadow-[0_1px_12px_rgba(15,23,42,0.04)] backdrop-blur-md dark:border-slate-800/80 dark:bg-slate-900/82">
-        <div className="mx-auto flex max-w-[1440px] flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+      <header
+        ref={headerRef}
+        className="sticky top-[var(--site-nav-height,2.75rem)] z-40 border-b border-slate-200/80 bg-white/82 px-4 py-3 shadow-[0_1px_12px_rgba(15,23,42,0.04)] backdrop-blur-md dark:border-slate-800/80 dark:bg-slate-900/82"
+      >
+        <div className="mx-auto flex max-w-[1440px] flex-col gap-3 md:flex-row md:flex-wrap md:items-start md:justify-between lg:flex-nowrap">
           {/* Left Side: Home on top; Plans + (+) below; Plan name; Start year */}
-          <div className="flex flex-col items-start gap-1.5">
+          <div className="flex flex-col items-start gap-1.5 md:order-1 md:max-w-[58%] lg:max-w-none">
             <Link
               href="/"
               className="rounded-xl border border-slate-200/90 bg-white/90 px-2.5 py-1 text-xs font-medium text-slate-600 shadow-[0_1px_2px_rgba(15,23,42,0.03)] transition-colors hover:border-sky-300 hover:bg-sky-50/50 hover:text-sky-900 dark:border-slate-700/80 dark:bg-slate-800/80 dark:text-slate-300 dark:hover:border-sky-700 dark:hover:text-sky-200"
@@ -2278,8 +2322,8 @@ export function DegreePlannerClient({
           </div>
 
           {/* Middle: Centered Program Search */}
-          <div className="flex w-full flex-col items-start lg:flex-1 lg:items-center lg:px-4">
-            <div ref={menuContainerRef} className="relative w-full max-w-[300px] lg:-translate-x-8">
+          <div className="flex w-full flex-col items-start md:order-3 lg:order-2 lg:w-auto lg:flex-1 lg:items-center lg:px-4">
+            <div ref={menuContainerRef} className="relative w-full max-w-[300px] md:max-w-sm lg:max-w-[300px] lg:-translate-x-8">
               <svg
                 aria-hidden="true"
                 viewBox="0 0 20 20"
@@ -2341,30 +2385,39 @@ export function DegreePlannerClient({
           </div>
 
           {/* Right Side: Credits on top; Reset controls directly below */}
-          <div className="flex flex-col items-start gap-2 lg:items-end">
+          <div className="flex flex-col items-start gap-1.5 md:order-2 md:items-end lg:order-3">
             {/* Credit Progress Hero */}
-            <div className="flex items-center gap-2 rounded-2xl border border-slate-200/75 bg-white/85 px-3 py-1.5 shadow-[0_1px_4px_rgba(15,23,42,0.03)] dark:border-slate-800 dark:bg-slate-800/60">
-              <strong className="text-lg leading-none font-semibold tracking-tight tabular-nums text-emerald-600 dark:text-emerald-400">
-                {totalPlacedCredits}
-              </strong>
-              <span className="text-xs text-slate-500 dark:text-slate-400">
-                / {totalTarget} cr
-              </span>
-              <div
-                className="h-2.5 w-28 overflow-hidden rounded-full bg-slate-200/85 ring-1 ring-inset ring-slate-300/40 sm:w-36 dark:bg-slate-900 dark:ring-slate-700/60"
-                title={`${totalPlacedCredits} completed · ${Math.max(0, totalTarget - totalPlacedCredits)} remaining`}
-              >
+            <div className="flex flex-col items-start gap-1 rounded-2xl border border-slate-200/75 bg-white/85 px-3 py-1.5 shadow-[0_1px_4px_rgba(15,23,42,0.03)] md:items-end dark:border-slate-800 dark:bg-slate-800/60">
+              <div className="flex items-center gap-2">
+                <strong className="text-lg leading-none font-semibold tracking-tight tabular-nums text-emerald-600 dark:text-emerald-400">
+                  {totalPlacedCredits}
+                </strong>
+                <span className="text-xs text-slate-500 dark:text-slate-400">
+                  / {totalTarget} cr
+                </span>
                 <div
-                  className="h-full rounded-full bg-gradient-to-r from-sky-400 via-teal-400 to-emerald-400 transition-all duration-300"
-                  style={{ width: `${heroPct}%` }}
-                />
+                  className="h-2.5 w-28 overflow-hidden rounded-full bg-slate-200/85 ring-1 ring-inset ring-slate-300/40 sm:w-36 dark:bg-slate-900 dark:ring-slate-700/60"
+                  title={`${totalPlacedCredits} completed · ${Math.max(0, totalTarget - totalPlacedCredits)} remaining`}
+                >
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-sky-400 via-teal-400 to-emerald-400 transition-all duration-300"
+                    style={{ width: `${heroPct}%` }}
+                  />
+                </div>
+                <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10.5px] font-semibold tabular-nums text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
+                  {Math.round(heroPct)}%
+                </span>
               </div>
-              <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10.5px] font-semibold tabular-nums text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
-                {Math.round(heroPct)}%
-              </span>
+              {program && (
+                <div className="text-[11px] text-slate-500 tabular-nums dark:text-slate-400">
+                  {creditBreakdown.transfer > 0
+                    ? `${creditBreakdown.planned} cr planned + ${creditBreakdown.transfer} cr transfer = ${creditBreakdown.total} cr`
+                    : `${creditBreakdown.planned} cr planned`}
+                </div>
+              )}
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+            <div className="flex flex-wrap items-center gap-2 md:justify-end">
               {previousPlan && (
                 <button
                   type="button"
@@ -2390,7 +2443,7 @@ export function DegreePlannerClient({
 
       {/* Reset Confirmation Modal */}
       {resetConfirmOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[1300] flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm">
           <div className="w-full max-w-md rounded-2xl border border-rose-200 bg-white p-6 shadow-2xl ring-4 ring-rose-100/60 dark:border-rose-900/70 dark:bg-slate-900 dark:ring-rose-950/40">
             <div className="mb-3 flex items-center gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400">
@@ -2429,7 +2482,7 @@ export function DegreePlannerClient({
 
       {/* Gap Year Confirmation Modal */}
       {gapYearToInsert && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[1300] flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm">
           <div className="w-full max-w-md rounded-2xl border border-amber-200 bg-white p-6 shadow-2xl ring-4 ring-amber-100/60 dark:border-amber-900/70 dark:bg-slate-900 dark:ring-amber-950/40">
             <div className="mb-3 flex items-center gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300">
@@ -2475,7 +2528,7 @@ export function DegreePlannerClient({
 
       {/* Delete Saved Plan Confirmation Modal (with 5-second safety delay) */}
       {planToDelete && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm">
+        <div className="fixed inset-0 z-[1300] flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm">
           <div className="w-full max-w-md rounded-2xl border border-rose-200 bg-white p-6 shadow-2xl ring-4 ring-rose-100/60 dark:border-rose-900/70 dark:bg-slate-900 dark:ring-rose-950/40">
             <div className="mb-3 flex items-center gap-3">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400">
@@ -2530,7 +2583,7 @@ export function DegreePlannerClient({
       {/* Add New Plan Modal */}
       {addPlanModalOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm"
+          className="fixed inset-0 z-[1300] flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm"
           onClick={() => !creatingPlan && setAddPlanModalOpen(false)}
         >
           <div
@@ -2699,7 +2752,7 @@ export function DegreePlannerClient({
       {/* Main Layout */}
       <main className="mx-auto max-w-[1440px] p-4">
         {program && model && sidebarOpen && (
-          <div className="mb-3 grid grid-cols-1 items-center gap-3 lg:grid-cols-[minmax(0,1fr)_395px] lg:gap-5">
+          <div className="mb-3 grid grid-cols-1 items-center gap-3 md:grid-cols-[minmax(0,1fr)_300px] md:gap-4 lg:grid-cols-[minmax(0,1fr)_350px] lg:gap-5 xl:grid-cols-[minmax(0,1fr)_395px]">
             {!loadingProgram && academicYears.length > 0 ? (
               <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3.5 gap-y-1.5 rounded-2xl border border-slate-200/75 bg-white/75 px-3.5 py-2 text-[11.5px] text-slate-500 shadow-[0_1px_6px_rgba(15,23,42,0.03)] backdrop-blur-xs dark:border-slate-800/80 dark:bg-slate-900/55 dark:text-slate-400">
                 <span className="inline-flex items-center gap-1.5">
@@ -2736,10 +2789,12 @@ export function DegreePlannerClient({
               <button
                 type="button"
                 aria-expanded={sidebarOpen}
+                aria-label="Hide requirements panel"
+                title="Hide requirements panel"
                 onClick={() => setSidebarOpen((open) => !open)}
-                className="inline-flex min-w-[138px] shrink-0 items-center justify-center rounded-xl border border-slate-200/90 bg-white/95 px-3 py-1.5 text-xs font-medium text-slate-700 shadow-[0_1px_4px_rgba(15,23,42,0.04)] transition-colors hover:border-sky-300 hover:bg-sky-50/60 hover:text-sky-800 dark:border-slate-700/80 dark:bg-slate-900/95 dark:text-slate-200 dark:hover:border-sky-700 dark:hover:text-sky-200"
+                className="inline-flex min-w-[156px] shrink-0 items-center justify-center rounded-xl border border-slate-200/90 bg-white/95 px-3 py-1.5 text-xs font-medium text-slate-700 shadow-[0_1px_4px_rgba(15,23,42,0.04)] transition-colors hover:border-sky-300 hover:bg-sky-50/60 hover:text-sky-800 dark:border-slate-700/80 dark:bg-slate-900/95 dark:text-slate-200 dark:hover:border-sky-700 dark:hover:text-sky-200"
               >
-                Push to side ▶
+                Hide requirements ▶
               </button>
             </div>
           </div>
@@ -2748,7 +2803,7 @@ export function DegreePlannerClient({
         <div
           className={
             program && model && sidebarOpen
-              ? "grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_395px]"
+              ? "grid grid-cols-1 items-start gap-5 md:grid-cols-[minmax(0,1fr)_300px] md:gap-4 lg:grid-cols-[minmax(0,1fr)_350px] lg:gap-5 xl:grid-cols-[minmax(0,1fr)_395px]"
               : program && model && !sidebarOpen
                 ? "grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3"
                 : ""
@@ -3018,13 +3073,13 @@ export function DegreePlannerClient({
                                             slotIndex,
                                           );
                                         }}
-                                        className={`flex min-h-[38px] w-full items-center justify-center rounded-xl border border-dashed text-[12.5px] transition-colors ${
+                                        className={`flex min-h-[38px] w-full items-center justify-center rounded-xl border border-dashed px-2 text-[12px] font-medium whitespace-nowrap transition-colors ${
                                           isDragOver
                                             ? "border-sky-400 bg-sky-50 text-sky-600 dark:bg-sky-950/40"
                                             : "border-slate-200/90 bg-slate-50/40 text-slate-400 hover:border-sky-400 hover:bg-sky-50/50 hover:text-sky-600 dark:border-slate-700/80 dark:bg-slate-900/40 dark:text-slate-500 dark:hover:border-sky-500 dark:hover:bg-sky-950/25 dark:hover:text-sky-300"
                                         }`}
                                       >
-                                        ＋
+                                        + Add course
                                       </button>
                                     );
                                   }
@@ -3034,9 +3089,7 @@ export function DegreePlannerClient({
                                     catalogMap,
                                     customs,
                                   );
-                                  const title = course
-                                    ? course.title
-                                    : "Unknown course";
+                                  const title = displayCourseTitle(course);
                                   const isCustom = customs.has(code);
                                   const isTransfer = Boolean(
                                     isCustom && customs.get(code)?.transfer,
@@ -3255,13 +3308,13 @@ export function DegreePlannerClient({
                                         targetSlot,
                                       );
                                     }}
-                                    className={`flex min-h-[36px] w-full items-center justify-center rounded-xl border border-dashed text-[12px] font-medium transition-colors ${
+                                    className={`flex min-h-[36px] w-full items-center justify-center rounded-xl border border-dashed px-2 text-[12px] font-medium whitespace-nowrap transition-colors ${
                                       isAppendDragOver
                                         ? "border-sky-400 bg-sky-50 text-sky-600 dark:bg-sky-950/40"
                                         : "border-slate-200/90 bg-slate-50/40 text-slate-400 hover:border-sky-400 hover:bg-sky-50/50 hover:text-sky-600 dark:border-slate-700/80 dark:bg-slate-900/40 dark:text-slate-500 dark:hover:border-sky-500 dark:hover:bg-sky-950/25 dark:hover:text-sky-300"
                                     }`}
                                   >
-                                    ＋ add course
+                                    + Add course
                                   </button>
                                 )}
                               </div>
@@ -3285,10 +3338,10 @@ export function DegreePlannerClient({
           )}
         </section>
 
-        {/* Right Column ("What you need") — toggled from the fixed button above */}
+        {/* Right Column ("What you need") — toggled from the button above */}
         {program && model ? (
           sidebarOpen ? (
-            <div className="relative lg:sticky lg:top-[122px]">
+            <div className="relative md:sticky md:top-[calc(var(--site-nav-height,2.75rem)+var(--planner-header-h,152px)+12px)]">
               <RequirementsSidebar
                 program={program}
                 model={model}
@@ -3301,6 +3354,9 @@ export function DegreePlannerClient({
                 unscheduled={unscheduled}
                 planMismatches={planMismatches}
                 equivMap={equivMap}
+                plannedCredits={creditBreakdown.planned}
+                transferCredits={creditBreakdown.transfer}
+                totalTargetCredits={totalTarget}
                 onPickBucket={(bucketKey) => {
                   const emptyTerm = terms.findIndex((t) =>
                     t.slots.includes(null),
@@ -3362,14 +3418,16 @@ export function DegreePlannerClient({
               />
             </div>
           ) : (
-            <div className="flex justify-end">
+            <div className="flex justify-end md:sticky md:top-[calc(var(--site-nav-height,2.75rem)+var(--planner-header-h,152px)+12px)]">
               <button
                 type="button"
                 aria-expanded={false}
+                aria-label="Show requirements panel"
+                title="Show requirements panel"
                 onClick={() => setSidebarOpen(true)}
-                className="inline-flex min-h-[138px] shrink-0 items-center justify-center rounded-xl border border-slate-200/90 bg-white/95 px-1.5 py-3 text-xs font-medium text-slate-700 shadow-[0_1px_4px_rgba(15,23,42,0.04)] transition-colors [writing-mode:vertical-rl] hover:border-sky-300 hover:bg-sky-50/60 hover:text-sky-800 dark:border-slate-700/80 dark:bg-slate-900/95 dark:text-slate-200 dark:hover:border-sky-700 dark:hover:text-sky-200"
+                className="inline-flex min-h-[156px] shrink-0 items-center justify-center rounded-xl border border-slate-200/90 bg-white/95 px-1.5 py-3 text-xs font-medium text-slate-700 shadow-[0_1px_4px_rgba(15,23,42,0.04)] transition-colors [writing-mode:vertical-rl] hover:border-sky-300 hover:bg-sky-50/60 hover:text-sky-800 dark:border-slate-700/80 dark:bg-slate-900/95 dark:text-slate-200 dark:hover:border-sky-700 dark:hover:text-sky-200"
               >
-                ◀ What you need
+                ◀ Show requirements
               </button>
             </div>
           )
@@ -3392,6 +3450,7 @@ export function DegreePlannerClient({
           key={`${picker.termIndex}:${picker.slotIndex}:${picker.bucketKey ?? ""}:${picker.modelSource ?? "major"}:${picker.initialQuery ?? ""}:${pickerTransferMode}`}
           picker={picker}
           initialTransferMode={pickerTransferMode}
+          program={picker.modelSource === "minor" ? minorProgram : program}
           terms={terms}
           model={picker.modelSource === "minor" ? minorModel : model}
           catalogCourses={bootstrap.courses}
@@ -3429,6 +3488,8 @@ export function DegreePlannerClient({
           equivMap={equivMap}
           customs={customs}
           model={model}
+          minorProgram={minorProgram}
+          minorModel={minorModel}
           onClose={() => setSelectedCourse(null)}
           onRemove={() => {
             clearSlot(selectedCourse.termIndex, selectedCourse.slotIndex);
@@ -3439,12 +3500,272 @@ export function DegreePlannerClient({
 
       {/* Toast */}
       {toastMsg && (
-        <div className="fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-full border border-slate-700/60 bg-slate-900/95 px-4 py-2 text-xs font-medium text-white shadow-xl backdrop-blur-md dark:border-slate-200/80 dark:bg-white/95 dark:text-slate-900">
+        <div className="fixed bottom-5 left-1/2 z-[1400] -translate-x-1/2 rounded-full border border-slate-700/60 bg-slate-900/95 px-4 py-2 text-xs font-medium text-white shadow-xl backdrop-blur-md dark:border-slate-200/80 dark:bg-white/95 dark:text-slate-900">
           {toastMsg}
         </div>
       )}
     </div>
   );
+}
+
+function displayCourseTitle(
+  course: Pick<CatalogCourse | CustomCourse, "code" | "title"> | null | undefined,
+  fallback = "Unknown course",
+): string {
+  if (!course) return fallback;
+  const trimmed = course.title.trim();
+  if (!trimmed || trimmed.toLowerCase() === course.code.trim().toLowerCase()) {
+    return "Catalog title unavailable (offering only)";
+  }
+  return trimmed;
+}
+
+type CountsTowardTier =
+  | "major-core"
+  | "minor-core"
+  | "major-elective"
+  | "breadth"
+  | "minor-elective";
+
+type CountsTowardEntry = {
+  label: string;
+  tier: CountsTowardTier;
+  active: boolean;
+};
+
+function isGenericAnyMatch(match: ElectiveMatch | null | undefined): boolean {
+  if (!match) return true;
+  return (
+    !(match.subjects?.length) &&
+    !(match.exclude_subjects?.length) &&
+    !(match.faculties?.length) &&
+    !(match.exclude_faculties?.length) &&
+    !match.min_level &&
+    !match.max_level
+  );
+}
+
+function computeCountsTowardEntries({
+  code,
+  course,
+  model,
+  minorModel,
+  minorProgram,
+  equivMap,
+  terms,
+  catalogMap,
+  customs,
+}: {
+  code: string;
+  course: CatalogCourse | CustomCourse;
+  model: RequirementModel | null;
+  minorModel: RequirementModel | null;
+  minorProgram: DegreeProgramDetail | null;
+  equivMap: Map<string, Set<string>>;
+  terms: PlannerTerm[];
+  catalogMap: Map<string, CatalogCourse>;
+  customs: Map<string, CustomCourse>;
+}): CountsTowardEntry[] {
+  const entries: CountsTowardEntry[] = [];
+  const seen = new Set<string>();
+  const push = (entry: CountsTowardEntry) => {
+    const key = entry.label.trim().toLowerCase();
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    entries.push(entry);
+  };
+
+  const codeWithEquivs = expandWithEquivalents(new Set([code]), equivMap);
+  const placed = earnedCodes(terms, customs);
+
+  const majorEval = model
+    ? evaluatePlanRequirements(placed, model, catalogMap, customs, equivMap)
+    : null;
+  const isConsumedByMajorCore = Boolean(
+    majorEval && placed.has(code) && !majorEval.freeCodes.includes(code),
+  );
+  const majorBucketAllocs =
+    model && majorEval
+      ? allocateBuckets(model.buckets, majorEval.freeCodes, catalogMap, customs)
+      : null;
+  const breadthAllocs =
+    model && majorEval
+      ? assignBreadthBuckets(
+          majorEval.freeCodes,
+          model.breadth,
+          catalogMap,
+          customs,
+        )
+      : null;
+
+  const minorEval = minorModel
+    ? evaluatePlanRequirements(placed, minorModel, catalogMap, customs, equivMap)
+    : null;
+  const isConsumedByMinorCore = Boolean(
+    minorEval && placed.has(code) && !minorEval.freeCodes.includes(code),
+  );
+  const minorBucketAllocs =
+    minorModel && minorEval
+      ? allocateBuckets(
+          minorModel.buckets,
+          minorEval.freeCodes,
+          catalogMap,
+          customs,
+        )
+      : null;
+
+  // 1. Major Required / Core
+  const matchedReq = model?.required.find((r) => codeWithEquivs.has(r.code));
+  if (matchedReq) {
+    push({
+      label:
+        matchedReq.code === code
+          ? "Major required"
+          : `Major required (satisfies ${matchedReq.code})`,
+      tier: "major-core",
+      active: isConsumedByMajorCore,
+    });
+  }
+
+  // 2. Major Choice Groups (explicit core options)
+  for (const group of model?.chooseGroups ?? []) {
+    if (!group.options.some((opt) => codeWithEquivs.has(opt))) continue;
+    const optionSummary =
+      group.options.length <= 3
+        ? group.options.join(" / ")
+        : `${group.label.replace(/:$/, "").toLowerCase()} ${group.options.length} options`;
+    const suffix = group.elective ? ` or ${group.elective.label}` : "";
+    push({
+      label: `Major choice (${optionSummary}${suffix})`,
+      tier: "major-core",
+      active: isConsumedByMajorCore && !matchedReq,
+    });
+  }
+
+  // 3. Minor Required & Choice Groups
+  if (minorModel && minorProgram) {
+    const matchedMinorReq = minorModel.required.find((r) =>
+      codeWithEquivs.has(r.code),
+    );
+    if (matchedMinorReq) {
+      push({
+        label:
+          matchedMinorReq.code === code
+            ? `Minor required (${minorProgram.name})`
+            : `Minor required (${minorProgram.name}: satisfies ${matchedMinorReq.code})`,
+        tier: "minor-core",
+        active: isConsumedByMinorCore,
+      });
+    }
+    for (const group of minorModel.chooseGroups) {
+      if (!group.options.some((opt) => codeWithEquivs.has(opt))) continue;
+      const optionSummary =
+        group.options.length <= 3
+          ? group.options.join(" / ")
+          : `${group.label.replace(/:$/, "").toLowerCase()} ${group.options.length} options`;
+      push({
+        label: `Minor choice (${minorProgram.name}: ${optionSummary})`,
+        tier: "minor-core",
+        active: isConsumedByMinorCore && !matchedMinorReq,
+      });
+    }
+  }
+
+  const collectMatchingBuckets = (
+    pool: ElectiveBucket[],
+    tier: CountsTowardTier,
+    genericOnly: boolean,
+    labelPrefix = "",
+    isBucketActive?: (bucket: ElectiveBucket) => boolean,
+  ) => {
+    for (const bucket of pool) {
+      const generic = isGenericAnyMatch(bucket.match);
+      if (generic !== genericOnly) continue;
+      if (matchesBucket(course, bucket.match)) {
+        push({
+          label: `${labelPrefix}${bucket.label}`,
+          tier,
+          active: isBucketActive ? isBucketActive(bucket) : false,
+        });
+      }
+      for (const sub of bucket.subs) {
+        const subGeneric = isGenericAnyMatch(sub.match);
+        if (subGeneric !== genericOnly) continue;
+        if (matchesBucket(course, sub.match)) {
+          push({
+            label: `${labelPrefix}${sub.label}`,
+            tier,
+            active: isBucketActive ? isBucketActive(bucket) : false,
+          });
+        }
+      }
+    }
+  };
+
+  // 4. Specific Major Elective Buckets & Choice-Group Elective Fallbacks
+  if (model) {
+    collectMatchingBuckets(
+      model.buckets,
+      "major-elective",
+      false,
+      "",
+      (b) => Boolean(majorBucketAllocs?.get(b.key)?.assignedCodes.includes(code)),
+    );
+
+    for (const group of model.chooseGroups) {
+      if (
+        group.elective &&
+        !group.options.some((opt) => codeWithEquivs.has(opt)) &&
+        matchesBucket(course, group.elective.match)
+      ) {
+        push({
+          label: group.elective.label,
+          tier: "major-elective",
+          active: isConsumedByMajorCore && !matchedReq,
+        });
+      }
+    }
+
+    // 5. Constrained Breadth Buckets
+    collectMatchingBuckets(
+      model.breadth,
+      "breadth",
+      false,
+      "",
+      (b) => breadthAllocs?.assignedBucketOf.get(code) === b.key,
+    );
+  }
+
+  // 6. Minor Elective Buckets (constrained)
+  if (minorModel) {
+    collectMatchingBuckets(
+      [...minorModel.buckets, ...minorModel.breadth],
+      "minor-elective",
+      false,
+      "Minor: ",
+      (b) => Boolean(minorBucketAllocs?.get(b.key)?.assignedCodes.includes(code)),
+    );
+  }
+
+  // 7. Generic / Open Electives (e.g. "Any elective") last
+  if (model) {
+    collectMatchingBuckets(
+      model.buckets,
+      "breadth",
+      true,
+      "",
+      (b) => Boolean(majorBucketAllocs?.get(b.key)?.assignedCodes.includes(code)),
+    );
+    collectMatchingBuckets(
+      model.breadth,
+      "breadth",
+      true,
+      "",
+      (b) => breadthAllocs?.assignedBucketOf.get(code) === b.key,
+    );
+  }
+
+  return entries;
 }
 
 function CourseDetailsModal({
@@ -3457,6 +3778,8 @@ function CourseDetailsModal({
   equivMap,
   customs,
   model,
+  minorProgram,
+  minorModel,
   onClose,
   onRemove,
 }: {
@@ -3464,11 +3787,13 @@ function CourseDetailsModal({
   terms: PlannerTerm[];
   startYear: number;
   catalogMap: Map<string, CatalogCourse>;
-  offeringsMap: Map<string, import("@/lib/degree-types").OfferingEntry>;
-  offeringContext: import("@/lib/degree-types").OfferingContext;
+  offeringsMap: Map<string, OfferingEntry>;
+  offeringContext: OfferingContext;
   equivMap: Map<string, Set<string>>;
   customs: Map<string, CustomCourse>;
-  model: import("@/lib/degree-types").RequirementModel | null;
+  model: RequirementModel | null;
+  minorProgram: DegreeProgramDetail | null;
+  minorModel: RequirementModel | null;
   onClose: () => void;
   onRemove: () => void;
 }) {
@@ -3496,12 +3821,24 @@ function CourseDetailsModal({
     academicBaseYear,
     context: offeringContext,
   });
-  const buckets = course ? matchingBuckets(course, model) : [];
+  const countsToward = course
+    ? computeCountsTowardEntries({
+        code: selectedCourse.code,
+        course,
+        model,
+        minorModel,
+        minorProgram,
+        equivMap,
+        terms,
+        catalogMap,
+        customs,
+      })
+    : [];
 
   return (
     <div
       onClick={onClose}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[1300] flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm"
     >
       <div
         onClick={(e) => e.stopPropagation()}
@@ -3533,7 +3870,7 @@ function CourseDetailsModal({
               )}
             </div>
             <h3 className="mt-1.5 text-lg font-semibold text-slate-900 dark:text-slate-100">
-              {course?.title ?? "Unknown course"}
+              {displayCourseTitle(course)}
             </h3>
             {course &&
               !("custom" in course) &&
@@ -3601,14 +3938,39 @@ function CourseDetailsModal({
             </div>
           )}
 
-          {buckets.length > 0 && (
-            <div className="flex justify-between gap-4">
-              <span className="shrink-0 text-slate-500 dark:text-slate-400">
+          {countsToward.length > 0 && (
+            <div className="flex items-start justify-between gap-4">
+              <span className="shrink-0 pt-0.5 text-slate-500 dark:text-slate-400">
                 Counts toward
               </span>
-              <span className="text-right text-slate-700 dark:text-slate-300">
-                {buckets.join(", ")}
-              </span>
+              <div className="flex flex-wrap justify-end gap-1.5">
+                {countsToward.map((entry) => {
+                  const badgeClass =
+                    entry.tier === "major-core"
+                      ? "border-sky-200/90 bg-sky-50/90 font-semibold text-sky-800 dark:border-sky-800/80 dark:bg-sky-950/60 dark:text-sky-200"
+                      : entry.tier === "minor-core"
+                        ? "border-violet-200/90 bg-violet-50/90 font-semibold text-violet-800 dark:border-violet-800/80 dark:bg-violet-950/60 dark:text-violet-200"
+                        : entry.tier === "major-elective"
+                          ? "border-emerald-200/80 bg-emerald-50/75 font-medium text-emerald-800 dark:border-emerald-800/70 dark:bg-emerald-950/50 dark:text-emerald-300"
+                          : entry.tier === "minor-elective"
+                            ? "border-violet-200/70 bg-violet-50/50 text-violet-700 dark:border-violet-800/60 dark:bg-violet-950/35 dark:text-violet-300"
+                            : "border-slate-200/90 bg-slate-50/90 text-slate-700 dark:border-slate-700/80 dark:bg-slate-800/80 dark:text-slate-300";
+
+                  return (
+                    <span
+                      key={entry.label}
+                      title={
+                        entry.active
+                          ? "Actively satisfies this requirement in your current plan"
+                          : "Eligible requirement bucket for this course"
+                      }
+                      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] ${badgeClass}`}
+                    >
+                      {entry.label}
+                    </span>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>

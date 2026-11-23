@@ -162,6 +162,12 @@ export function BookableRoomsPanel({
     return list;
   }, [isOpen, data, currentDay, currentSlotStart, currentDuration, getRoomStatus]);
 
+  const totalCount = entries.length;
+  const freeCount = useMemo(
+    () => entries.reduce((acc, item) => acc + (item.isAvailable ? 1 : 0), 0),
+    [entries],
+  );
+
   const filteredEntries = useMemo(() => {
     return onlyFree ? entries.filter((item) => item.isAvailable) : entries;
   }, [entries, onlyFree]);
@@ -174,16 +180,19 @@ export function BookableRoomsPanel({
       onMouseDown={(e) => e.stopPropagation()}
       onTouchStart={(e) => e.stopPropagation()}
       onWheel={(e) => e.stopPropagation()}
-      className="absolute left-2.5 right-2.5 top-2.5 z-[1040] flex max-h-[68dvh] flex-col overflow-hidden rounded-2xl border border-slate-200/95 bg-white/98 shadow-2xl backdrop-blur-md sm:left-4 sm:right-auto sm:top-4 sm:w-[360px] dark:border-zinc-700 dark:bg-zinc-900/98 dark:text-zinc-100"
+      className="absolute left-2.5 right-2.5 top-2.5 z-[1040] flex max-h-[min(68dvh,calc(100%-4.5rem))] flex-col overflow-hidden rounded-2xl border border-slate-200/95 bg-white/98 shadow-2xl backdrop-blur-md sm:left-4 sm:right-auto sm:top-4 sm:w-[360px] dark:border-zinc-700 dark:bg-zinc-900/98 dark:text-zinc-100"
     >
       <div className="flex items-center justify-between gap-2 border-b border-slate-200 px-3.5 py-2.5 dark:border-zinc-800">
-        <div>
+        <div className="min-w-0">
           <h2 className="text-xs font-bold text-slate-900 dark:text-zinc-100">
-            Bookable Rooms ({filteredEntries.length})
+            Bookable Rooms
           </h2>
+          <p className="text-[11px] font-medium tabular-nums text-slate-600 dark:text-zinc-400">
+            {freeCount} free now &middot; {totalCount} total
+          </p>
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex shrink-0 items-center gap-1.5">
           <div className="flex rounded-lg border border-slate-200 bg-slate-100 p-0.5 text-[11px] dark:border-zinc-700 dark:bg-zinc-800">
             <button
               type="button"

@@ -4,19 +4,14 @@ import type { User } from "@supabase/supabase-js";
 import Link from "next/link";
 import React, { useEffect, useState } from "react";
 
-import { AuthButton } from "@/components/auth-button";
 import { ClassicPortalView } from "@/app/_components/classic-portal-view";
 import {
   GoogleLogoIcon,
-  GoogleMeetIcon,
-  GoogleServiceIcon,
   GoogleShortcutsModal,
 } from "@/app/_components/google-shortcuts-modal";
 import {
   EMPTY_GOOGLE_STATE,
-  GOOGLE_SERVICES,
   loadGoogleShortcutsState,
-  normalizeMeetUrl,
   saveGoogleShortcutsState,
   type GoogleShortcutsState,
 } from "@/lib/google-shortcuts";
@@ -45,10 +40,6 @@ import {
   type StudentProfileWithPrograms,
 } from "@/lib/student-courses";
 import { createClient } from "@/lib/supabase/client";
-
-type HomeTheme = "stacked" | "classic";
-
-const HOME_THEME_STORAGE_KEY = "better-otu:home-theme:v1";
 
 interface PortalDashboardProps {
   termLabel: string;
@@ -126,16 +117,6 @@ function normalizeUrl(raw: string): string {
   return `https://${trimmed}`;
 }
 
-function getInitials(label: string): string {
-  const cleaned = label.trim();
-  if (!cleaned) return "?";
-  const words = cleaned.split(/\s+/);
-  if (words.length >= 2) {
-    return `${words[0][0] ?? ""}${words[1][0] ?? ""}`.toUpperCase();
-  }
-  return cleaned.slice(0, 3).toUpperCase();
-}
-
 function computeDegreeProgress(
   plan: DegreePlanRecord | null,
   nonStandardCredits?: Record<string, number>,
@@ -183,19 +164,17 @@ export function PortalDashboard({
   footer,
   nonStandardCredits,
 }: PortalDashboardProps) {
-  const [homeTheme, setHomeTheme] = useState<HomeTheme>("stacked");
   const [firstName, setFirstName] = useState<string | null>(null);
   const [profile, setProfile] = useState<StudentProfileWithPrograms | null>(null);
   const [academicStartYear, setAcademicStartYear] = useState<number>(DEFAULT_START_YEAR);
   const [savedCourseCodes, setSavedCourseCodes] = useState<string[]>([]);
   const [latestPlan, setLatestPlan] = useState<DegreePlanRecord | null>(null);
 
-  // Live available rooms for Card 3 right compartment & Classic Campus Pulse
-  const [nowLabel, setNowLabel] = useState<string | null>(null);
+  // Live Toronto clock & available rooms shared between Campus Map card and Campus Pulse
   const [liveTimeLabel, setLiveTimeLabel] = useState<string | null>(null);
   const [freeRoomsTotal, setFreeRoomsTotal] = useState<number | null>(null);
 
-  // Custom circular shortcuts for "+" button & Google Workspace shortcuts
+  // Custom shortcuts & Google Workspace shortcuts
   const [customShortcuts, setCustomShortcuts] = useState<CustomShortcut[]>([]);
   const [isAddShortcutOpen, setIsAddShortcutOpen] = useState(false);
   const [shortcutName, setShortcutName] = useState("");
@@ -203,13 +182,9 @@ export function PortalDashboard({
   const [googleShortcuts, setGoogleShortcuts] = useState<GoogleShortcutsState>(EMPTY_GOOGLE_STATE);
   const [isGoogleModalOpen, setIsGoogleModalOpen] = useState(false);
 
-  // Load saved home theme, custom shortcuts, and Google shortcuts from localStorage
+  // Load saved custom shortcuts and Google shortcuts from localStorage
   useEffect(() => {
     try {
-      const savedTheme = window.localStorage.getItem(HOME_THEME_STORAGE_KEY);
-      if (savedTheme === "stacked" || savedTheme === "classic") {
-        queueMicrotask(() => setHomeTheme(savedTheme));
-      }
       const loadedGoogle = loadGoogleShortcutsState();
       if (loadedGoogle.accounts.length > 0 || loadedGoogle.meetLinks.length > 0) {
         queueMicrotask(() => setGoogleShortcuts(loadedGoogle));
@@ -235,7 +210,7 @@ export function PortalDashboard({
     }
   }, []);
 
-  // Client-side Toronto clock for Classic Campus Pulse strip (Next 16 prerender-safe)
+  // Shared client-side Toronto clock for Campus Map card & Campus Pulse (Next 16 prerender-safe)
   useEffect(() => {
     const updateClock = () => {
       const { date, minutes } = getTorontoNowParts(new Date());
@@ -244,9 +219,16 @@ export function PortalDashboard({
         `${DAY_SHORT[dayIdx]}, ${formatShortIsoDate(date)} · ${formatMinutesToClock(minutes)}`,
       );
     };
+    const handleVisibilityChange = () => {
+      if (!document.hidden) updateClock();
+    };
     queueMicrotask(updateClock);
-    const timer = window.setInterval(updateClock, 30_000);
-    return () => window.clearInterval(timer);
+    const timer = window.setInterval(updateClock, 15_000);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, []);
 
   // Load signed-in user profile, saved schedule courses, and latest degree plan
@@ -328,16 +310,13 @@ export function PortalDashboard({
     };
   }, []);
 
-  // Fetch live currently available rooms for the Map card right compartment
+  // Fetch live currently available rooms for Campus Map card & Campus Pulse
   useEffect(() => {
     const controller = new AbortController();
     const nowState = getDefaultCampusMapState(new Date());
 
     queueMicrotask(() => {
       setAcademicStartYear(getCurrentAcademicStartYear());
-      setNowLabel(
-        `${DAY_SHORT[nowState.dayIndex]}, ${formatShortIsoDate(nowState.date)} · ${formatMinutesToClock(nowState.slotStart)}`,
-      );
     });
 
     async function loadLiveRooms() {
@@ -441,81 +420,6 @@ export function PortalDashboard({
     saveGoogleShortcutsState(next);
   };
 
-  const handleSelectTheme = (nextTheme: HomeTheme) => {
-    setHomeTheme(nextTheme);
-    try {
-      window.localStorage.setItem(HOME_THEME_STORAGE_KEY, nextTheme);
-    } catch {
-      // Ignore storage errors
-    }
-  };
-
-  const themeToggle = (
-    <div
-      role="radiogroup"
-      aria-label="Home layout theme"
-      className="inline-flex items-center rounded-xl border border-slate-200/90 bg-white/90 p-0.5 shadow-2xs dark:border-slate-800 dark:bg-slate-900/90"
-    >
-      <button
-        type="button"
-        role="radio"
-        aria-checked={homeTheme === "stacked"}
-        onClick={() => handleSelectTheme("stacked")}
-        className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-[#003C71]/40 focus-visible:outline-none ${
-          homeTheme === "stacked"
-            ? "bg-[#003C71] text-white dark:bg-sky-500 dark:text-slate-950"
-            : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
-        }`}
-      >
-        <svg
-          className="h-3.5 w-3.5"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <rect width="18" height="5" x="3" y="4" rx="1.5" />
-          <rect width="18" height="5" x="3" y="10" rx="1.5" />
-          <rect width="18" height="5" x="3" y="16" rx="1.5" />
-        </svg>
-        <span>Stacked</span>
-      </button>
-
-      <button
-        type="button"
-        role="radio"
-        aria-checked={homeTheme === "classic"}
-        onClick={() => handleSelectTheme("classic")}
-        className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors focus-visible:ring-2 focus-visible:ring-[#003C71]/40 focus-visible:outline-none ${
-          homeTheme === "classic"
-            ? "bg-[#003C71] text-white dark:bg-sky-500 dark:text-slate-950"
-            : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
-        }`}
-      >
-        <svg
-          className="h-3.5 w-3.5"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <rect width="5" height="7" x="3" y="4" rx="1" />
-          <rect width="5" height="7" x="9.5" y="4" rx="1" />
-          <rect width="5" height="7" x="16" y="4" rx="1" />
-          <rect width="10" height="7" x="3" y="13" rx="1" />
-          <rect width="6" height="7" x="15" y="13" rx="1" />
-        </svg>
-        <span>Classic</span>
-      </button>
-    </div>
-  );
-
   const degreeProgress = computeDegreeProgress(latestPlan, nonStandardCredits);
   const visibleCourseCodes = savedCourseCodes.slice(0, 4);
   const yearLabel = formatYearOfStudy(profile?.year_of_study);
@@ -531,36 +435,21 @@ export function PortalDashboard({
   );
 
   return (
-    <main
-      className={`relative flex min-h-screen flex-1 flex-col overflow-x-clip font-sans text-slate-900 dark:text-slate-100 ${
-        homeTheme === "classic"
-          ? "bg-[#F8FAFC] dark:bg-[#070B14]"
-          : "bg-[#F8FAFD] dark:bg-[#090D16]"
-      }`}
-    >
-      {homeTheme === "classic" ? (
-        <>
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-0 bg-[radial-gradient(rgba(0,60,113,0.1)_1px,transparent_1px)] [background-size:22px_22px] [mask-image:radial-gradient(ellipse_85%_75%_at_50%_15%,#000_60%,transparent_100%)] dark:bg-[radial-gradient(rgba(148,163,184,0.14)_1px,transparent_1px)]"
-          />
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-x-0 top-0 h-[440px] bg-[radial-gradient(ellipse_62%_58%_at_22%_-6%,rgba(0,60,113,0.15),transparent_70%),radial-gradient(ellipse_50%_46%_at_84%_-8%,rgba(231,93,42,0.13),transparent_68%)] dark:bg-[radial-gradient(ellipse_62%_58%_at_22%_-6%,rgba(0,60,113,0.45),transparent_70%),radial-gradient(ellipse_50%_46%_at_84%_-8%,rgba(231,93,42,0.22),transparent_68%)]"
-          />
-        </>
-      ) : (
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-x-0 top-0 h-80 bg-[radial-gradient(ellipse_70%_60%_at_50%_-10%,rgba(191,219,254,0.45),transparent_72%)] dark:bg-[radial-gradient(ellipse_70%_60%_at_50%_-10%,rgba(0,60,113,0.35),transparent_72%)]"
-        />
-      )}
+    <main className="relative flex min-h-[calc(100dvh-var(--site-nav-height,2.75rem))] flex-1 flex-col overflow-x-clip bg-[#F8FAFC] font-sans text-slate-900 dark:bg-[#070B14] dark:text-slate-100">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0 bg-[radial-gradient(rgba(0,60,113,0.1)_1px,transparent_1px)] [background-size:22px_22px] [mask-image:radial-gradient(ellipse_85%_75%_at_50%_15%,#000_60%,transparent_100%)] dark:bg-[radial-gradient(rgba(148,163,184,0.14)_1px,transparent_1px)]"
+      />
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-x-0 top-0 h-[440px] bg-[radial-gradient(ellipse_62%_58%_at_22%_-6%,rgba(0,60,113,0.15),transparent_70%),radial-gradient(ellipse_50%_46%_at_84%_-8%,rgba(231,93,42,0.13),transparent_68%)] dark:bg-[radial-gradient(ellipse_62%_58%_at_22%_-6%,rgba(0,60,113,0.45),transparent_70%),radial-gradient(ellipse_50%_46%_at_84%_-8%,rgba(231,93,42,0.22),transparent_68%)]"
+      />
 
       <div className="relative z-10 flex flex-1 flex-col">
         <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-5 py-7 sm:px-8 sm:py-10">
-          {/* Shared Top Header: Greeting on left, Account & Theme switch on top-right */}
-          <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
-            <div className="min-w-0 flex-1">
+          {/* Top Header: Greeting & Academic Summary */}
+          <header>
+            <div className="min-w-0">
               <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl dark:text-white">
                 {firstName ? `Welcome back, ${firstName}` : "Welcome to Better OTU"}
               </h1>
@@ -602,416 +491,27 @@ export function PortalDashboard({
                 </p>
               ) : null}
             </div>
-
-            <div className="flex shrink-0 flex-col items-end gap-2 self-end sm:self-auto">
-              <AuthButton />
-              {themeToggle}
-            </div>
           </header>
 
-          {homeTheme === "classic" ? (
-            <ClassicPortalView
-              termLabel={termLabel}
-              profile={profile}
-              profileDegreeName={profileDegreeName}
-              profileMinorName={profileMinorName}
-              derivedProfileStartYear={derivedProfileStartYear}
-              savedCourseCodes={savedCourseCodes}
-              visibleCourseCodes={visibleCourseCodes}
-              degreeProgress={degreeProgress}
-              latestPlan={latestPlan}
-              nowLabel={nowLabel}
-              liveTimeLabel={liveTimeLabel}
-              freeRoomsTotal={freeRoomsTotal}
-              quickBuildings={QUICK_BUILDINGS}
-              defaultShortcuts={DEFAULT_SHORTCUTS}
-              googleShortcuts={googleShortcuts}
-              customShortcuts={customShortcuts}
-              onOpenAddShortcut={() => setIsAddShortcutOpen(true)}
-              onRemoveCustomShortcut={handleRemoveShortcut}
-              onOpenGoogleModal={() => setIsGoogleModalOpen(true)}
-              onRemoveMeetShortcut={handleRemoveMeetShortcut}
-            />
-          ) : (
-            <>
-
-      {/* Main Centered Stack: 3 Horizontal Split Cards + 4 Circular Shortcuts */}
-      <div className="mx-auto my-auto flex w-full max-w-3xl flex-col items-center py-8 sm:py-12">
-        <div className="w-full space-y-5">
-          {/* CARD 1: Course Schedule | Schedule & Timetable Preview */}
-          <Link
-            href="/course-schedules"
-            className="group flex flex-col overflow-hidden rounded-[26px] border border-[#BFD7F2] bg-[#DCEBFA]/75 shadow-[0_6px_24px_-12px_rgba(0,60,113,0.18)] transition-all duration-200 hover:-translate-y-0.5 hover:border-[#003C71]/40 hover:bg-[#D4E6F9]/90 hover:shadow-[0_14px_32px_-14px_rgba(0,60,113,0.26)] sm:min-h-[126px] sm:flex-row dark:border-slate-700/80 dark:bg-slate-900/85 dark:hover:border-sky-400/50 dark:hover:bg-slate-900"
-          >
-            {/* Left Section: Title */}
-            <div className="flex shrink-0 flex-col items-center justify-center border-b border-[#B7D1EE] px-6 py-5 text-center sm:w-[32%] sm:rounded-r-[26px] sm:border-b-0 sm:border-r dark:border-slate-700/80">
-              <div className="mb-1.5 flex h-9 w-9 items-center justify-center rounded-xl bg-white/80 text-[#003C71] shadow-2xs ring-1 ring-[#003C71]/10 transition-transform duration-200 group-hover:scale-105 dark:bg-sky-500/15 dark:text-sky-300 dark:ring-sky-400/20">
-                <svg className="h-4.5 w-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <rect width="18" height="18" x="3" y="4" rx="2" />
-                  <path d="M16 2v4M8 2v4M3 10h18" />
-                </svg>
-              </div>
-              <span className="text-[15px] font-bold tracking-tight text-slate-900 dark:text-white">
-                Course Schedule
-              </span>
-              <span className="mt-0.5 text-[11px] font-medium text-[#003C71]/80 dark:text-sky-300/80">
-                {termLabel}
-              </span>
-            </div>
-
-            {/* Right Section: Preview */}
-            <div className="flex flex-1 flex-col items-center justify-center px-6 py-5 text-center sm:px-8">
-              {visibleCourseCodes.length > 0 ? (
-                <>
-                  <p className="text-xs font-semibold uppercase tracking-wider text-[#003C71]/80 dark:text-sky-300">
-                    Your Saved Courses ({savedCourseCodes.length})
-                  </p>
-                  <div className="mt-2.5 flex flex-wrap items-center justify-center gap-1.5">
-                    {visibleCourseCodes.map((code) => (
-                      <span
-                        key={code}
-                        className="rounded-full border border-white/80 bg-white/85 px-2.5 py-1 text-xs font-semibold text-slate-800 shadow-2xs dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-                      >
-                        {code}
-                      </span>
-                    ))}
-                    {savedCourseCodes.length > 4 && (
-                      <span className="rounded-full bg-[#003C71]/10 px-2.5 py-1 text-xs font-semibold text-[#003C71] dark:bg-sky-500/20 dark:text-sky-200">
-                        +{savedCourseCodes.length - 4} more
-                      </span>
-                    )}
-                  </div>
-                </>
-              ) : (
-                <>
-                  <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                    Bi-weekly timetable &amp; section lookup
-                  </p>
-                  <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
-                    View Week 1 &amp; Week 2 classes, check rooms, and add {termLabel} CRNs
-                  </p>
-                </>
-              )}
-            </div>
-          </Link>
-
-          {/* CARD 2: Degree Planner | Progress Bar & Roadmap */}
-          <Link
-            href="/degree-planner"
-            className="group flex flex-col overflow-hidden rounded-[26px] border border-[#BFD7F2] bg-[#DCEBFA]/75 shadow-[0_6px_24px_-12px_rgba(0,60,113,0.18)] transition-all duration-200 hover:-translate-y-0.5 hover:border-[#003C71]/40 hover:bg-[#D4E6F9]/90 hover:shadow-[0_14px_32px_-14px_rgba(0,60,113,0.26)] sm:min-h-[126px] sm:flex-row dark:border-slate-700/80 dark:bg-slate-900/85 dark:hover:border-sky-400/50 dark:hover:bg-slate-900"
-          >
-            {/* Left Section: Title */}
-            <div className="flex shrink-0 flex-col items-center justify-center border-b border-[#B7D1EE] px-6 py-5 text-center sm:w-[32%] sm:rounded-r-[26px] sm:border-b-0 sm:border-r dark:border-slate-700/80">
-              <div className="mb-1.5 flex h-9 w-9 items-center justify-center rounded-xl bg-white/80 text-[#E75D2A] shadow-2xs ring-1 ring-[#E75D2A]/15 transition-transform duration-200 group-hover:scale-105 dark:bg-[#E75D2A]/20 dark:text-[#FF8A5C] dark:ring-[#E75D2A]/30">
-                <svg className="h-4.5 w-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M22 10v6M2 10l10-5 10 5-10 5z" />
-                  <path d="M6 12v5c3 3 9 3 12 0v-5" />
-                </svg>
-              </div>
-              <span className="text-[15px] font-bold tracking-tight text-slate-900 dark:text-white">
-                Degree Planner
-              </span>
-              <span className="mt-0.5 text-[11px] font-medium text-slate-600 dark:text-slate-400">
-                Program Roadmap
-              </span>
-            </div>
-
-            {/* Right Section: Progress Bar & Degree Requirements */}
-            <div className="flex flex-1 flex-col items-center justify-center px-6 py-5 text-center sm:px-8">
-              {degreeProgress && degreeProgress.plannedCourses > 0 ? (
-                <div className="w-full max-w-sm">
-                  <div className="flex items-center justify-between gap-2 text-xs">
-                    <span className="truncate font-semibold text-slate-900 dark:text-slate-100">
-                      {degreeProgress.title}
-                    </span>
-                    <span className="shrink-0 font-mono font-bold text-[#003C71] dark:text-sky-300">
-                      {degreeProgress.plannedCredits} / 120 cr
-                    </span>
-                  </div>
-                  <div className="mt-2 h-2.5 w-full overflow-hidden rounded-full bg-white/90 ring-1 ring-[#003C71]/10 dark:bg-slate-800 dark:ring-slate-700">
-                    <div
-                      className="h-full rounded-full bg-gradient-to-r from-[#003C71] to-[#E75D2A] transition-all duration-500"
-                      style={{ width: `${Math.max(degreeProgress.percent, 6)}%` }}
-                    />
-                  </div>
-                  <p className="mt-1.5 text-[11px] font-medium text-slate-600 dark:text-slate-400">
-                    {degreeProgress.plannedCourses} courses planned &bull; {degreeProgress.percent}% toward 120-credit degree
-                    {profileMinorName ? ` · Minor: ${profileMinorName}` : ""}
-                  </p>
-                </div>
-              ) : latestPlan ? (
-                <div className="w-full max-w-sm">
-                  <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
-                    {latestPlan.degree_name ||
-                      profileDegreeName ||
-                      "Saved Degree Plan"}
-                  </p>
-                  {profileMinorName && (
-                    <p className="mt-0.5 truncate text-xs font-medium text-[#003C71] dark:text-sky-300">
-                      Minor: {profileMinorName}
-                    </p>
-                  )}
-                  <p className="mt-1.5 text-xs text-slate-600 dark:text-slate-400">
-                    Start {latestPlan.start_year ?? derivedProfileStartYear}{" "}
-                    &bull; Open planner to load your roadmap
-                  </p>
-                </div>
-              ) : profileDegreeName ? (
-                <div className="w-full max-w-sm">
-                  <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
-                    {profileDegreeName}
-                  </p>
-                  {profileMinorName && (
-                    <p className="mt-0.5 truncate text-xs font-medium text-[#003C71] dark:text-sky-300">
-                      Minor: {profileMinorName}
-                    </p>
-                  )}
-                  <p className="mt-1.5 text-xs text-slate-600 dark:text-slate-400">
-                    Start {derivedProfileStartYear} &bull; Ready in Degree Planner
-                  </p>
-                </div>
-              ) : (
-                <div className="w-full max-w-sm">
-                  <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-                    Progress bar &amp; degree requirements
-                  </p>
-                  <div className="mt-2.5 h-2 w-full overflow-hidden rounded-full bg-white/85 ring-1 ring-[#003C71]/10 dark:bg-slate-800">
-                    <div className="h-full w-2/5 rounded-full bg-gradient-to-r from-[#003C71] to-[#E75D2A]" />
-                  </div>
-                  <p className="mt-1.5 text-xs text-slate-600 dark:text-slate-400">
-                    Track prerequisites, credits, and multi-year course pathways
-                  </p>
-                </div>
-              )}
-            </div>
-          </Link>
-
-          {/* CARD 3: 3-Part Map Card (Map | Find Library Room | Building Free Rooms) */}
-          <div className="flex flex-col overflow-hidden rounded-[26px] border border-[#BFD7F2] bg-[#DCEBFA]/75 shadow-[0_6px_24px_-12px_rgba(0,60,113,0.18)] transition-all duration-200 hover:border-[#003C71]/40 hover:shadow-[0_14px_32px_-14px_rgba(0,60,113,0.26)] sm:min-h-[134px] sm:flex-row dark:border-slate-700/80 dark:bg-slate-900/85 dark:hover:border-sky-400/50">
-            {/* Part 1 (Left): Map (North Campus) */}
-            <Link
-              href="/campus-map?venue=north"
-              className="group flex shrink-0 flex-col items-center justify-center border-b border-[#B7D1EE] px-5 py-5 text-center transition-colors hover:bg-white/40 sm:w-[27%] sm:border-b-0 sm:border-r dark:border-slate-700/80 dark:hover:bg-slate-800/60"
-            >
-              <div className="mb-1.5 flex h-9 w-9 items-center justify-center rounded-xl bg-white/80 text-emerald-700 shadow-2xs ring-1 ring-emerald-500/15 transition-transform duration-200 group-hover:scale-105 dark:bg-emerald-500/15 dark:text-emerald-300 dark:ring-emerald-400/20">
-                <svg className="h-4.5 w-4.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z" />
-                  <circle cx="12" cy="10" r="3" />
-                </svg>
-              </div>
-              <span className="text-[15px] font-bold tracking-tight text-slate-900 dark:text-white">
-                Map
-              </span>
-              <span className="mt-0.5 text-[11px] font-medium text-slate-600 dark:text-slate-400">
-                North Campus
-              </span>
-            </Link>
-
-            {/* Part 2 (Middle): Find a library room */}
-            <Link
-              href="/campus-map?building=LIB&filter=available&now=1"
-              className="group flex flex-1 flex-col items-center justify-center border-b border-[#B7D1EE] px-5 py-5 text-center transition-colors hover:bg-white/40 sm:border-b-0 dark:border-slate-700/80 dark:hover:bg-slate-800/60"
-            >
-              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-[10px] font-bold text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300">
-                <span className="relative flex h-1.5 w-1.5">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                  <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                </span>
-                Live Now
-              </span>
-              <p className="mt-2 text-sm font-bold leading-snug text-slate-900 group-hover:text-[#003C71] dark:text-white dark:group-hover:text-sky-300">
-                Find a library room
-              </p>
-              {nowLabel && (
-                <p className="mt-1 font-mono text-[11px] text-slate-600 dark:text-slate-400">
-                  {nowLabel}
-                </p>
-              )}
-            </Link>
-
-            {/* Part 3 (Right): Building Free Rooms Curved Pill Compartment */}
-            <div className="flex shrink-0 flex-col items-center justify-center bg-white/55 px-4 py-4 text-center sm:w-[37%] sm:rounded-l-[26px] sm:border-l sm:border-[#B7D1EE] dark:bg-slate-800/65 dark:sm:border-slate-700/80">
-              <div className="flex items-center gap-1.5 text-[11px] font-bold text-slate-800 dark:text-slate-100">
-                <span>Free Rooms Right Now</span>
-                {freeRoomsTotal !== null && (
-                  <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 font-mono text-[10px] font-bold text-emerald-800 dark:bg-emerald-950/80 dark:text-emerald-300">
-                    {freeRoomsTotal}
-                  </span>
-                )}
-              </div>
-
-              <div className="mt-2 flex flex-wrap justify-center gap-1.5">
-                {QUICK_BUILDINGS.map((bldg) => (
-                  <Link
-                    key={bldg}
-                    href={`/campus-map?building=${bldg}&filter=available&now=1`}
-                    className="rounded-full border border-emerald-200 bg-white px-2.5 py-0.5 font-mono text-[11px] font-semibold text-slate-800 shadow-2xs transition hover:border-emerald-500 hover:bg-emerald-50 hover:text-emerald-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-emerald-500 dark:hover:text-emerald-300"
-                  >
-                    {bldg}
-                  </Link>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* BOTTOM ROW: Circular Quick-Launch Shortcut Buttons (Canvas, MyOTU, Library, + Custom) */}
-        <div
-          aria-label="Quick shortcuts"
-          className="mt-9 flex flex-wrap items-start justify-center gap-6 sm:gap-8"
-        >
-          {DEFAULT_SHORTCUTS.map((item) => (
-            <a
-              key={item.id}
-              href={item.href}
-              target="_blank"
-              rel="noopener noreferrer"
-              title={item.title}
-              className="group flex flex-col items-center gap-2"
-            >
-              <span className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border border-[#BFD7F2] bg-white shadow-xs transition-all duration-200 group-hover:-translate-y-1 group-hover:border-[#003C71]/45 group-hover:shadow-md dark:border-slate-700 dark:bg-slate-900 dark:group-hover:border-sky-400/60">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={item.imageUrl}
-                  alt={item.title}
-                  className="h-full w-full object-cover object-center"
-                />
-              </span>
-              <span className="text-xs font-semibold text-slate-700 transition-colors group-hover:text-[#003C71] dark:text-slate-300 dark:group-hover:text-sky-300">
-                {item.label}
-              </span>
-            </a>
-          ))}
-
-          {/* Google Workspace Service Shortcuts */}
-          {googleShortcuts.accounts.flatMap((acct) =>
-            GOOGLE_SERVICES.filter((svc) =>
-              acct.enabledServices.includes(svc.id),
-            ).map((svc) => {
-              const href = svc.buildUrl(acct.authIndex);
-              const showAccountTag = googleShortcuts.accounts.length > 1;
-              return (
-                <a
-                  key={`${acct.id}-${svc.id}`}
-                  href={href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title={`${svc.label} — ${acct.label} (u/${acct.authIndex})`}
-                  className="group relative flex flex-col items-center gap-2"
-                >
-                  <span className="flex h-16 w-16 items-center justify-center rounded-full border border-[#BFD7F2] bg-white shadow-xs transition-all duration-200 group-hover:-translate-y-1 group-hover:border-[#003C71]/45 group-hover:shadow-md dark:border-slate-700 dark:bg-slate-900 dark:group-hover:border-sky-400/60">
-                    <GoogleServiceIcon serviceId={svc.id} className="h-7 w-7" />
-                  </span>
-                  {showAccountTag && (
-                    <span className="absolute -bottom-0.5 right-0 rounded-full border border-slate-200 bg-white px-1.5 py-0.2 text-[9px] font-bold text-slate-700 shadow-2xs dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                      {acct.label}
-                    </span>
-                  )}
-                  <span className="max-w-[76px] truncate text-xs font-semibold text-slate-700 transition-colors group-hover:text-[#003C71] dark:text-slate-300 dark:group-hover:text-sky-300">
-                    {svc.shortLabel}
-                  </span>
-                </a>
-              );
-            }),
-          )}
-
-          {/* Google Meet Links (?authuser=x) */}
-          {googleShortcuts.meetLinks.map((meet) => {
-            const acct = googleShortcuts.accounts.find(
-              (a) => a.id === meet.accountId,
-            );
-            const href = normalizeMeetUrl(meet.url, acct?.authIndex ?? 0);
-            return (
-              <div key={meet.id} className="group relative flex flex-col items-center gap-2">
-                <a
-                  href={href}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title={`${meet.label} (${href})`}
-                  className="flex h-16 w-16 items-center justify-center rounded-full border border-emerald-200 bg-white shadow-xs transition-all duration-200 hover:-translate-y-1 hover:border-emerald-500/60 hover:shadow-md dark:border-slate-700 dark:bg-slate-900 dark:hover:border-emerald-400/60"
-                >
-                  <GoogleMeetIcon className="h-7 w-7" />
-                </a>
-                <button
-                  type="button"
-                  onClick={() => handleRemoveMeetShortcut(meet.id)}
-                  aria-label={`Remove ${meet.label} Meet shortcut`}
-                  title="Remove Meet shortcut"
-                  className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 bg-white text-[11px] font-bold text-slate-500 opacity-0 shadow-xs transition hover:bg-rose-50 hover:text-rose-600 group-hover:opacity-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-                >
-                  &times;
-                </button>
-                <span className="max-w-[76px] truncate text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  {meet.label}
-                </span>
-              </div>
-            );
-          })}
-
-          {/* User-Added Custom Circular Shortcuts */}
-          {customShortcuts.map((item) => (
-            <div key={item.id} className="group relative flex flex-col items-center gap-2">
-              <a
-                href={item.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                title={`${item.label} (${item.url})`}
-                className="flex h-16 w-16 items-center justify-center rounded-full border border-[#BFD7F2] bg-[#DCEBFA]/85 text-xs font-bold text-[#003C71] shadow-xs transition-all duration-200 hover:-translate-y-1 hover:border-[#003C71]/45 hover:bg-[#CFE3F8] hover:shadow-md dark:border-slate-700 dark:bg-slate-900 dark:text-sky-200 dark:hover:border-sky-400/60 dark:hover:bg-slate-800"
-              >
-                {getInitials(item.label)}
-              </a>
-              <button
-                type="button"
-                onClick={() => handleRemoveShortcut(item.id)}
-                aria-label={`Remove ${item.label} shortcut`}
-                title="Remove shortcut"
-                className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 bg-white text-[11px] font-bold text-slate-500 opacity-0 shadow-xs transition hover:bg-rose-50 hover:text-rose-600 group-hover:opacity-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-              >
-                &times;
-              </button>
-              <span className="max-w-[72px] truncate text-xs font-semibold text-slate-700 dark:text-slate-300">
-                {item.label}
-              </span>
-            </div>
-          ))}
-
-          {/* Google Setup / Manage Circle */}
-          <button
-            type="button"
-            onClick={() => setIsGoogleModalOpen(true)}
-            title={
-              googleShortcuts.accounts.length > 0
-                ? "Manage Google accounts, services & Meet links"
-                : "Add Google school & personal shortcuts"
-            }
-            className="group flex flex-col items-center gap-2"
-          >
-            <span className="flex h-16 w-16 items-center justify-center rounded-full border border-dashed border-[#9AC0EB] bg-white/85 shadow-xs transition-all duration-200 group-hover:-translate-y-1 group-hover:border-[#003C71]/50 group-hover:bg-white group-hover:shadow-md dark:border-slate-700 dark:bg-slate-900/80 dark:group-hover:border-sky-400/60 dark:group-hover:bg-slate-800">
-              <GoogleLogoIcon className="h-6.5 w-6.5" />
-            </span>
-            <span className="text-xs font-semibold text-slate-600 transition-colors group-hover:text-[#003C71] dark:text-slate-400 dark:group-hover:text-sky-300">
-              {googleShortcuts.accounts.length > 0 ? "Google" : "Add Google"}
-            </span>
-          </button>
-
-          {/* "+" Add Shortcut Circle */}
-          <button
-            type="button"
-            onClick={() => setIsAddShortcutOpen(true)}
-            title="Add custom shortcut"
-            className="group flex flex-col items-center gap-2"
-          >
-            <span className="flex h-16 w-16 items-center justify-center rounded-full border border-dashed border-[#9AC0EB] bg-[#DCEBFA]/55 text-2xl font-light text-[#003C71] transition-all duration-200 group-hover:-translate-y-1 group-hover:border-[#003C71]/50 group-hover:bg-[#DCEBFA] group-hover:shadow-md dark:border-slate-700 dark:bg-slate-900/70 dark:text-sky-300 dark:group-hover:border-sky-400/60 dark:group-hover:bg-slate-800">
-              +
-            </span>
-            <span className="text-xs font-semibold text-slate-500 transition-colors group-hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200">
-              Add
-            </span>
-          </button>
-        </div>
-      </div>
-            </>
-          )}
+          <ClassicPortalView
+            termLabel={termLabel}
+            profile={profile}
+            profileDegreeName={profileDegreeName}
+            profileMinorName={profileMinorName}
+            derivedProfileStartYear={derivedProfileStartYear}
+            degreeProgress={degreeProgress}
+            latestPlan={latestPlan}
+            liveTimeLabel={liveTimeLabel}
+            freeRoomsTotal={freeRoomsTotal}
+            quickBuildings={QUICK_BUILDINGS}
+            defaultShortcuts={DEFAULT_SHORTCUTS}
+            googleShortcuts={googleShortcuts}
+            customShortcuts={customShortcuts}
+            onOpenAddShortcut={() => setIsAddShortcutOpen(true)}
+            onRemoveCustomShortcut={handleRemoveShortcut}
+            onOpenGoogleModal={() => setIsGoogleModalOpen(true)}
+            onRemoveMeetShortcut={handleRemoveMeetShortcut}
+          />
         </div>
       </div>
 

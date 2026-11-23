@@ -19,14 +19,69 @@ import {
 import type {
   CatalogCourse,
   CustomCourse,
+  DegreeProgramDetail,
   DegreeSubject,
   OfferingContext,
   OfferingEntry,
   PickerState,
   PlannerTerm,
+  ProgramSummary,
   RequirementModel,
   TransferKind,
 } from "@/lib/degree-types";
+
+function isGraduateProgram(
+  program: ProgramSummary | DegreeProgramDetail | null | undefined,
+): boolean {
+  if (!program) return false;
+  const credentialFields = [
+    program.credential,
+    program.degree,
+    program.degree_abbrev,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  if (
+    /\b(master|masters|doctor|doctoral|ph\.?d|graduate|m\.?sc|m\.?eng|m\.?a\.?sc|m\.?ed|m\.?h\.?sc|mba)\b/i.test(
+      credentialFields,
+    )
+  ) {
+    return true;
+  }
+  return /\b(master of|doctor of|ph\.?d|graduate diploma|graduate certificate)\b/i.test(
+    program.name,
+  );
+}
+
+function isGraduateCourse(course: CatalogCourse): boolean {
+  return course.level >= 5000 || /\d{4}G$/i.test(course.code);
+}
+
+function getCourseDisplayTitle(course: Pick<CatalogCourse, "code" | "title">): {
+  title: string;
+  isFallback: boolean;
+} {
+  const trimmedTitle = course.title.trim();
+  const trimmedCode = course.code.trim();
+  if (
+    !trimmedTitle ||
+    trimmedTitle.toLowerCase() === trimmedCode.toLowerCase()
+  ) {
+    return {
+      title: "Catalog title unavailable (offering only)",
+      isFallback: true,
+    };
+  }
+  return { title: trimmedTitle, isFallback: false };
+}
+
+function coopVariantKey(course: Pick<CatalogCourse, "code" | "title">): string | null {
+  const m = course.code.trim().match(/^([A-Z]{2,6})\s+(\d{4})([CWU])$/i);
+  if (!m) return null;
+  const titleKey = course.title.trim().toLowerCase();
+  if (!titleKey || titleKey === course.code.trim().toLowerCase()) return null;
+  return `${m[1].toUpperCase()}:${m[2]}:${titleKey}`;
+}
 
 function matchesCourseQuery(course: CatalogCourse, rawQuery: string): boolean {
   const q = rawQuery.trim().toLowerCase();
@@ -44,6 +99,7 @@ function matchesCourseQuery(course: CatalogCourse, rawQuery: string): boolean {
 type CoursePickerModalProps = {
   picker: PickerState;
   initialTransferMode: boolean;
+  program?: ProgramSummary | DegreeProgramDetail | null;
   terms: PlannerTerm[];
   model: RequirementModel | null;
   catalogCourses: CatalogCourse[];
@@ -69,6 +125,7 @@ type CoursePickerModalProps = {
 export function CoursePickerModal({
   picker,
   initialTransferMode,
+  program,
   terms,
   model,
   catalogCourses,
@@ -228,13 +285,51 @@ export function CoursePickerModal({
     };
   }, [cxCode, cxTitle, cxCredits, cxSubject, cxLevel, subjectFaculty]);
 
+  const isUndergradProgram = useMemo(
+    () => !isGraduateProgram(program),
+    [program],
+  );
+
+  const visibleCatalogCourses = useMemo(
+    () =>
+      isUndergradProgram
+        ? catalogCourses.filter((c) => !isGraduateCourse(c))
+        : catalogCourses,
+    [catalogCourses, isUndergradProgram],
+  );
+
+  // Unlinked co-op/work-term code transitions (e.g. SCCO 0999U -> SCCO 0999C)
+  // have no `formerly_codes` link in catalog_courses; index active C/W successors.
+  const coopSuccessorByKey = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const c of visibleCatalogCourses) {
+      if (!/[CW]$/i.test(c.code.trim())) continue;
+      const key = coopVariantKey(c);
+      if (key && !map.has(key)) {
+        map.set(key, c.code);
+      }
+    }
+    return map;
+  }, [visibleCatalogCourses]);
+
   const equivCandidates = useMemo(() => {
     if (!initialTransferMode || transferKind !== "equivalent") return [];
+    const deduped = visibleCatalogCourses.filter((c) => {
+      if (!/U$/i.test(c.code.trim())) return true;
+      const key = coopVariantKey(c);
+      return !(key && coopSuccessorByKey.has(key));
+    });
     const list = txEquivQuery.trim()
-      ? catalogCourses.filter((c) => matchesCourseQuery(c, txEquivQuery))
-      : catalogCourses;
+      ? deduped.filter((c) => matchesCourseQuery(c, txEquivQuery))
+      : deduped;
     return list.slice(0, 40);
-  }, [initialTransferMode, transferKind, txEquivQuery, catalogCourses]);
+  }, [
+    initialTransferMode,
+    transferKind,
+    txEquivQuery,
+    visibleCatalogCourses,
+    coopSuccessorByKey,
+  ]);
 
   const transferDraft = useMemo<CustomCourse | null>(() => {
     const level = Number(txLevel) || 1000;
@@ -359,7 +454,7 @@ export function CoursePickerModal({
     if (!term) return [];
 
     const inThisTerm = new Set(term.slots.filter((s): s is string => Boolean(s)));
-    let rows = catalogCourses.filter((c) => !inThisTerm.has(c.code));
+    let rows = visibleCatalogCourses.filter((c) => !inThisTerm.has(c.code));
     if (filterOffered) {
       rows = rows.filter(
         (c) =>
@@ -391,10 +486,26 @@ export function CoursePickerModal({
           false,
       );
     }
+
+    const rowCodes = new Set(rows.map((r) => r.code));
+    rows = rows.filter((c) => {
+      if (!/U$/i.test(c.code.trim()) || placed.has(c.code)) return true;
+      const key = coopVariantKey(c);
+      const successor = key ? coopSuccessorByKey.get(key) : undefined;
+      if (!successor) return true;
+      return !(
+        placed.has(successor) ||
+        rowCodes.has(successor) ||
+        academicBaseYear >= 2026
+      );
+    });
+
     return rows;
   }, [
     term,
-    catalogCourses,
+    visibleCatalogCourses,
+    coopSuccessorByKey,
+    placed,
     filterOffered,
     filterTerm,
     filterBucket,
@@ -537,12 +648,12 @@ export function CoursePickerModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-slate-950/40 px-4 py-[6vh] backdrop-blur-xs"
+      className="fixed inset-0 z-[1300] flex items-start justify-center bg-slate-950/40 px-4 pt-[calc(var(--site-nav-height,2.75rem)+4vh)] pb-[4vh] backdrop-blur-xs"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="flex max-h-[84vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900">
+      <div className="flex max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-8vh)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900">
         {/* Header */}
         <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200/80 bg-gradient-to-r from-sky-50/70 via-white to-violet-50/60 px-5 py-3.5 dark:border-slate-800 dark:from-sky-950/30 dark:via-slate-900 dark:to-violet-950/30">
           <div className="min-w-0 flex-1">
@@ -763,14 +874,24 @@ export function CoursePickerModal({
             {transferKind === "equivalent" && (
               <div className="mt-3.5">
                 {txEquivCourse ? (
+                  (() => {
+                    const { title: equivTitle, isFallback: isEquivFallback } =
+                      getCourseDisplayTitle(txEquivCourse);
+                    return (
                   <div className="flex items-center justify-between gap-3 rounded-xl border border-indigo-200 bg-indigo-50/50 px-3.5 py-2.5 dark:border-indigo-800/70 dark:bg-indigo-950/30">
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="font-mono text-xs font-semibold text-indigo-700 dark:text-indigo-300">
                           {txEquivCourse.code}
                         </span>
-                        <span className="truncate text-[13px] font-medium text-zinc-900 dark:text-zinc-100">
-                          {txEquivCourse.title}
+                        <span
+                          className={`truncate text-[13px] font-medium ${
+                            isEquivFallback
+                              ? "italic text-zinc-500 dark:text-zinc-400"
+                              : "text-zinc-900 dark:text-zinc-100"
+                          }`}
+                        >
+                          {equivTitle}
                         </span>
                       </div>
                       <div className="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">
@@ -790,6 +911,8 @@ export function CoursePickerModal({
                       Change
                     </button>
                   </div>
+                    );
+                  })()
                 ) : (
                   <div>
                     <label className="flex flex-col gap-1 text-[11.5px] font-medium text-zinc-600 dark:text-zinc-400">
@@ -821,7 +944,10 @@ export function CoursePickerModal({
                           No matching courses found.
                         </div>
                       ) : (
-                        equivCandidates.map((c) => (
+                        equivCandidates.map((c) => {
+                          const { title: rowTitle, isFallback: isRowFallback } =
+                            getCourseDisplayTitle(c);
+                          return (
                           <button
                             key={c.code}
                             type="button"
@@ -837,14 +963,21 @@ export function CoursePickerModal({
                             <span className="w-24 shrink-0 font-mono text-xs font-medium text-indigo-700 dark:text-indigo-300">
                               {c.code}
                             </span>
-                            <span className="min-w-0 flex-1 truncate text-[12.5px] text-zinc-800 dark:text-zinc-200">
-                              {c.title}
+                            <span
+                              className={`min-w-0 flex-1 truncate text-[12.5px] ${
+                                isRowFallback
+                                  ? "italic text-zinc-500 dark:text-zinc-400"
+                                  : "text-zinc-800 dark:text-zinc-200"
+                              }`}
+                            >
+                              {rowTitle}
                             </span>
                             <span className="shrink-0 text-[11px] text-zinc-400">
                               {c.credit_hours} cr · {c.level}
                             </span>
                           </button>
-                        ))
+                          );
+                        })
                       )}
                     </div>
                   </div>
@@ -1047,7 +1180,10 @@ export function CoursePickerModal({
               if (!code) return null;
               const cat = catalogMap.get(code);
               const cust = customs.get(code);
-              const title = cat?.title ?? cust?.title ?? code;
+              const titleInfo = cat
+                ? getCourseDisplayTitle(cat)
+                : { title: cust?.title ?? code, isFallback: false };
+              const title = titleInfo.title;
               const cr = cat?.credit_hours ?? cust?.credit_hours ?? 3;
               if (query.trim()) {
                 const q = query.trim().toLowerCase();
@@ -1067,7 +1203,13 @@ export function CoursePickerModal({
                     {code}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-[13px] text-zinc-900 dark:text-zinc-100">
+                    <div
+                      className={`truncate text-[13px] ${
+                        titleInfo.isFallback
+                          ? "italic text-zinc-500 dark:text-zinc-400"
+                          : "text-zinc-900 dark:text-zinc-100"
+                      }`}
+                    >
                       {title}
                     </div>
                     <div className="text-[11.5px] text-zinc-500 dark:text-zinc-400">
@@ -1157,6 +1299,9 @@ export function CoursePickerModal({
                       missingText = `needs ${missing.join(" / ") || "a prerequisite"}`;
                     }
 
+                    const { title: displayTitle, isFallback: isTitleFallback } =
+                      getCourseDisplayTitle(course);
+
                     return (
                       <div
                         key={course.code}
@@ -1168,8 +1313,14 @@ export function CoursePickerModal({
                           {course.code}
                         </span>
                         <div className="min-w-0 flex-1">
-                          <div className="truncate text-[13px] text-zinc-900 dark:text-zinc-100">
-                            {course.title}
+                          <div
+                            className={`truncate text-[13px] ${
+                              isTitleFallback
+                                ? "italic text-zinc-500 dark:text-zinc-400"
+                                : "text-zinc-900 dark:text-zinc-100"
+                            }`}
+                          >
+                            {displayTitle}
                           </div>
                           <div className="text-[11.5px] text-zinc-500 dark:text-zinc-400">
                             {course.credit_hours} cr · {offered}{" "}

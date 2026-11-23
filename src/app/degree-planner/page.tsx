@@ -57,7 +57,7 @@ function DegreePlannerSkeleton() {
           <div className="h-8 w-80 animate-pulse rounded-xl bg-slate-200/70 dark:bg-slate-800/90" />
         </div>
       </div>
-      <div className="mx-auto grid max-w-[1440px] grid-cols-1 gap-4 p-4 lg:grid-cols-[minmax(0,1fr)_390px]">
+      <div className="mx-auto grid max-w-[1440px] grid-cols-1 gap-4 p-4 md:grid-cols-[minmax(0,1fr)_300px] lg:grid-cols-[minmax(0,1fr)_350px] xl:grid-cols-[minmax(0,1fr)_390px]">
         <div className="h-64 animate-pulse rounded-2xl border border-slate-200/80 bg-white/90 shadow-[0_2px_12px_rgba(15,23,42,0.04)] dark:border-slate-800/80 dark:bg-slate-900/85" />
         <div className="h-96 animate-pulse rounded-2xl border border-slate-200/80 bg-white/90 shadow-[0_2px_12px_rgba(15,23,42,0.04)] dark:border-slate-800/80 dark:bg-slate-900/85" />
       </div>

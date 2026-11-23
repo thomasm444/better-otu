@@ -130,6 +130,7 @@ export function ScheduleContainer({
   const [viewMode, setViewMode] = useState<ScheduleViewMode>("combined");
   const [showRmp, setShowRmp] = useState(false);
   const [mobileTab, setMobileTab] = useState<"schedule" | "lookup">("schedule");
+  const [lookupTabTrigger, setLookupTabTrigger] = useState(0);
   const [isEditMode, setIsEditMode] = useState(false);
 
   const [plannedCourses, setPlannedCourses] = useState<PlannedCourseEntry[]>(
@@ -1456,7 +1457,10 @@ export function ScheduleContainer({
         </button>
         <button
           type="button"
-          onClick={() => setMobileTab("lookup")}
+          onClick={() => {
+            setMobileTab("lookup");
+            setLookupTabTrigger((n) => n + 1);
+          }}
           className={`rounded-xl py-2 transition ${
             mobileTab === "lookup"
               ? "bg-sky-600 text-white shadow-xs dark:bg-sky-500"
@@ -1555,6 +1559,13 @@ export function ScheduleContainer({
               {/* Edit Schedule Toggle */}
               <button
                 type="button"
+                aria-pressed={isEditMode}
+                aria-label={isEditMode ? "Done editing" : "Edit schedule"}
+                title={
+                  isEditMode
+                    ? "Done editing schedule"
+                    : "Edit schedule"
+                }
                 onClick={() => {
                   setIsEditMode((prev) => {
                     const next = !prev;
@@ -1567,13 +1578,13 @@ export function ScheduleContainer({
                     return next;
                   });
                 }}
-                className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold shadow-xs transition ${
+                className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl border px-3 py-1.5 text-xs font-semibold shadow-xs transition ${
                   isEditMode
                     ? "border-orange-500 bg-orange-500 text-white shadow-sm shadow-orange-500/25 hover:bg-orange-600 dark:border-orange-500 dark:bg-orange-500 dark:hover:bg-orange-600"
                     : "border-slate-200/90 bg-white text-slate-700 hover:border-sky-300 hover:bg-sky-50/50 hover:text-sky-900 dark:border-slate-700/80 dark:bg-slate-800/90 dark:text-slate-100 dark:hover:border-sky-700 dark:hover:bg-slate-800"
                 }`}
               >
-                <span>{isEditMode ? "Edit Mode" : "View Mode"}</span>
+                <span>{isEditMode ? "Done editing" : "Edit schedule"}</span>
               </button>
 
               {/* Calendar Export */}
@@ -2025,7 +2036,7 @@ export function ScheduleContainer({
 
         {/* Right 1/3: Combined Course Lookup, Exploration & Section Planner */}
         <div
-          className={`lg:col-span-4 lg:sticky lg:top-4 ${
+          className={`lg:col-span-4 lg:sticky lg:top-[calc(var(--site-nav-height,2.75rem)+5.25rem)] ${
             mobileTab === "lookup" ? "block" : "hidden lg:block"
           }`}
         >
@@ -2074,6 +2085,7 @@ export function ScheduleContainer({
             onHoverSection={setHoverPreviewSection}
             showRmp={showRmp}
             defaultYearOfStudy={userYearOfStudy}
+            searchTabTrigger={lookupTabTrigger}
           />
         </div>
       </div>

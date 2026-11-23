@@ -83,6 +83,7 @@ interface CourseLookupPanelProps {
   onHoverSection: (section: ScheduleSection | null) => void;
   showRmp?: boolean;
   defaultYearOfStudy?: number | null;
+  searchTabTrigger?: number;
 }
 
 function FixedWidthSwapLabel({
@@ -185,6 +186,32 @@ function getCourseCardRmp(
   return anyRated?.rmp ?? null;
 }
 
+/**
+ * Strips unmatched closing parentheses from stored catalog prerequisite strings
+ * (e.g. `BUSI 1130U or (BUSI 2150U) and BUSI 2160U )`) while keeping balanced groups intact.
+ */
+function sanitizePrerequisiteText(text: string): string {
+  let depth = 0;
+  let cleaned = "";
+  for (const ch of text) {
+    if (ch === "(") {
+      depth += 1;
+      cleaned += ch;
+    } else if (ch === ")") {
+      if (depth > 0) {
+        depth -= 1;
+        cleaned += ch;
+      }
+    } else {
+      cleaned += ch;
+    }
+  }
+  return cleaned
+    .replace(/\s+([,.;:])/g, "$1")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 export function CourseLookupPanel({
   catalog,
   courseMap,
@@ -221,6 +248,7 @@ export function CourseLookupPanel({
   onHoverSection,
   showRmp = false,
   defaultYearOfStudy = null,
+  searchTabTrigger = 0,
 }: CourseLookupPanelProps) {
   const preferredLevel = useMemo(() => {
     if (
@@ -236,19 +264,20 @@ export function CourseLookupPanel({
 
   const [panelTab, setPanelTab] = useState<"search" | "planned">("planned");
   const lastAutoTabKeyRef = useRef<string | null>(null);
+  const lastSearchTriggerRef = useRef(0);
   const [query, setQuery] = useState("");
   const [electiveId, setElectiveId] = useState<string>("all");
   const [subjectFilter, setSubjectFilter] = useState<string>("all");
   const [levelFilter, setLevelFilter] = useState<string>(() =>
     preferredLevel !== null ? String(preferredLevel) : "all",
   );
-  const hasUserChangedLevelRef = useRef(false);
+  const [hasUserChangedLevel, setHasUserChangedLevel] = useState(false);
 
   useEffect(() => {
-    if (preferredLevel !== null && !hasUserChangedLevelRef.current) {
+    if (preferredLevel !== null && !hasUserChangedLevel) {
       setLevelFilter(String(preferredLevel));
     }
-  }, [preferredLevel]);
+  }, [preferredLevel, hasUserChangedLevel]);
 
   // Smart filters
   const [filterFits, setFilterFits] = useState(false);
@@ -387,13 +416,24 @@ export function CourseLookupPanel({
   // Auto-select Course Lookup when hydrated with no courses; otherwise keep My Courses first
   useEffect(() => {
     if (!hydratedKey || lastAutoTabKeyRef.current === hydratedKey) return;
+    const isInitialHydration = lastAutoTabKeyRef.current === null;
     lastAutoTabKeyRef.current = hydratedKey;
+    if (isInitialHydration && lastSearchTriggerRef.current > 0) return;
     if (plannedCourses.length === 0 && customBlocks.length === 0) {
       setPanelTab("search");
     } else {
       setPanelTab("planned");
     }
   }, [hydratedKey, plannedCourses.length, customBlocks.length]);
+
+  // Switch directly to Course Lookup when triggered from the outer mobile tab bar
+  useEffect(() => {
+    if (!searchTabTrigger || lastSearchTriggerRef.current === searchTabTrigger) {
+      return;
+    }
+    lastSearchTriggerRef.current = searchTabTrigger;
+    setPanelTab("search");
+  }, [searchTabTrigger]);
 
   // React to "Switch Section" click from the timetable grid
   useEffect(() => {
@@ -493,7 +533,7 @@ export function CourseLookupPanel({
   }, [electiveId, allElectiveOptions]);
 
   // Evaluate schedule fit & prereq status lazily for matching courses
-  const filteredCourses = useMemo(() => {
+  const { filteredCourses, effectiveLevelFilter } = useMemo(() => {
     const q = query.trim().toLowerCase();
     const compactQ = q.replace(/\s+/g, "");
 
@@ -507,16 +547,6 @@ export function CourseLookupPanel({
     for (const course of catalog.courses) {
       if (subjectFilter !== "all" && course.subject !== subjectFilter) {
         continue;
-      }
-
-      if (levelFilter !== "all") {
-        if (levelFilter === "3000+") {
-          if (course.level < 3000) continue;
-        } else if (levelFilter === "5000+") {
-          if (course.level < 5000) continue;
-        } else if (course.level !== Number(levelFilter)) {
-          continue;
-        }
       }
 
       if (activeElectiveMatch) {
@@ -600,26 +630,57 @@ export function CourseLookupPanel({
       });
     }
 
+    const matchesLevel = (level: number, filter: string) => {
+      if (filter === "all") return true;
+      if (filter === "3000+") return level >= 3000;
+      if (filter === "5000+") return level >= 5000;
+      return level === Number(filter);
+    };
+
+    const isAutoPreferred =
+      !hasUserChangedLevel &&
+      preferredLevel !== null &&
+      levelFilter === String(preferredLevel);
+
+    const hasPreferredMatch =
+      isAutoPreferred &&
+      matched.some((item) => item.course.level === preferredLevel);
+
+    const resolvedLevel =
+      isAutoPreferred && !hasPreferredMatch ? "all" : levelFilter;
+
+    const levelFiltered =
+      resolvedLevel === "all"
+        ? matched
+        : matched.filter((item) => matchesLevel(item.course.level, resolvedLevel));
+
     if (preferredLevel !== null) {
-      const preferred: typeof matched = [];
-      const others: typeof matched = [];
-      for (const item of matched) {
+      const preferred: typeof levelFiltered = [];
+      const others: typeof levelFiltered = [];
+      for (const item of levelFiltered) {
         if (item.course.level === preferredLevel) {
           preferred.push(item);
         } else {
           others.push(item);
         }
       }
-      return [...preferred, ...others];
+      return {
+        filteredCourses: [...preferred, ...others],
+        effectiveLevelFilter: resolvedLevel,
+      };
     }
 
-    return matched;
+    return {
+      filteredCourses: levelFiltered,
+      effectiveLevelFilter: resolvedLevel,
+    };
   }, [
     catalog.courses,
     query,
     activeElectiveMatch,
     subjectFilter,
     levelFilter,
+    hasUserChangedLevel,
     preferredLevel,
     filterFits,
     filterPrereq,
@@ -1140,9 +1201,9 @@ export function CourseLookupPanel({
   const effectiveTab = panelTab;
 
   return (
-    <aside className="flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white/92 shadow-[0_2px_12px_rgba(15,23,42,0.04)] backdrop-blur-sm dark:border-slate-800/80 dark:bg-slate-900/88">
+    <aside className="flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white/92 shadow-[0_2px_12px_rgba(15,23,42,0.04)] backdrop-blur-sm lg:max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-6.5rem)] dark:border-slate-800/80 dark:bg-slate-900/88">
       {/* Top Panel Header / Tabs */}
-      <div className="flex items-center justify-between border-b border-slate-200/75 bg-gradient-to-r from-sky-50/85 via-white/95 to-indigo-50/55 px-3 py-2.5 dark:border-slate-800 dark:from-sky-950/35 dark:via-slate-900/95 dark:to-indigo-950/25">
+      <div className="flex shrink-0 items-center justify-between border-b border-slate-200/75 bg-gradient-to-r from-sky-50/85 via-white/95 to-indigo-50/55 px-3 py-2.5 dark:border-slate-800 dark:from-sky-950/35 dark:via-slate-900/95 dark:to-indigo-950/25">
         <div className="grid w-full grid-cols-2 rounded-xl border border-slate-200/80 bg-slate-100/80 p-0.5 text-xs font-medium dark:border-slate-700/80 dark:bg-slate-800/80">
           <button
             type="button"
@@ -1256,9 +1317,9 @@ export function CourseLookupPanel({
                 </select>
 
                 <select
-                  value={levelFilter}
+                  value={effectiveLevelFilter}
                   onChange={(e) => {
-                    hasUserChangedLevelRef.current = true;
+                    setHasUserChangedLevel(true);
                     setLevelFilter(e.target.value);
                     setVisibleLimit(30);
                   }}
@@ -1367,7 +1428,7 @@ export function CourseLookupPanel({
                       setQuery("");
                       setElectiveId("all");
                       setSubjectFilter("all");
-                      hasUserChangedLevelRef.current = true;
+                      setHasUserChangedLevel(true);
                       setLevelFilter("all");
                       setFilterFits(false);
                       setFilterPrereq(false);
@@ -1494,7 +1555,7 @@ export function CourseLookupPanel({
           </div>
 
           {/* Course Cards List */}
-          <div className="max-h-[680px] flex-1 space-y-2.5 overflow-y-auto p-3">
+          <div className="min-h-0 max-h-[680px] flex-1 lg:max-h-none space-y-2.5 overflow-y-auto p-3">
             {filteredCourses.length === 0 ? (
               <div className="rounded-lg border border-dashed border-zinc-200 p-6 text-center text-xs text-zinc-500 dark:border-zinc-800">
                 No courses in {catalog.termLabel} match these filters.
@@ -1589,28 +1650,40 @@ export function CourseLookupPanel({
                         )}
 
                         {/* Prerequisites */}
-                        {(course.prerequisiteText ||
-                          course.prerequisiteCodes.length > 0) && (
-                          <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[10.5px]">
-                            <span className="font-medium text-zinc-500">
-                              Prereqs:
-                            </span>
-                            {prereqStatus === true && (
-                              <span className="rounded bg-emerald-50 px-1.5 py-0.5 font-medium text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
-                                ✓ Met
+                        {(() => {
+                          const sanitizedPrereqText = course.prerequisiteText
+                            ? sanitizePrerequisiteText(course.prerequisiteText)
+                            : "";
+                          if (
+                            !sanitizedPrereqText &&
+                            course.prerequisiteCodes.length === 0
+                          ) {
+                            return null;
+                          }
+                          return (
+                            <div className="mt-1.5 flex flex-wrap items-center gap-1 text-[10.5px]">
+                              <span className="font-medium text-zinc-500">
+                                Prereqs:
                               </span>
-                            )}
-                            {prereqStatus === false && (
-                              <span className="rounded bg-amber-50 px-1.5 py-0.5 font-medium text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
-                                Missing:{" "}
-                                {missingPrereqs.join(" / ") || "Prerequisite"}
-                              </span>
-                            )}
-                            <span className="text-zinc-500 dark:text-zinc-400">
-                              {course.prerequisiteText}
-                            </span>
-                          </div>
-                        )}
+                              {prereqStatus === true && (
+                                <span className="rounded bg-emerald-50 px-1.5 py-0.5 font-medium text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
+                                  ✓ Met
+                                </span>
+                              )}
+                              {prereqStatus === false && (
+                                <span className="rounded bg-amber-50 px-1.5 py-0.5 font-medium text-amber-800 dark:bg-amber-950/60 dark:text-amber-300">
+                                  Missing:{" "}
+                                  {missingPrereqs.join(" / ") || "Prerequisite"}
+                                </span>
+                              )}
+                              {sanitizedPrereqText && (
+                                <span className="text-zinc-500 dark:text-zinc-400">
+                                  {sanitizedPrereqText}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
 
                         {/* Action Buttons */}
                         <div className="mt-2.5 flex flex-wrap items-center justify-between gap-1.5">
@@ -2013,7 +2086,7 @@ export function CourseLookupPanel({
             </form>
           )}
 
-          <div className="max-h-[680px] flex-1 space-y-4 overflow-y-auto p-3 [scrollbar-gutter:stable]">
+          <div className="min-h-0 max-h-[680px] flex-1 lg:max-h-none space-y-4 overflow-y-auto p-3 [scrollbar-gutter:stable]">
             {plannedCourses.length === 0 && customBlocks.length === 0 ? (
               <div className="rounded-lg border border-dashed border-zinc-200 p-6 text-center text-xs text-zinc-500 dark:border-zinc-800">
                 <p className="font-medium text-zinc-700 dark:text-zinc-300">

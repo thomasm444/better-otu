@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
+import { Suspense, type CSSProperties } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import localFont from "next/font/local";
+import { SiteNav, SiteNavFallback } from "@/components/site-nav";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -30,9 +32,15 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
+      style={{ "--site-nav-height": "2.75rem" } as CSSProperties}
       className={`${geistSans.variable} ${geistMono.variable} ${clashRegular.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <Suspense fallback={<SiteNavFallback />}>
+          <SiteNav />
+        </Suspense>
+        {children}
+      </body>
     </html>
   );
 }

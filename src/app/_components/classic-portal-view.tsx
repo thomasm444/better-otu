@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useMemo } from "react";
 
 import {
   GoogleLogoIcon,
@@ -45,11 +45,8 @@ interface ClassicPortalViewProps {
   profileDegreeName: string | null;
   profileMinorName: string | null;
   derivedProfileStartYear: number;
-  savedCourseCodes: string[];
-  visibleCourseCodes: string[];
   degreeProgress: DegreeProgressSummary | null;
   latestPlan: DegreePlanRecord | null;
-  nowLabel: string | null;
   liveTimeLabel: string | null;
   freeRoomsTotal: number | null;
   quickBuildings: readonly string[];
@@ -62,62 +59,39 @@ interface ClassicPortalViewProps {
   onRemoveMeetShortcut: (id: string) => void;
 }
 
-type OrbTone = "emerald" | "orange" | "blue" | "violet";
+type ShortcutTone = "emerald" | "orange" | "blue";
 
-const ORB_ACCENTS: Record<
-  OrbTone,
-  {
-    ring: string;
-    bg: string;
-    stem: string;
-  }
-> = {
-  emerald: {
-    ring: "border-emerald-300/80 dark:border-emerald-500/40",
-    bg: "bg-emerald-50/90 dark:bg-emerald-950/60",
-    stem: "stroke-emerald-400/60 dark:stroke-emerald-400/45",
-  },
-  orange: {
-    ring: "border-[#E75D2A]/35 dark:border-[#E75D2A]/45",
-    bg: "bg-[#FFF3EE] dark:bg-[#E75D2A]/15",
-    stem: "stroke-[#E75D2A]/55 dark:stroke-[#FF8A5C]/45",
-  },
-  blue: {
-    ring: "border-[#9AC0EB] dark:border-sky-500/40",
-    bg: "bg-[#EBF3FC] dark:bg-sky-950/60",
-    stem: "stroke-[#003C71]/45 dark:stroke-sky-400/45",
-  },
-  violet: {
-    ring: "border-violet-300/80 dark:border-violet-500/40",
-    bg: "bg-violet-50/90 dark:bg-violet-950/50",
-    stem: "stroke-violet-400/55 dark:stroke-violet-400/45",
-  },
+const SHORTCUT_RING_CLASSES: Record<ShortcutTone, string> = {
+  emerald: "border-emerald-300/80 dark:border-emerald-500/40",
+  orange: "border-[#E75D2A]/35 dark:border-[#E75D2A]/45",
+  blue: "border-[#9AC0EB] dark:border-sky-500/40",
 };
 
-type BloomEntry =
-  | {
-      kind: "link";
-      id: string;
-      label: string;
-      title: string;
-      href: string;
-      tone: OrbTone;
-      imageUrl?: string;
-      initials?: string;
-      googleServiceId?: GoogleServiceId;
-      isMeet?: boolean;
-      badge?: string;
-      onRemove?: () => void;
-    }
-  | {
-      kind: "action";
-      id: string;
-      label: string;
-      title: string;
-      tone: OrbTone;
-      actionType: "google" | "add";
-      onClick: () => void;
-    };
+const SCHEDULE_TERM_LINKS = [
+  { code: "202609", label: "Fall 2026", shortLabel: "F2026" },
+  { code: "202701", label: "Winter 2027", shortLabel: "W2027" },
+  { code: "202605", label: "Spring/Summer 2027", shortLabel: "S2027" },
+] as const;
+
+const CAMPUS_VENUE_LINKS = [
+  { key: "north", label: "North" },
+  { key: "downtown", label: "Downtown" },
+  { key: "whitby", label: "Whitby" },
+] as const;
+
+interface ShortcutEntry {
+  id: string;
+  label: string;
+  title: string;
+  href: string;
+  tone: ShortcutTone;
+  imageUrl?: string;
+  initials?: string;
+  googleServiceId?: GoogleServiceId;
+  isMeet?: boolean;
+  badge?: string;
+  onRemove?: () => void;
+}
 
 function getInitials(label: string): string {
   const cleaned = label.trim();
@@ -127,19 +101,6 @@ function getInitials(label: string): string {
     return `${words[0][0] ?? ""}${words[1][0] ?? ""}`.toUpperCase();
   }
   return cleaned.slice(0, 3).toUpperCase();
-}
-
-function getRadialOffset(index: number, total: number) {
-  const startAngle = total === 6 ? -Math.PI / 3 : -Math.PI / 2;
-  const angle = startAngle + (index / Math.max(total, 1)) * Math.PI * 2;
-  const cos = Number(Math.cos(angle).toFixed(3));
-  const sin = Number(Math.sin(angle).toFixed(3));
-  return {
-    xCss: `calc(${cos} * min(28vw, 114px))`,
-    yPx: Math.round(sin * 86),
-    lineX: Math.round(cos * 112),
-    lineY: Math.round(sin * 86),
-  };
 }
 
 function ArrowRightIcon({ className = "h-4 w-4" }: { className?: string }) {
@@ -166,11 +127,8 @@ export function ClassicPortalView({
   profileDegreeName,
   profileMinorName,
   derivedProfileStartYear,
-  savedCourseCodes,
-  visibleCourseCodes,
   degreeProgress,
   latestPlan,
-  nowLabel,
   liveTimeLabel,
   freeRoomsTotal,
   quickBuildings,
@@ -182,47 +140,17 @@ export function ClassicPortalView({
   onOpenGoogleModal,
   onRemoveMeetShortcut,
 }: ClassicPortalViewProps) {
-  const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const shortcutsRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!shortcutsOpen) return;
-
-    const onPointerDown = (event: MouseEvent) => {
-      if (
-        shortcutsRef.current &&
-        !shortcutsRef.current.contains(event.target as Node)
-      ) {
-        setShortcutsOpen(false);
-      }
-    };
-
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setShortcutsOpen(false);
-      }
-    };
-
-    document.addEventListener("mousedown", onPointerDown);
-    document.addEventListener("keydown", onKeyDown);
-    return () => {
-      document.removeEventListener("mousedown", onPointerDown);
-      document.removeEventListener("keydown", onKeyDown);
-    };
-  }, [shortcutsOpen]);
-
-  const bloomEntries = useMemo<BloomEntry[]>(() => {
-    const entries: BloomEntry[] = [];
+  const shortcutEntries = useMemo<ShortcutEntry[]>(() => {
+    const entries: ShortcutEntry[] = [];
 
     for (const item of defaultShortcuts) {
-      const tone: OrbTone =
+      const tone: ShortcutTone =
         item.id === "library"
           ? "emerald"
           : item.id === "canvas"
             ? "orange"
             : "blue";
       entries.push({
-        kind: "link",
         id: `default-${item.id}`,
         label: item.label,
         title: item.title,
@@ -237,7 +165,6 @@ export function ClassicPortalView({
       for (const svc of GOOGLE_SERVICES) {
         if (!acct.enabledServices.includes(svc.id)) continue;
         entries.push({
-          kind: "link",
           id: `g-${acct.id}-${svc.id}`,
           label: svc.shortLabel,
           title: `${svc.label} — ${acct.label} (u/${acct.authIndex})`,
@@ -255,7 +182,6 @@ export function ClassicPortalView({
       );
       const href = normalizeMeetUrl(meet.url, acct?.authIndex ?? 0);
       entries.push({
-        kind: "link",
         id: `meet-${meet.id}`,
         label: meet.label,
         title: `${meet.label} (${href})`,
@@ -268,7 +194,6 @@ export function ClassicPortalView({
 
     for (const custom of customShortcuts) {
       entries.push({
-        kind: "link",
         id: `custom-${custom.id}`,
         label: custom.label,
         title: `${custom.label} (${custom.url})`,
@@ -279,44 +204,16 @@ export function ClassicPortalView({
       });
     }
 
-    entries.push({
-      kind: "action",
-      id: "action-google",
-      label: googleShortcuts.accounts.length > 0 ? "Google" : "Add Google",
-      title:
-        googleShortcuts.accounts.length > 0
-          ? "Manage Google accounts, services & Meet links"
-          : "Add Google school & personal shortcuts",
-      tone: "blue",
-      actionType: "google",
-      onClick: onOpenGoogleModal,
-    });
-
-    entries.push({
-      kind: "action",
-      id: "action-add",
-      label: "Add",
-      title: "Add custom shortcut",
-      tone: "violet",
-      actionType: "add",
-      onClick: onOpenAddShortcut,
-    });
-
     return entries;
   }, [
     defaultShortcuts,
     googleShortcuts,
     customShortcuts,
-    onOpenGoogleModal,
-    onOpenAddShortcut,
     onRemoveMeetShortcut,
     onRemoveCustomShortcut,
   ]);
 
-  const linkCount = bloomEntries.filter((e) => e.kind === "link").length;
-  const useRadialBloom = bloomEntries.length <= 6;
   const activeStudyYear = profile?.year_of_study ?? 3;
-  const pulseTimeText = liveTimeLabel ?? nowLabel;
 
   return (
     <div className="mt-8 flex flex-1 flex-col justify-center pb-4">
@@ -326,10 +223,7 @@ export function ClassicPortalView({
         className="grid grid-cols-1 gap-5 md:grid-cols-3"
       >
         {/* 1. Course Schedules Card */}
-        <Link
-          href="/course-schedules"
-          className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-slate-200/90 bg-white/95 p-6 shadow-xs backdrop-blur-xs transition-all duration-200 hover:-translate-y-1 hover:border-[#003C71]/40 hover:shadow-[0_18px_38px_-14px_rgba(0,60,113,0.22)] dark:border-slate-800 dark:bg-slate-900/90 dark:hover:border-sky-400/45 dark:hover:shadow-[0_18px_38px_-14px_rgba(56,189,248,0.2)]"
-        >
+        <div className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-slate-200/90 bg-white/95 p-6 shadow-xs backdrop-blur-xs transition-all duration-200 hover:-translate-y-1 hover:border-[#003C71]/40 hover:shadow-[0_18px_38px_-14px_rgba(0,60,113,0.22)] dark:border-slate-800 dark:bg-slate-900/90 dark:hover:border-sky-400/45 dark:hover:shadow-[0_18px_38px_-14px_rgba(56,189,248,0.2)]">
           <div>
             <div className="flex items-start justify-between gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#003C71]/10 text-[#003C71] ring-1 ring-[#003C71]/15 transition-transform duration-200 group-hover:scale-105 dark:bg-sky-500/15 dark:text-sky-300 dark:ring-sky-400/20">
@@ -362,78 +256,46 @@ export function ClassicPortalView({
             </div>
 
             <div className="mt-5 flex items-center justify-between gap-2">
-              <h2 className="text-lg font-bold tracking-tight text-slate-900 transition-colors group-hover:text-[#003C71] dark:text-white dark:group-hover:text-sky-300">
-                Course Schedules
-              </h2>
+              <Link
+                href="/course-schedules"
+                className="rounded-md after:absolute after:inset-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#003C71]"
+              >
+                <h2 className="text-lg font-bold tracking-tight text-slate-900 transition-colors group-hover:text-[#003C71] dark:text-white dark:group-hover:text-sky-300">
+                  Course Schedules
+                </h2>
+              </Link>
               <ArrowRightIcon className="h-4 w-4 text-slate-400 transition-all duration-200 group-hover:translate-x-1 group-hover:text-[#003C71] dark:group-hover:text-sky-300" />
             </div>
           </div>
 
           <div className="mt-5 rounded-xl border border-slate-100 bg-slate-50/90 p-3 dark:border-slate-800 dark:bg-slate-950/60">
-            {visibleCourseCodes.length > 0 ? (
-              <>
-                <div className="flex items-center justify-between text-[11px] font-semibold text-slate-600 dark:text-slate-300">
-                  <span>Saved Courses</span>
-                  <span className="tabular-nums text-[#003C71] dark:text-sky-300">
-                    {savedCourseCodes.length}
-                  </span>
-                </div>
-                <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                  {visibleCourseCodes.map((code) => (
-                    <span
-                      key={code}
-                      className="rounded-md border border-slate-200/90 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-800 shadow-2xs dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                    >
-                      {code}
-                    </span>
-                  ))}
-                  {savedCourseCodes.length > 4 && (
-                    <span className="rounded-md bg-[#003C71]/10 px-2 py-0.5 text-[11px] font-semibold text-[#003C71] dark:bg-sky-500/20 dark:text-sky-200">
-                      +{savedCourseCodes.length - 4} more
-                    </span>
-                  )}
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="flex items-center justify-between text-[11px] font-semibold text-slate-600 dark:text-slate-300">
-                  <span>Bi-weekly Grid</span>
-                  <span className="text-[#003C71] dark:text-sky-300">
-                    W1 &bull; W2 Sync
-                  </span>
-                </div>
-                <div className="mt-2 grid grid-cols-5 gap-1.5">
-                  <div className="space-y-1">
-                    <div className="h-2.5 rounded-xs bg-[#003C71]/80 dark:bg-sky-400/80" />
-                    <div className="h-1.5 rounded-xs bg-slate-200 dark:bg-slate-800" />
-                  </div>
-                  <div className="space-y-1">
-                    <div className="h-1.5 rounded-xs bg-slate-200 dark:bg-slate-800" />
-                    <div className="h-2.5 rounded-xs bg-emerald-500/80" />
-                  </div>
-                  <div className="space-y-1">
-                    <div className="h-2.5 rounded-xs bg-[#003C71]/80 dark:bg-sky-400/80" />
-                    <div className="h-2 rounded-xs bg-[#E75D2A]/80" />
-                  </div>
-                  <div className="space-y-1">
-                    <div className="h-2 rounded-xs bg-indigo-500/75" />
-                    <div className="h-1.5 rounded-xs bg-slate-200 dark:bg-slate-800" />
-                  </div>
-                  <div className="space-y-1">
-                    <div className="h-2.5 rounded-xs bg-emerald-500/75" />
-                    <div className="h-1.5 rounded-xs bg-slate-200 dark:bg-slate-800" />
-                  </div>
-                </div>
-              </>
-            )}
+            <div className="flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+              <span>Schedules</span>
+            </div>
+            <div className="relative z-10 mt-2 flex items-center gap-1.5">
+              {SCHEDULE_TERM_LINKS.map((term) => {
+                const isActive = term.label === termLabel;
+                return (
+                  <Link
+                    key={term.code}
+                    href={`/course-schedules?term=${term.code}`}
+                    title={term.label}
+                    className={`whitespace-nowrap rounded-md border px-2 py-0.5 text-[11px] font-semibold shadow-2xs transition-colors ${
+                      isActive
+                        ? "border-[#003C71]/30 bg-[#003C71]/8 text-[#003C71] hover:border-[#003C71] hover:bg-[#003C71] hover:text-white dark:border-sky-400/35 dark:bg-sky-500/15 dark:text-sky-200 dark:hover:bg-sky-500 dark:hover:text-slate-950"
+                        : "border-slate-200/90 bg-white text-slate-700 hover:border-[#003C71]/45 hover:bg-[#EBF3FC] hover:text-[#003C71] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-sky-400/45 dark:hover:text-sky-300"
+                    }`}
+                  >
+                    {term.shortLabel}
+                  </Link>
+                );
+              })}
+            </div>
           </div>
-        </Link>
+        </div>
 
         {/* 2. Campus Map Card */}
-        <Link
-          href="/campus-map?venue=north"
-          className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-slate-200/90 bg-white/95 p-6 shadow-xs backdrop-blur-xs transition-all duration-200 hover:-translate-y-1 hover:border-emerald-500/45 hover:shadow-[0_18px_38px_-14px_rgba(16,185,129,0.22)] dark:border-slate-800 dark:bg-slate-900/90 dark:hover:border-emerald-400/45"
-        >
+        <div className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-slate-200/90 bg-white/95 p-6 shadow-xs backdrop-blur-xs transition-all duration-200 hover:-translate-y-1 hover:border-emerald-500/45 hover:shadow-[0_18px_38px_-14px_rgba(16,185,129,0.22)] dark:border-slate-800 dark:bg-slate-900/90 dark:hover:border-emerald-400/45">
           <div>
             <div className="flex items-start justify-between gap-3">
               <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-500/12 text-emerald-700 ring-1 ring-emerald-500/20 transition-transform duration-200 group-hover:scale-105 dark:bg-emerald-500/15 dark:text-emerald-300 dark:ring-emerald-400/20">
@@ -466,32 +328,38 @@ export function ClassicPortalView({
             </div>
 
             <div className="mt-5 flex items-center justify-between gap-2">
-              <h2 className="text-lg font-bold tracking-tight text-slate-900 transition-colors group-hover:text-emerald-700 dark:text-white dark:group-hover:text-emerald-300">
-                Campus Map
-              </h2>
+              <Link
+                href="/campus-map?venue=north"
+                className="rounded-md after:absolute after:inset-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-600"
+              >
+                <h2 className="text-lg font-bold tracking-tight text-slate-900 transition-colors group-hover:text-emerald-700 dark:text-white dark:group-hover:text-emerald-300">
+                  Campus Map
+                </h2>
+              </Link>
               <ArrowRightIcon className="h-4 w-4 text-slate-400 transition-all duration-200 group-hover:translate-x-1 group-hover:text-emerald-600 dark:group-hover:text-emerald-300" />
             </div>
           </div>
 
           <div className="mt-5 rounded-xl border border-slate-100 bg-slate-50/90 p-3 dark:border-slate-800 dark:bg-slate-950/60">
-            <div className="flex items-center justify-between text-[11px] font-semibold text-slate-600 dark:text-slate-300">
-              <span>North Campus</span>
-              <span className="font-mono text-[10.5px] text-emerald-700 dark:text-emerald-300">
-                {nowLabel ?? "B – Fl 4"}
+            <div className="flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
+              <span>Campuses</span>
+              <span className="font-mono text-[10.5px] tabular-nums text-emerald-700 dark:text-emerald-300">
+                {liveTimeLabel ?? "B – Fl 4"}
               </span>
             </div>
-            <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              {["North", "Downtown", "Whitby"].map((campus) => (
-                <span
-                  key={campus}
-                  className="rounded-md border border-slate-200/90 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 shadow-2xs dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+            <div className="relative z-10 mt-2 flex flex-wrap items-center gap-1.5">
+              {CAMPUS_VENUE_LINKS.map((venue) => (
+                <Link
+                  key={venue.key}
+                  href={`/campus-map?venue=${venue.key}`}
+                  className="rounded-md border border-slate-200/90 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 shadow-2xs transition-colors hover:border-emerald-500/50 hover:bg-emerald-50 hover:text-emerald-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-emerald-400/50 dark:hover:bg-emerald-950/50 dark:hover:text-emerald-300"
                 >
-                  {campus}
-                </span>
+                  {venue.label}
+                </Link>
               ))}
             </div>
           </div>
-        </Link>
+        </div>
 
         {/* 3. Degree Planner Card */}
         <Link
@@ -611,7 +479,7 @@ export function ClassicPortalView({
         </Link>
       </nav>
 
-      {/* Row 2: Available Rooms Finder + Essential OTU Shortcuts Bloom Hub */}
+      {/* Row 2: Available Rooms Finder + Essential OTU Shortcuts */}
       <section
         aria-label="Available rooms and quick shortcuts"
         className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-12"
@@ -632,11 +500,11 @@ export function ClassicPortalView({
               <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-2.5 py-0.5 text-[11px] font-semibold text-sky-100 backdrop-blur-xs">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
                 <span>Campus Pulse</span>
-                {pulseTimeText && (
+                {liveTimeLabel && (
                   <>
                     <span className="text-white/40">&bull;</span>
                     <span className="tabular-nums text-white">
-                      {pulseTimeText}
+                      {liveTimeLabel}
                     </span>
                   </>
                 )}
@@ -692,373 +560,116 @@ export function ClassicPortalView({
           </div>
         </div>
 
-        {/* Right: Single Essential OTU Shortcuts Bloom Hub */}
-        <div
-          ref={shortcutsRef}
-          className="relative flex min-h-[290px] items-center justify-center overflow-hidden rounded-2xl border border-slate-200/90 bg-white/95 p-5 shadow-xs backdrop-blur-xs lg:col-span-5 dark:border-slate-800 dark:bg-slate-900/90"
-        >
-          {shortcutsOpen && !useRadialBloom ? (
-            <div className="flex h-full w-full flex-col justify-between gap-3">
-              <div className="flex items-center justify-between gap-2">
-                <div>
-                  <h2 className="text-xs font-bold tracking-wider text-slate-700 uppercase dark:text-slate-200">
-                    Essential OTU Shortcuts
-                  </h2>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    {linkCount} active shortcuts
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShortcutsOpen(false)}
-                  aria-label="Close Essential OTU Shortcuts"
-                  className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-slate-50 text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
-                >
-                  <svg
-                    className="h-4 w-4"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.2"
-                    strokeLinecap="round"
-                    aria-hidden="true"
-                  >
-                    <path d="M18 6 6 18" />
-                    <path d="m6 6 12 12" />
-                  </svg>
-                </button>
-              </div>
-
-              <div className="grid max-h-[214px] grid-cols-4 gap-3 overflow-y-auto px-1 py-1">
-                {bloomEntries.map((entry) => {
-                  const accent = ORB_ACCENTS[entry.tone];
-                  if (entry.kind === "action") {
-                    return (
-                      <button
-                        key={entry.id}
-                        type="button"
-                        onClick={entry.onClick}
-                        title={entry.title}
-                        className="group flex flex-col items-center gap-1.5 text-center"
-                      >
-                        <span
-                          className={`flex h-12 w-12 items-center justify-center rounded-full border border-dashed ${accent.ring} ${accent.bg} shadow-2xs transition-transform duration-150 group-hover:-translate-y-0.5`}
-                        >
-                          {entry.actionType === "google" ? (
-                            <GoogleLogoIcon className="h-5 w-5" />
-                          ) : (
-                            <svg
-                              className="h-5 w-5 text-violet-700 dark:text-violet-300"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2.2"
-                              strokeLinecap="round"
-                              aria-hidden="true"
-                            >
-                              <path d="M12 5v14" />
-                              <path d="M5 12h14" />
-                            </svg>
-                          )}
-                        </span>
-                        <span className="max-w-[68px] truncate text-[11px] font-semibold text-slate-700 dark:text-slate-300">
-                          {entry.label}
-                        </span>
-                      </button>
-                    );
-                  }
-
-                  return (
-                    <div
-                      key={entry.id}
-                      className="group relative flex flex-col items-center gap-1.5 text-center"
-                    >
-                      <a
-                        href={entry.href}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        title={entry.title}
-                        className={`relative flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border ${accent.ring} bg-white shadow-2xs transition-transform duration-150 group-hover:-translate-y-0.5 dark:bg-slate-950`}
-                      >
-                        {entry.imageUrl ? (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img
-                            src={entry.imageUrl}
-                            alt={entry.title}
-                            className="h-full w-full object-cover object-center"
-                          />
-                        ) : entry.googleServiceId ? (
-                          <GoogleServiceIcon
-                            serviceId={entry.googleServiceId}
-                            className="h-5.5 w-5.5"
-                          />
-                        ) : entry.isMeet ? (
-                          <GoogleMeetIcon className="h-5.5 w-5.5" />
-                        ) : (
-                          <span className="text-xs font-bold text-[#003C71] dark:text-sky-200">
-                            {entry.initials}
-                          </span>
-                        )}
-                      </a>
-
-                      {entry.badge && (
-                        <span className="pointer-events-none absolute top-8 right-1 rounded-full border border-slate-200 bg-white px-1 text-[9px] font-bold text-slate-700 shadow-2xs dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                          {entry.badge}
-                        </span>
-                      )}
-
-                      {entry.onRemove && (
-                        <button
-                          type="button"
-                          onClick={entry.onRemove}
-                          aria-label={`Remove ${entry.label} shortcut`}
-                          title="Remove shortcut"
-                          className="absolute -top-1 right-0.5 flex h-4.5 w-4.5 items-center justify-center rounded-full border border-slate-200 bg-white text-[10px] font-bold text-slate-500 opacity-0 shadow-xs transition group-hover:opacity-100 hover:bg-rose-50 hover:text-rose-600 focus-visible:opacity-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-                        >
-                          &times;
-                        </button>
-                      )}
-
-                      <span className="max-w-[68px] truncate text-[11px] font-semibold text-slate-700 dark:text-slate-300">
-                        {entry.label}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
+        {/* Right: Single-Click Essential OTU Shortcuts Grid */}
+        <div className="flex flex-col gap-4 rounded-2xl border border-slate-200/90 bg-white/95 p-5 shadow-xs backdrop-blur-xs lg:col-span-5 dark:border-slate-800 dark:bg-slate-900/90">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="text-xs font-bold tracking-wider text-slate-700 uppercase dark:text-slate-200">
+                Essential OTU Shortcuts
+              </h2>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                {shortcutEntries.length}{" "}
+                {shortcutEntries.length === 1 ? "shortcut" : "shortcuts"}
+              </p>
             </div>
-          ) : (
-            <div className="relative h-[258px] w-full">
-              {/* Soft orbital dashed ring & tint glow */}
-              <div
-                aria-hidden="true"
-                className={`pointer-events-none absolute top-1/2 left-1/2 h-44 w-44 -translate-x-1/2 -translate-y-1/2 rounded-full border border-dashed border-slate-200/90 transition-all duration-500 dark:border-slate-800 ${
-                  shortcutsOpen
-                    ? "scale-125 rotate-45 opacity-100"
-                    : "scale-80 rotate-0 opacity-70"
-                }`}
-              />
-              <div
-                aria-hidden="true"
-                className={`pointer-events-none absolute top-1/2 left-1/2 h-28 w-28 -translate-x-1/2 -translate-y-1/2 rounded-full bg-gradient-to-tr from-[#003C71]/12 via-emerald-500/10 to-[#E75D2A]/12 blur-xl transition-all duration-500 ${
-                  shortcutsOpen
-                    ? "scale-150 opacity-100"
-                    : "scale-95 opacity-75"
-                }`}
-              />
 
-              {/* Animated stems connecting center hub to radial petals */}
-              <svg
-                aria-hidden="true"
-                viewBox="-160 -120 320 240"
-                className="pointer-events-none absolute top-1/2 left-1/2 h-[240px] w-[320px] -translate-x-1/2 -translate-y-1/2"
-              >
-                {bloomEntries.map((entry, index) => {
-                  const pos = getRadialOffset(index, bloomEntries.length);
-                  const accent = ORB_ACCENTS[entry.tone];
-                  return (
-                    <line
-                      key={entry.id}
-                      x1="0"
-                      y1="0"
-                      x2={shortcutsOpen ? pos.lineX : 0}
-                      y2={shortcutsOpen ? pos.lineY : 0}
-                      strokeWidth="1.5"
-                      strokeDasharray="3 5"
-                      className={`${accent.stem} transition-all duration-300`}
-                      style={{
-                        opacity: shortcutsOpen ? 0.9 : 0,
-                        transitionDelay: shortcutsOpen
-                          ? `${index * 40}ms`
-                          : "0ms",
-                      }}
-                    />
-                  );
-                })}
-              </svg>
-
-              {/* Radial Petals */}
-              {bloomEntries.map((entry, index) => {
-                const pos = getRadialOffset(index, bloomEntries.length);
-                const accent = ORB_ACCENTS[entry.tone];
-                const sharedWrapperClass = `group absolute top-1/2 left-1/2 z-10 transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
-                  shortcutsOpen
-                    ? "pointer-events-auto opacity-100"
-                    : "pointer-events-none opacity-0"
-                }`;
-                const sharedTransform = {
-                  transform: shortcutsOpen
-                    ? `translate(calc(-50% + ${pos.xCss}), calc(-50% + ${pos.yPx}px)) scale(1)`
-                    : "translate(-50%, -50%) scale(0.3)",
-                  transitionDelay: shortcutsOpen
-                    ? `${index * 45}ms`
-                    : `${(bloomEntries.length - 1 - index) * 25}ms`,
-                };
-
-                if (entry.kind === "action") {
-                  return (
-                    <div
-                      key={entry.id}
-                      className={sharedWrapperClass}
-                      style={sharedTransform}
-                    >
-                      <button
-                        type="button"
-                        tabIndex={shortcutsOpen ? 0 : -1}
-                        aria-hidden={!shortcutsOpen}
-                        onClick={entry.onClick}
-                        title={entry.title}
-                        className={`flex h-[74px] w-[74px] flex-col items-center justify-center gap-1 rounded-full border border-dashed ${accent.ring} ${accent.bg} px-1.5 text-center shadow-sm transition-transform duration-150 hover:scale-108 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#003C71]`}
-                      >
-                        {entry.actionType === "google" ? (
-                          <GoogleLogoIcon className="h-5.5 w-5.5" />
-                        ) : (
-                          <svg
-                            className="h-5 w-5 text-violet-700 dark:text-violet-300"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2.3"
-                            strokeLinecap="round"
-                            aria-hidden="true"
-                          >
-                            <path d="M12 5v14" />
-                            <path d="M5 12h14" />
-                          </svg>
-                        )}
-                        <span className="max-w-[60px] truncate text-[10px] leading-tight font-bold text-slate-800 dark:text-slate-100">
-                          {entry.label}
-                        </span>
-                      </button>
-                    </div>
-                  );
-                }
-
-                return (
-                  <div
-                    key={entry.id}
-                    className={sharedWrapperClass}
-                    style={sharedTransform}
-                  >
-                    <a
-                      href={entry.href}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      tabIndex={shortcutsOpen ? 0 : -1}
-                      aria-hidden={!shortcutsOpen}
-                      title={entry.title}
-                      className={`relative flex h-[74px] w-[74px] flex-col items-center justify-center gap-1 rounded-full border ${accent.ring} bg-white px-1.5 text-center shadow-sm transition-transform duration-150 hover:scale-108 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#003C71] dark:bg-slate-900`}
-                    >
-                      {entry.imageUrl ? (
-                        <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden rounded-full ring-1 ring-slate-200 dark:ring-slate-700">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={entry.imageUrl}
-                            alt=""
-                            aria-hidden="true"
-                            className="h-full w-full object-cover object-center"
-                          />
-                        </span>
-                      ) : entry.googleServiceId ? (
-                        <GoogleServiceIcon
-                          serviceId={entry.googleServiceId}
-                          className="h-6 w-6"
-                        />
-                      ) : entry.isMeet ? (
-                        <GoogleMeetIcon className="h-6 w-6" />
-                      ) : (
-                        <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#DCEBFA] text-[10px] font-bold text-[#003C71] dark:bg-sky-900/60 dark:text-sky-200">
-                          {entry.initials}
-                        </span>
-                      )}
-
-                      <span className="max-w-[62px] truncate text-[10px] leading-tight font-bold text-slate-800 dark:text-slate-100">
-                        {entry.label}
-                      </span>
-                    </a>
-
-                    {entry.onRemove && (
-                      <button
-                        type="button"
-                        tabIndex={shortcutsOpen ? 0 : -1}
-                        onClick={entry.onRemove}
-                        aria-label={`Remove ${entry.label} shortcut`}
-                        title="Remove shortcut"
-                        className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full border border-slate-200 bg-white text-[11px] font-bold text-slate-500 opacity-0 shadow-xs transition group-hover:opacity-100 hover:bg-rose-50 hover:text-rose-600 focus-visible:opacity-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-                      >
-                        &times;
-                      </button>
-                    )}
-                  </div>
-                );
-              })}
-
-              {/* Center Hub Orb */}
+            <div className="flex items-center gap-1.5">
               <button
                 type="button"
-                onClick={() => setShortcutsOpen((open) => !open)}
-                aria-expanded={shortcutsOpen}
-                aria-label={
-                  shortcutsOpen
-                    ? "Close Essential OTU Shortcuts"
-                    : "Open Essential OTU Shortcuts"
+                onClick={onOpenGoogleModal}
+                title={
+                  googleShortcuts.accounts.length > 0
+                    ? "Edit Google accounts, services & Meet links"
+                    : "Add Google school & personal shortcuts"
                 }
-                className={`group absolute top-1/2 left-1/2 z-20 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center justify-center gap-1 rounded-full border px-2 text-center shadow-md transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#003C71] ${
-                  shortcutsOpen
-                    ? "h-20 w-20 border-[#003C71]/35 bg-[#003C71] text-white shadow-[0_12px_28px_-10px_rgba(0,60,113,0.55)] dark:border-sky-400/40 dark:bg-sky-600"
-                    : "h-[104px] w-[104px] border-slate-200 bg-white text-slate-900 hover:scale-105 hover:border-[#003C71]/35 hover:shadow-lg dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-sky-400/40"
-                }`}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200/90 bg-slate-50 px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 transition-colors hover:border-[#003C71]/35 hover:bg-white hover:text-[#003C71] dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-200 dark:hover:border-sky-400/40 dark:hover:bg-slate-800 dark:hover:text-sky-300"
               >
-                <span
-                  className={`flex h-8 w-8 items-center justify-center rounded-full transition-transform duration-300 ${
-                    shortcutsOpen
-                      ? "rotate-45 bg-white/15 text-white"
-                      : "bg-slate-100/90 group-hover:scale-110 dark:bg-slate-800/90"
-                  }`}
-                >
-                  {shortcutsOpen ? (
-                    <svg
-                      className="h-4 w-4"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2.4"
-                      strokeLinecap="round"
-                      aria-hidden="true"
-                    >
-                      <path d="M12 5v14" />
-                      <path d="M5 12h14" />
-                    </svg>
-                  ) : (
-                    <svg
-                      className="h-4.5 w-4.5"
-                      viewBox="0 0 24 24"
-                      aria-hidden="true"
-                    >
-                      <circle cx="7" cy="7" r="3.6" fill="#10B981" />
-                      <circle cx="17" cy="7" r="3.6" fill="#E75D2A" />
-                      <circle cx="17" cy="17" r="3.6" fill="#0A5AA3" />
-                      <circle cx="7" cy="17" r="3.6" fill="#7C3AED" />
-                    </svg>
-                  )}
-                </span>
-
-                <span
-                  className={`leading-tight font-bold ${
-                    shortcutsOpen ? "text-[10px]" : "text-[10.5px]"
-                  }`}
-                >
-                  {shortcutsOpen ? "Close" : "Essential OTU Shortcuts"}
+                <GoogleLogoIcon className="h-3.5 w-3.5 shrink-0" />
+                <span>
+                  {googleShortcuts.accounts.length > 0
+                    ? "Edit Google"
+                    : "Add Google"}
                 </span>
               </button>
 
-              {!shortcutsOpen && (
-                <p className="pointer-events-none absolute inset-x-0 bottom-1 text-center text-[11px] font-medium text-slate-500 dark:text-slate-400">
-                  {linkCount} shortcuts &bull; Click to expand
-                </p>
-              )}
+              <button
+                type="button"
+                onClick={onOpenAddShortcut}
+                title="Add custom shortcut"
+                className="inline-flex items-center gap-1 rounded-lg border border-dashed border-slate-300 bg-white/80 px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 transition-colors hover:border-[#003C71]/40 hover:bg-[#EBF3FC]/60 hover:text-[#003C71] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-sky-400/40 dark:hover:text-sky-300"
+              >
+                <span aria-hidden="true">+</span>
+                <span>Add</span>
+              </button>
             </div>
-          )}
+          </div>
+
+          <div
+            aria-label="Quick shortcuts"
+            className="grid max-h-[250px] grid-cols-3 gap-2.5 overflow-y-auto py-0.5 pr-0.5 sm:grid-cols-4 lg:grid-cols-3"
+          >
+            {shortcutEntries.map((entry) => {
+              const ringClass = SHORTCUT_RING_CLASSES[entry.tone];
+              return (
+                <div key={entry.id} className="group relative">
+                  <a
+                    href={entry.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title={entry.title}
+                    className="flex h-full flex-col items-center justify-center gap-1.5 rounded-xl border border-slate-200/85 bg-slate-50/75 px-2 py-3 text-center transition-all duration-150 hover:-translate-y-0.5 hover:border-[#003C71]/35 hover:bg-white hover:shadow-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#003C71] dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-sky-400/40 dark:hover:bg-slate-800/80"
+                  >
+                    <span
+                      className={`flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border ${ringClass} bg-white shadow-2xs dark:bg-slate-900`}
+                    >
+                      {entry.imageUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={entry.imageUrl}
+                          alt=""
+                          aria-hidden="true"
+                          className="h-full w-full object-cover object-center"
+                        />
+                      ) : entry.googleServiceId ? (
+                        <GoogleServiceIcon
+                          serviceId={entry.googleServiceId}
+                          className="h-5 w-5"
+                        />
+                      ) : entry.isMeet ? (
+                        <GoogleMeetIcon className="h-5 w-5" />
+                      ) : (
+                        <span className="text-[11px] font-bold text-[#003C71] dark:text-sky-200">
+                          {entry.initials}
+                        </span>
+                      )}
+                    </span>
+
+                    <span className="w-full truncate text-[11.5px] font-semibold leading-tight text-slate-800 transition-colors group-hover:text-[#003C71] dark:text-slate-200 dark:group-hover:text-sky-300">
+                      {entry.label}
+                    </span>
+
+                    {entry.badge && (
+                      <span className="max-w-full truncate rounded-full bg-slate-200/75 px-1.5 py-0.5 text-[9px] font-semibold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                        {entry.badge}
+                      </span>
+                    )}
+                  </a>
+
+                  {entry.onRemove && (
+                    <button
+                      type="button"
+                      onClick={entry.onRemove}
+                      aria-label={`Remove ${entry.label} shortcut`}
+                      title="Remove shortcut"
+                      className="absolute top-1 right-1 flex h-4.5 w-4.5 items-center justify-center rounded-full border border-slate-200 bg-white text-[10px] font-bold text-slate-500 opacity-75 shadow-2xs transition hover:bg-rose-50 hover:text-rose-600 focus-visible:opacity-100 sm:opacity-0 sm:group-hover:opacity-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-rose-950/60 dark:hover:text-rose-400"
+                    >
+                      &times;
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       </section>
     </div>

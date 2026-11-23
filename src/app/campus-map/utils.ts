@@ -1,3 +1,10 @@
+import {
+  CAMPUS_MAP_MAX_DATE,
+  CAMPUS_MAP_MIN_DATE,
+  clampWeekStart,
+  getDayOfWeekMon1,
+  getTorontoNowParts,
+} from "@/lib/campus-map-dates";
 import type { CampusMapFeature, ScheduleInterval } from "@/lib/queries";
 
 export type PositionedEvent = ScheduleInterval & {
@@ -62,10 +69,13 @@ export const FLOOR_LABELS: Record<string, string> = {
 /** Ordered top-to-bottom like an indoor map / elevator floor picker, with All at top. */
 export const VERTICAL_FLOOR_KEYS = ["ALL", "40", "30", "20", "0", "-10"] as const;
 
+export const MAP_MIN_ZOOM = 3;
+export const MAP_MAX_ZOOM = 19;
+
 export const VENUES = {
   north: { lat: 43.9454, lng: -78.8968, zoom: 17, label: "North" },
-  downtown: { lat: 43.8978, lng: -78.8608, zoom: 18, label: "Downtown" },
-  whitby: { lat: 43.8723, lng: -78.9016, zoom: 18, label: "Whitby" },
+  downtown: { lat: 43.8978, lng: -78.8608, zoom: 17, label: "Downtown" },
+  whitby: { lat: 43.8723, lng: -78.9016, zoom: 17, label: "Whitby" },
 } as const;
 
 export type VenueKey = keyof typeof VENUES;
@@ -76,6 +86,50 @@ export const MAIN_BUILDING_SET = new Set<string>([
   ...MAIN_NORTH_BUILDINGS,
   ...MAIN_DOWNTOWN_BUILDINGS,
 ]);
+
+/** Verified non-DB building names already established in app copy (e.g. "Find a Library Room"). */
+export const VERIFIED_APP_BUILDING_NAMES: Record<string, string> = {
+  LIB: "Library",
+};
+
+const VENUE_LABELS: Record<string, string> = {
+  OSHAWA_CAMPUS: "Oshawa Campus",
+  WHITBY_CAMPUS: "Whitby Campus",
+  DOWNTOWN_OSHAWA: "Downtown Oshawa",
+  "North Location": "North Campus",
+};
+
+/** Formats raw campus_spaces venue strings into readable labels, dropping unknown underscore codes. */
+export function formatVenueLabel(venue: string | null | undefined): string | null {
+  const trimmed = venue?.trim();
+  if (!trimmed) return null;
+  if (VENUE_LABELS[trimmed]) return VENUE_LABELS[trimmed];
+  const upper = trimmed.toUpperCase();
+  if (VENUE_LABELS[upper]) return VENUE_LABELS[upper];
+  if (trimmed.includes("_")) return null;
+  return trimmed;
+}
+
+/**
+ * Returns live Toronto weekStart, dayIndex, date, and exact minute slotStart
+ * clamped to the academic map range and time scrubber bounds.
+ */
+export function getLiveTorontoMapState(now: Date = new Date()): {
+  weekStart: string;
+  dayIndex: number;
+  date: string;
+  slotStart: number;
+} {
+  const { date: torontoDate, minutes } = getTorontoNowParts(now);
+  let date = torontoDate;
+  if (date < CAMPUS_MAP_MIN_DATE) date = CAMPUS_MAP_MIN_DATE;
+  if (date > CAMPUS_MAP_MAX_DATE) date = CAMPUS_MAP_MAX_DATE;
+
+  const weekStart = clampWeekStart(date);
+  const dayIndex = getDayOfWeekMon1(date);
+  const slotStart = Math.max(480, Math.min(minutes, 1290));
+  return { weekStart, dayIndex, date, slotStart };
+}
 
 /** Strips all whitespace and uppercases text for room/building search comparison. */
 export function normalizeSearchCode(raw: string | null | undefined): string {
@@ -194,7 +248,7 @@ export function minutesToTimeInputValue(min: number): string {
 }
 
 export function parseTimeInputToMinutes(val: string): number | null {
-  const match = val.trim().match(/^(\d{2}):(\d{2})$/);
+  const match = val.trim().match(/^(\d{1,2}):(\d{2})$/);
   if (!match) return null;
   const h = Number(match[1]);
   const m = Number(match[2]);

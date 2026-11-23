@@ -5,7 +5,6 @@ import { createPortal } from "react-dom";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import type * as LeafletType from "leaflet";
-import { AuthButton } from "@/components/auth-button";
 import {
   addDaysIso,
   buildWeekDays,
@@ -18,8 +17,8 @@ import {
   formatShortIsoDate,
   formatWeekRangeLabel,
   getDayOfWeekMon1,
-  getDefaultCampusMapState,
   getWeekContextLabel,
+  parseIsoDateUtc,
 } from "@/lib/campus-map-dates";
 import type {
   CampusMapData,
@@ -37,12 +36,17 @@ import {
   formatFloor,
   formatMinutesToTime,
   getContainerColor,
+  getLiveTorontoMapState,
   getRoomDisplayCode,
   MAIN_BUILDING_SET,
   MAIN_DOWNTOWN_BUILDINGS,
   MAIN_NORTH_BUILDINGS,
+  MAP_MAX_ZOOM,
+  MAP_MIN_ZOOM,
   normalizeSearchCode,
+  parseTimeInputToMinutes,
   VENUES,
+  VERIFIED_APP_BUILDING_NAMES,
   VERTICAL_FLOOR_KEYS,
   type PositionedEvent,
   type RoomStatus,
@@ -154,6 +158,7 @@ export function CampusMapView() {
   const [currentDay, setCurrentDay] = useState<number>(1);
   const [currentSlotStart, setCurrentSlotStart] = useState<number>(720);
   const [currentDuration, setCurrentDuration] = useState<number>(30);
+  const [isLiveTime, setIsLiveTime] = useState<boolean>(true);
 
   // Interactive legend status filters (unscheduled stays off unless explicitly requested via ?filter=all)
   const [showAvailable, setShowAvailable] = useState<boolean>(true);
@@ -183,6 +188,7 @@ export function CampusMapView() {
   // Slide-out Room Details Drawer & Independent Weekly Schedule Modal
   const [selectedFeature, setSelectedFeature] = useState<CampusMapFeature | null>(null);
   const [selectedDrawerSubRoom, setSelectedDrawerSubRoom] = useState<string | null>(null);
+  const [isDrawerMinimized, setIsDrawerMinimized] = useState<boolean>(false);
   const [activeModalFeature, setActiveModalFeature] = useState<CampusMapFeature | null>(null);
   const [activeModalSubRoom, setActiveModalSubRoom] = useState<string | null>(null);
   const [modalWeekStart, setModalWeekStart] = useState<string | null>(null);
@@ -246,18 +252,102 @@ export function CampusMapView() {
       if (e.key === "Escape") {
         setSelectedFeature(null);
         setSelectedDrawerSubRoom(null);
+        setIsDrawerMinimized(false);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [selectedFeature, activeModalFeature, isBookableOpen, isMenuOpen]);
 
+  // Collapse mobile drawer if viewport crosses down to mobile while time popover & drawer are both open
+  useEffect(() => {
+    if (!isTimePopoverOpen || !selectedFeature) return;
+    const mq = window.matchMedia("(max-width: 1023px)");
+    const handleMqChange = () => {
+      if (mq.matches) {
+        setIsDrawerMinimized(true);
+      }
+    };
+    mq.addEventListener("change", handleMqChange);
+    return () => mq.removeEventListener("change", handleMqChange);
+  }, [isTimePopoverOpen, selectedFeature]);
+
+  // Keep selected time synced to current Toronto minute while live tracking is enabled
+  useEffect(() => {
+    if (!isLiveTime) return;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+
+    const syncLiveNow = () => {
+      const live = getLiveTorontoMapState();
+      setCurrentWeekStart((prev) => (prev === live.weekStart ? prev : live.weekStart));
+      setCurrentDay((prev) => (prev === live.dayIndex ? prev : live.dayIndex));
+      setCurrentSlotStart((prev) => (prev === live.slotStart ? prev : live.slotStart));
+    };
+
+    const now = new Date();
+    const msUntilNextMinute = Math.max(
+      250,
+      (60 - now.getSeconds()) * 1000 - now.getMilliseconds() + 50,
+    );
+    const timeoutId = setTimeout(() => {
+      syncLiveNow();
+      intervalId = setInterval(syncLiveNow, 60_000);
+    }, msUntilNextMinute);
+
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        syncLiveNow();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      clearTimeout(timeoutId);
+      if (intervalId !== null) clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [isLiveTime]);
+
   // Reset transient map state on load / URL param change / bfcache restore
   const syncFromUrl = useCallback((params: URLSearchParams) => {
-    const initial = getDefaultCampusMapState();
-    setCurrentWeekStart(initial.weekStart);
-    setCurrentDay(initial.dayIndex);
-    setCurrentSlotStart(initial.slotStart);
+    const live = getLiveTorontoMapState();
+    const forceNow = params.get("now") === "1";
+
+    const rawDate = params.get("date")?.trim() ?? "";
+    const parsedDate =
+      !forceNow && rawDate && parseIsoDateUtc(rawDate)
+        ? rawDate < CAMPUS_MAP_MIN_DATE
+          ? CAMPUS_MAP_MIN_DATE
+          : rawDate > CAMPUS_MAP_MAX_DATE
+            ? CAMPUS_MAP_MAX_DATE
+            : rawDate
+        : null;
+
+    const rawTime = params.get("time")?.trim() ?? "";
+    let parsedTime: number | null = null;
+    if (!forceNow && rawTime) {
+      parsedTime = parseTimeInputToMinutes(rawTime);
+      if (parsedTime === null && /^\d+$/.test(rawTime)) {
+        const mins = Number(rawTime);
+        if (Number.isFinite(mins) && mins >= 0 && mins <= 1439) {
+          parsedTime = Math.max(480, Math.min(1290, Math.round(mins)));
+        }
+      }
+    }
+
+    const hasExplicitDateTime = parsedDate !== null || parsedTime !== null;
+    if (hasExplicitDateTime) {
+      const targetDate = parsedDate ?? live.date;
+      setCurrentWeekStart(clampWeekStart(targetDate));
+      setCurrentDay(getDayOfWeekMon1(targetDate));
+      setCurrentSlotStart(parsedTime ?? live.slotStart);
+      setIsLiveTime(false);
+    } else {
+      setCurrentWeekStart(live.weekStart);
+      setCurrentDay(live.dayIndex);
+      setCurrentSlotStart(live.slotStart);
+      setIsLiveTime(true);
+    }
     setCurrentDuration(30);
 
     const qParam = params.get("q")?.trim() ?? "";
@@ -291,6 +381,7 @@ export function CampusMapView() {
     setIsTimePopoverOpen(false);
     setSelectedFeature(null);
     setSelectedDrawerSubRoom(null);
+    setIsDrawerMinimized(false);
     setActiveModalFeature(null);
     setActiveModalSubRoom(null);
 
@@ -300,9 +391,11 @@ export function CampusMapView() {
         ? VENUES[venueParam]
         : VENUES.north;
     if (!buildingParam && mapInstanceRef.current) {
-      mapInstanceRef.current.setView([targetVenue.lat, targetVenue.lng], targetVenue.zoom, {
-        animate: false,
-      });
+      mapInstanceRef.current.setView(
+        [targetVenue.lat, targetVenue.lng],
+        Math.min(targetVenue.zoom, MAP_MAX_ZOOM - 1),
+        { animate: false },
+      );
     }
   }, []);
 
@@ -415,20 +508,21 @@ export function CampusMapView() {
     if (!mapContainerRef.current || mapInstanceRef.current) return;
 
     let isMounted = true;
+    let resizeObserver: ResizeObserver | null = null;
     import("leaflet").then((leafletModule) => {
       if (!isMounted || !mapContainerRef.current || mapInstanceRef.current) return;
       const L = (leafletModule.default || leafletModule) as typeof LeafletType;
       leafletRef.current = L;
 
       const osm = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        maxZoom: 19,
+        maxZoom: MAP_MAX_ZOOM,
         attribution: "&copy; OpenStreetMap contributors",
       });
 
       const esriSatellite = L.tileLayer(
         "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
         {
-          maxZoom: 19,
+          maxZoom: MAP_MAX_ZOOM,
           attribution: "Tiles &copy; Esri",
         },
       );
@@ -436,7 +530,7 @@ export function CampusMapView() {
       const esriStreets = L.tileLayer(
         "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
         {
-          maxZoom: 19,
+          maxZoom: MAP_MAX_ZOOM,
           attribution: "Tiles &copy; Esri",
         },
       );
@@ -451,7 +545,9 @@ export function CampusMapView() {
 
       const map = L.map(mapContainerRef.current, {
         center: [initialVenue.lat, initialVenue.lng],
-        zoom: initialVenue.zoom,
+        zoom: Math.min(initialVenue.zoom, MAP_MAX_ZOOM - 1),
+        minZoom: MAP_MIN_ZOOM,
+        maxZoom: MAP_MAX_ZOOM,
         layers: [osm],
         preferCanvas: true,
         zoomControl: false,
@@ -483,10 +579,23 @@ export function CampusMapView() {
 
       mapInstanceRef.current = map;
       setMapReady(true);
+
+      const containerEl = mapContainerRef.current;
+      if (typeof ResizeObserver !== "undefined" && containerEl) {
+        resizeObserver = new ResizeObserver(() => {
+          map.invalidateSize({ animate: false });
+        });
+        resizeObserver.observe(containerEl);
+      }
+      requestAnimationFrame(() => {
+        if (isMounted) map.invalidateSize({ animate: false });
+      });
     });
 
     return () => {
       isMounted = false;
+      resizeObserver?.disconnect();
+      resizeObserver = null;
       setMapReady(false);
       setFloorControlEl(null);
       baseLayersRef.current = null;
@@ -531,12 +640,13 @@ export function CampusMapView() {
   const selectedIsoDate =
     selectedDayInfo?.date ?? addDaysIso(effectiveWeekStart, currentDay - 1);
 
-  // Sync "Now" to live Toronto date/week (clamped to 2026-09-01 .. 2027-04-30)
+  // Sync "Now" to live Toronto date/week (clamped to 2026-09-01 .. 2027-04-30) and resume live minute clock
   const setTimeToNow = useCallback(() => {
-    const nowState = getDefaultCampusMapState();
+    const nowState = getLiveTorontoMapState();
     setCurrentWeekStart(nowState.weekStart);
     setCurrentDay(nowState.dayIndex);
     setCurrentSlotStart(nowState.slotStart);
+    setIsLiveTime(true);
   }, []);
 
   const handleSelectDate = useCallback(
@@ -547,10 +657,26 @@ export function CampusMapView() {
           : rawDate > CAMPUS_MAP_MAX_DATE
             ? CAMPUS_MAP_MAX_DATE
             : rawDate;
+      setIsLiveTime(false);
       selectWeek(clamped, getDayOfWeekMon1(clamped));
     },
     [selectWeek],
   );
+
+  const handleChangeSlotStart = useCallback((nextMinutes: number) => {
+    setIsLiveTime(false);
+    setCurrentSlotStart(nextMinutes);
+  }, []);
+
+  const handleToggleDrawerMinimize = useCallback(() => {
+    setIsDrawerMinimized((prev) => {
+      const next = !prev;
+      if (!next) {
+        setIsTimePopoverOpen(false);
+      }
+      return next;
+    });
+  }, []);
 
   // Status check helper powered by live per-week schedules
   const getRoomStatus = useCallback(
@@ -684,7 +810,7 @@ export function CampusMapView() {
         map.flyToBounds(bounds, {
           paddingTopLeft: isMobile ? [24, 48] : [380, 70],
           paddingBottomRight: isMobile ? [24, 240] : [90, 140],
-          maxZoom: 19,
+          maxZoom: MAP_MAX_ZOOM - 1,
           duration: 0.75,
         });
       }
@@ -717,7 +843,7 @@ export function CampusMapView() {
           map.flyToBounds(bounds, {
             paddingTopLeft: isMobile ? [24, 48] : [380, 70],
             paddingBottomRight: isMobile ? [24, 240] : [90, 140],
-            maxZoom: 19,
+            maxZoom: MAP_MAX_ZOOM - 1,
             duration: 0.75,
           });
         }
@@ -727,6 +853,14 @@ export function CampusMapView() {
     },
     [data],
   );
+
+  // Verified full building names from active-term DB descriptions + container names + app copy
+  const buildingNameMap = useMemo<Record<string, string>>(() => {
+    return {
+      ...VERIFIED_APP_BUILDING_NAMES,
+      ...(data?.buildingNames ?? {}),
+    };
+  }, [data?.buildingNames]);
 
   // All distinct building codes for Menu ("More buildings...")
   const allBuildings = useMemo(() => {
@@ -747,8 +881,12 @@ export function CampusMapView() {
   const filteredMoreBuildings = useMemo(() => {
     const norm = normalizeSearchCode(buildingSearchQuery);
     if (!norm) return otherBuildings;
-    return allBuildings.filter((b) => normalizeSearchCode(b).includes(norm));
-  }, [allBuildings, otherBuildings, buildingSearchQuery]);
+    return allBuildings.filter(
+      (b) =>
+        normalizeSearchCode(b).includes(norm) ||
+        normalizeSearchCode(buildingNameMap[b]).includes(norm),
+    );
+  }, [allBuildings, otherBuildings, buildingSearchQuery, buildingNameMap]);
 
   // Zoom to ?building=CODE once map and features are ready
   useEffect(() => {
@@ -902,8 +1040,10 @@ export function CampusMapView() {
 
       setSelectedDrawerSubRoom(subRoomId ?? null);
       setSelectedFeature(feature);
+      setIsDrawerMinimized(false);
       setIsSearchOpen(false);
       setIsBookableOpen(false);
+      setIsTimePopoverOpen(false);
       focusRoomOnMap(feature);
     },
     [
@@ -1089,6 +1229,8 @@ export function CampusMapView() {
             L.DomEvent.stopPropagation(e);
             setSelectedDrawerSubRoom(null);
             setSelectedFeature(feature);
+            setIsDrawerMinimized(false);
+            setIsTimePopoverOpen(false);
             focusRoomOnMap(feature);
           },
           mouseover: (e) => {
@@ -1122,6 +1264,7 @@ export function CampusMapView() {
 
     setStats({ availCount: avail, busyCount: busy });
   }, [
+    mapReady,
     data,
     weekData,
     currentFloor,
@@ -1192,6 +1335,8 @@ export function CampusMapView() {
 
   const showInitialOverlay =
     loading || (currentWeekStart !== null && !weekData && !error && !weekError);
+  const isLegendLoading =
+    loading || !data || (!weekData && !weekError) || !mapReady;
   const isFreeOnlyFilter = showAvailable && !showInUse;
 
   const selectBuildingFromMenu = (bldg: string) => {
@@ -1203,7 +1348,7 @@ export function CampusMapView() {
   };
 
   return (
-    <div className="relative flex h-dvh w-full flex-col overflow-hidden bg-slate-100 font-sans text-slate-900 lg:h-screen dark:bg-zinc-950 dark:text-zinc-100">
+    <div className="relative flex h-[calc(100dvh-var(--site-nav-height,2.75rem))] w-full flex-col overflow-hidden bg-slate-100 font-sans text-slate-900 lg:h-[calc(100vh-var(--site-nav-height,2.75rem))] dark:bg-zinc-950 dark:text-zinc-100">
       {/* Compact Top Navigation Bar */}
       <header className="relative z-30 flex w-full flex-wrap items-center gap-x-2 gap-y-2 border-b border-slate-200 bg-white px-2.5 py-2 shadow-sm sm:px-3 md:flex-nowrap dark:border-zinc-800 dark:bg-zinc-900">
         {/* Left: Home + Title */}
@@ -1349,7 +1494,7 @@ export function CampusMapView() {
           </button>
         </div>
 
-        {/* Right (Row 1 right on mobile, far right on md+): Menu + Auth */}
+        {/* Right (Row 1 right on mobile, far right on md+): Menu */}
         <div className="order-2 ml-auto flex shrink-0 items-center gap-2 md:order-3">
           <div ref={menuRef} className="relative">
             <button
@@ -1385,7 +1530,7 @@ export function CampusMapView() {
               <div
                 role="dialog"
                 aria-label="Campus map menu"
-                className="absolute right-0 top-full z-50 mt-2 max-h-[calc(100dvh-5.5rem)] w-72 max-w-[calc(100vw-1.25rem)] overflow-y-auto rounded-2xl border border-slate-200 bg-white p-3 text-xs shadow-2xl dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                className="absolute right-0 top-full z-50 mt-2 max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-4.5rem)] w-80 max-w-[calc(100vw-1.25rem)] overflow-x-hidden overflow-y-auto rounded-2xl border border-slate-200 bg-white p-3 text-xs shadow-2xl sm:w-[352px] dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
               >
                 {/* Buildings */}
                 <div>
@@ -1409,21 +1554,36 @@ export function CampusMapView() {
                       <div className="mb-1 text-[11px] font-semibold text-slate-600 dark:text-zinc-300">
                         North
                       </div>
-                      <div className="flex flex-wrap gap-1">
-                        {MAIN_NORTH_BUILDINGS.map((bldg) => (
-                          <button
-                            key={bldg}
-                            type="button"
-                            onClick={() => selectBuildingFromMenu(bldg)}
-                            className={`rounded-md border px-2 py-1 font-mono text-[11px] font-semibold transition ${
-                              focusedBuilding === bldg
-                                ? "border-sky-600 bg-sky-600 text-white"
-                                : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
-                            }`}
-                          >
-                            {bldg}
-                          </button>
-                        ))}
+                      <div className="flex flex-col gap-1">
+                        {MAIN_NORTH_BUILDINGS.map((bldg) => {
+                          const fullName = buildingNameMap[bldg];
+                          const isSelected = focusedBuilding === bldg;
+                          return (
+                            <button
+                              key={bldg}
+                              type="button"
+                              onClick={() => selectBuildingFromMenu(bldg)}
+                              className={`flex w-full items-baseline gap-1.5 rounded-md border px-2.5 py-1 text-left text-[11px] transition ${
+                                isSelected
+                                  ? "border-sky-600 bg-sky-600 text-white"
+                                  : "border-slate-200 bg-slate-50 text-slate-800 hover:bg-slate-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700"
+                              }`}
+                            >
+                              <span className="shrink-0 font-mono font-semibold">{bldg}</span>
+                              {fullName && (
+                                <span
+                                  className={`min-w-0 truncate font-normal ${
+                                    isSelected
+                                      ? "text-sky-100"
+                                      : "text-slate-600 dark:text-zinc-300"
+                                  }`}
+                                >
+                                  &mdash; {fullName}
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
 
@@ -1431,21 +1591,36 @@ export function CampusMapView() {
                       <div className="mb-1 text-[11px] font-semibold text-slate-600 dark:text-zinc-300">
                         Downtown
                       </div>
-                      <div className="flex flex-wrap gap-1">
-                        {MAIN_DOWNTOWN_BUILDINGS.map((bldg) => (
-                          <button
-                            key={bldg}
-                            type="button"
-                            onClick={() => selectBuildingFromMenu(bldg)}
-                            className={`rounded-md border px-2 py-1 font-mono text-[11px] font-semibold transition ${
-                              focusedBuilding === bldg
-                                ? "border-sky-600 bg-sky-600 text-white"
-                                : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
-                            }`}
-                          >
-                            {bldg}
-                          </button>
-                        ))}
+                      <div className="flex flex-col gap-1">
+                        {MAIN_DOWNTOWN_BUILDINGS.map((bldg) => {
+                          const fullName = buildingNameMap[bldg];
+                          const isSelected = focusedBuilding === bldg;
+                          return (
+                            <button
+                              key={bldg}
+                              type="button"
+                              onClick={() => selectBuildingFromMenu(bldg)}
+                              className={`flex w-full items-baseline gap-1.5 rounded-md border px-2.5 py-1 text-left text-[11px] transition ${
+                                isSelected
+                                  ? "border-sky-600 bg-sky-600 text-white"
+                                  : "border-slate-200 bg-slate-50 text-slate-800 hover:bg-slate-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700"
+                              }`}
+                            >
+                              <span className="shrink-0 font-mono font-semibold">{bldg}</span>
+                              {fullName && (
+                                <span
+                                  className={`min-w-0 truncate font-normal ${
+                                    isSelected
+                                      ? "text-sky-100"
+                                      : "text-slate-600 dark:text-zinc-300"
+                                  }`}
+                                >
+                                  &mdash; {fullName}
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
                       </div>
                     </div>
 
@@ -1469,26 +1644,43 @@ export function CampusMapView() {
                             onChange={(e) => setBuildingSearchQuery(e.target.value)}
                             className="mb-1.5 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-base text-slate-900 placeholder:text-slate-500 outline-none focus:border-sky-500 md:text-[11px] dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-400"
                           />
-                          <div className="flex max-h-36 flex-wrap gap-1 overflow-y-auto">
+                          <div className="flex max-h-40 flex-wrap gap-1 overflow-y-auto">
                             {filteredMoreBuildings.length === 0 ? (
                               <span className="px-1 py-1 text-[11px] text-slate-500 dark:text-zinc-400">
                                 No matching buildings
                               </span>
                             ) : (
-                              filteredMoreBuildings.map((bldg) => (
-                                <button
-                                  key={bldg}
-                                  type="button"
-                                  onClick={() => selectBuildingFromMenu(bldg)}
-                                  className={`rounded border px-2 py-0.5 font-mono text-[11px] font-semibold transition ${
-                                    focusedBuilding === bldg
-                                      ? "border-sky-600 bg-sky-600 text-white"
-                                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-700"
-                                  }`}
-                                >
-                                  {bldg}
-                                </button>
-                              ))
+                              filteredMoreBuildings.map((bldg) => {
+                                const fullName = buildingNameMap[bldg];
+                                const isSelected = focusedBuilding === bldg;
+                                return (
+                                  <button
+                                    key={bldg}
+                                    type="button"
+                                    onClick={() => selectBuildingFromMenu(bldg)}
+                                    className={`inline-flex max-w-full items-baseline gap-1 rounded border px-2 py-0.5 text-left text-[11px] transition ${
+                                      isSelected
+                                        ? "border-sky-600 bg-sky-600 text-white"
+                                        : "border-slate-200 bg-white text-slate-800 hover:bg-slate-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-700"
+                                    }`}
+                                  >
+                                    <span className="shrink-0 font-mono font-semibold">
+                                      {bldg}
+                                    </span>
+                                    {fullName && (
+                                      <span
+                                        className={`min-w-0 truncate font-normal ${
+                                          isSelected
+                                            ? "text-sky-100"
+                                            : "text-slate-600 dark:text-zinc-300"
+                                        }`}
+                                      >
+                                        &mdash; {fullName}
+                                      </span>
+                                    )}
+                                  </button>
+                                );
+                              })
                             )}
                           </div>
                         </div>
@@ -1502,13 +1694,13 @@ export function CampusMapView() {
                   <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">
                     Layers
                   </div>
-                  <div className="grid grid-cols-3 gap-1">
+                  <div className="flex flex-wrap gap-1.5">
                     {BASE_LAYER_OPTIONS.map((opt) => (
                       <button
                         key={opt.key}
                         type="button"
                         onClick={() => switchBaseLayer(opt.key)}
-                        className={`rounded-lg border px-1.5 py-1 text-center text-[11px] font-semibold transition ${
+                        className={`whitespace-nowrap rounded-lg border px-3 py-1 text-center text-[11px] font-semibold transition ${
                           activeBaseLayer === opt.key
                             ? "border-sky-600 bg-sky-600 text-white"
                             : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
@@ -1522,15 +1714,11 @@ export function CampusMapView() {
               </div>
             )}
           </div>
-
-          <div className="hidden md:block">
-            <AuthButton />
-          </div>
         </div>
       </header>
 
       {/* Main Map Canvas Area */}
-      <div className="relative z-0 h-full w-full flex-1 overflow-hidden">
+      <div className="relative z-0 min-h-0 h-full w-full flex-1 overflow-hidden">
         {/* Loading Overlay */}
         {showInitialOverlay && (
           <div className="absolute inset-0 z-[1100] flex flex-col items-center justify-center bg-white/80 px-6 text-center backdrop-blur-sm dark:bg-zinc-950/80">
@@ -1643,10 +1831,13 @@ export function CampusMapView() {
           currentSlotStart={currentSlotStart}
           currentDuration={currentDuration}
           selectedSubRoom={selectedDrawerSubRoom}
+          isMinimized={isDrawerMinimized}
+          onToggleMinimize={handleToggleDrawerMinimize}
           onSelectSubRoom={setSelectedDrawerSubRoom}
           onClose={() => {
             setSelectedFeature(null);
             setSelectedDrawerSubRoom(null);
+            setIsDrawerMinimized(false);
           }}
           onOpenWeeklySchedule={openWeeklySchedule}
           onFocusRoom={focusRoomOnMap}
@@ -1661,65 +1852,80 @@ export function CampusMapView() {
             selectedFeature ? "lg:left-[376px]" : "lg:left-4"
           }`}
         >
-          <button
-            type="button"
-            aria-pressed={isFreeOnlyFilter}
-            title={isFreeOnlyFilter ? "Show all scheduled rooms" : "Filter to available rooms only"}
-            onClick={() => {
-              if (showAvailable && !showInUse) {
-                setShowAvailable(true);
-                setShowInUse(true);
-              } else {
-                setShowAvailable(true);
-                setShowInUse(false);
-              }
-            }}
-            className={`inline-flex items-center gap-1.5 rounded-full px-1.5 py-0.5 tabular-nums transition ${
-              isFreeOnlyFilter
-                ? "bg-emerald-100 text-emerald-900 dark:bg-emerald-950/80 dark:text-emerald-200"
-                : showAvailable
-                  ? "text-emerald-800 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-950/40"
-                  : "text-slate-400 line-through hover:bg-slate-100 dark:text-zinc-500"
-            }`}
-          >
-            <span
-              className={`h-2 w-2 shrink-0 rounded-full ${
-                showAvailable ? "bg-emerald-500" : "bg-slate-400"
-              }`}
-            />
-            <span>{stats.availCount} free</span>
-          </button>
+          {isLegendLoading ? (
+            <span className="inline-flex items-center gap-1.5 px-1.5 py-0.5 text-slate-600 dark:text-zinc-300">
+              <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-slate-400 dark:bg-zinc-500" />
+              <span>Loading rooms&hellip;</span>
+            </span>
+          ) : (
+            <>
+              <button
+                type="button"
+                aria-pressed={isFreeOnlyFilter}
+                title={
+                  isFreeOnlyFilter ? "Show all scheduled rooms" : "Filter to available rooms only"
+                }
+                onClick={() => {
+                  if (showAvailable && !showInUse) {
+                    setShowAvailable(true);
+                    setShowInUse(true);
+                  } else {
+                    setShowAvailable(true);
+                    setShowInUse(false);
+                  }
+                }}
+                className={`inline-flex items-center gap-1.5 rounded-full px-1.5 py-0.5 tabular-nums transition ${
+                  isFreeOnlyFilter
+                    ? "bg-emerald-100 text-emerald-900 dark:bg-emerald-950/80 dark:text-emerald-200"
+                    : showAvailable
+                      ? "text-emerald-800 hover:bg-emerald-50 dark:text-emerald-300 dark:hover:bg-emerald-950/40"
+                      : "text-slate-400 line-through hover:bg-slate-100 dark:text-zinc-500"
+                }`}
+              >
+                <span
+                  className={`h-2 w-2 shrink-0 rounded-full ${
+                    showAvailable ? "bg-emerald-500" : "bg-slate-400"
+                  }`}
+                />
+                <span>{stats.availCount} free</span>
+              </button>
 
-          <span className="text-slate-400 dark:text-zinc-500">&middot;</span>
+              <span className="text-slate-400 dark:text-zinc-500">&middot;</span>
 
-          <button
-            type="button"
-            aria-pressed={!showAvailable && showInUse}
-            title={!showAvailable && showInUse ? "Show all scheduled rooms" : "Filter to in-use rooms only"}
-            onClick={() => {
-              if (!showInUse || !showAvailable) {
-                setShowAvailable(true);
-                setShowInUse(true);
-              } else {
-                setShowAvailable(false);
-                setShowInUse(true);
-              }
-            }}
-            className={`inline-flex items-center gap-1.5 rounded-full px-1.5 py-0.5 tabular-nums transition ${
-              !showAvailable && showInUse
-                ? "bg-rose-100 text-rose-900 dark:bg-rose-950/80 dark:text-rose-200"
-                : showInUse
-                  ? "text-rose-800 hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-950/40"
-                  : "text-slate-400 line-through hover:bg-slate-100 dark:text-zinc-500"
-            }`}
-          >
-            <span
-              className={`h-2 w-2 shrink-0 rounded-full ${
-                showInUse ? "bg-rose-500" : "bg-slate-400"
-              }`}
-            />
-            <span>{stats.busyCount} in use</span>
-          </button>
+              <button
+                type="button"
+                aria-pressed={!showAvailable && showInUse}
+                title={
+                  !showAvailable && showInUse
+                    ? "Show all scheduled rooms"
+                    : "Filter to in-use rooms only"
+                }
+                onClick={() => {
+                  if (!showInUse || !showAvailable) {
+                    setShowAvailable(true);
+                    setShowInUse(true);
+                  } else {
+                    setShowAvailable(false);
+                    setShowInUse(true);
+                  }
+                }}
+                className={`inline-flex items-center gap-1.5 rounded-full px-1.5 py-0.5 tabular-nums transition ${
+                  !showAvailable && showInUse
+                    ? "bg-rose-100 text-rose-900 dark:bg-rose-950/80 dark:text-rose-200"
+                    : showInUse
+                      ? "text-rose-800 hover:bg-rose-50 dark:text-rose-300 dark:hover:bg-rose-950/40"
+                      : "text-slate-400 line-through hover:bg-slate-100 dark:text-zinc-500"
+                }`}
+              >
+                <span
+                  className={`h-2 w-2 shrink-0 rounded-full ${
+                    showInUse ? "bg-rose-500" : "bg-slate-400"
+                  }`}
+                />
+                <span>{stats.busyCount} in use</span>
+              </button>
+            </>
+          )}
 
           {focusedBuilding !== "ALL" && (
             <>
@@ -1747,13 +1953,19 @@ export function CampusMapView() {
           isOpen={isTimePopoverOpen}
           isDrawerOpen={Boolean(selectedFeature)}
           onToggleOpen={() => {
-            setIsTimePopoverOpen((prev) => !prev);
+            setIsTimePopoverOpen((prev) => {
+              const next = !prev;
+              if (next && window.innerWidth < 1024 && selectedFeature) {
+                setIsDrawerMinimized(true);
+              }
+              return next;
+            });
             setIsMenuOpen(false);
             setIsBookableOpen(false);
           }}
           onClose={() => setIsTimePopoverOpen(false)}
           onSelectDate={handleSelectDate}
-          onChangeSlotStart={setCurrentSlotStart}
+          onChangeSlotStart={handleChangeSlotStart}
           onChangeDuration={setCurrentDuration}
           onSetNow={setTimeToNow}
         />
@@ -1858,7 +2070,7 @@ export function CampusMapView() {
                 {/* Reset modal week only (without altering main map date/time) */}
                 <button
                   type="button"
-                  onClick={() => setModalWeekStart(getDefaultCampusMapState().weekStart)}
+                  onClick={() => setModalWeekStart(getLiveTorontoMapState().weekStart)}
                   title="Jump modal back to current week"
                   className="rounded-lg border border-emerald-400 bg-emerald-50 px-2 py-1 text-[11px] font-bold text-emerald-800 transition hover:bg-emerald-100 lg:px-2.5 lg:text-xs dark:border-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-200 dark:hover:bg-emerald-900/70"
                 >

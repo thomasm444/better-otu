@@ -474,6 +474,7 @@ export type CampusMapData = {
   type: "FeatureCollection";
   features: CampusMapFeature[];
   unmappedDetailedRes: CampusMapUnmappedSpace[];
+  buildingNames?: Record<string, string>;
 };
 
 export type CampusMapWeekData = {
@@ -805,7 +806,7 @@ export async function getCampusMapData(
 
   const supabase = getPublicClient();
 
-  const [spacesRaw, rbdRowsRaw, unmappedRes, libRes] = await Promise.all([
+  const [spacesRaw, rbdRowsRaw, unmappedRes, libRes, meetingBuildingRowsRaw] = await Promise.all([
     collectPagesById<string>((lastId, limit) => {
       let query = supabase
         .from("campus_spaces")
@@ -831,6 +832,18 @@ export async function getCampusMapData(
       .select("room_id, building, room_type, capacity, description")
       .order("room_id", { ascending: true }),
     supabase.from("library_study_rooms").select("room_id, min_capacity, max_capacity"),
+    collectPagesById<number>((lastId, limit) => {
+      let query = supabase
+        .from("course_meetings")
+        .select("id, building, building_description")
+        .in("term", ["202609", "202701", "202605"])
+        .not("building", "is", null)
+        .not("building_description", "is", null)
+        .order("id", { ascending: true })
+        .limit(limit);
+      if (lastId !== null) query = query.gt("id", lastId);
+      return query;
+    }),
   ]);
 
   if (unmappedRes.error) {
@@ -966,10 +979,52 @@ export async function getCampusMapData(
       description: u.description ?? "",
     }));
 
+  const buildingNames: Record<string, string> = {};
+  const stripTrailingCode = (name: string, code: string) => {
+    const suffix = ` (${code})`;
+    return name.toUpperCase().endsWith(suffix)
+      ? name.slice(0, -suffix.length).trim()
+      : name.trim();
+  };
+
+  for (const row of meetingBuildingRowsRaw as Array<{
+    building: string | null;
+    building_description: string | null;
+  }>) {
+    const code = row.building?.trim().toUpperCase();
+    const rawDesc = row.building_description?.trim();
+    if (!code || !rawDesc || code === "SYN" || code === "OFFSIT") continue;
+    // Banner truncates building_description at 30 chars (e.g. SIR -> "Software and Informatics Resea")
+    if (
+      rawDesc.length >= 30 &&
+      !rawDesc.endsWith(")") &&
+      !/\b(Building|Hall|Centre|Theatre|Pavilion|Library|Arena)$/i.test(rawDesc)
+    ) {
+      continue;
+    }
+    const cleaned = stripTrailingCode(rawDesc, code);
+    if (cleaned && cleaned.toUpperCase() !== code && !buildingNames[code]) {
+      buildingNames[code] = cleaned;
+    }
+  }
+
+  for (const feat of features) {
+    const props = feat.properties;
+    if (!props.isBuildingContainer) continue;
+    const code = props.building?.trim().toUpperCase();
+    const rawName = props.name?.trim();
+    if (!code || !rawName) continue;
+    const cleaned = stripTrailingCode(rawName, code);
+    if (cleaned && cleaned.toUpperCase() !== code && !buildingNames[code]) {
+      buildingNames[code] = cleaned;
+    }
+  }
+
   return {
     type: "FeatureCollection",
     features,
     unmappedDetailedRes,
+    buildingNames,
   };
 }
 

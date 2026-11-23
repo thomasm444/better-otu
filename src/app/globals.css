@@ -3,6 +3,7 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --site-nav-height: 2.75rem;
 }
 
 @theme inline {
