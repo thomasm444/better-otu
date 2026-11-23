@@ -279,6 +279,22 @@ export function DegreePlannerClient({
     calStart: number;
     calEnd: number;
   } | null>(null);
+  const [pendingRemoveCourse, setPendingRemoveCourse] = useState<{
+    termIndex: number;
+    slotIndex: number;
+    code: string;
+    requiredFor: string[];
+    closeDetailsModal?: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!pendingRemoveCourse) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setPendingRemoveCourse(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [pendingRemoveCourse]);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarTab, setSidebarTab] = useState<"major" | "minor">("major");
   const [minorProgram, setMinorProgram] =
@@ -1581,6 +1597,93 @@ export function DegreePlannerClient({
     },
     [terms, customs, commitPlan],
   );
+
+  const requestClearSlot = useCallback(
+    (
+      termIndex: number,
+      slotIndex: number,
+      options?: { closeDetailsModal?: boolean },
+    ) => {
+      const code = terms[termIndex]?.slots[slotIndex] ?? null;
+      if (!code) return;
+
+      const beforeSet = earnedCodes(terms, customs);
+      const afterSet = new Set<string>(transferCodes(customs));
+      terms.forEach((t, i) => {
+        t.slots.forEach((c, j) => {
+          if (c && !(i === termIndex && j === slotIndex)) {
+            afterSet.add(c);
+          }
+        });
+      });
+
+      const requiredFor: string[] = [];
+      if (
+        model?.required.some(
+          (r) =>
+            Boolean(findEquivalentInSet(r.code, beforeSet, equivMap)) &&
+            !findEquivalentInSet(r.code, afterSet, equivMap),
+        )
+      ) {
+        requiredFor.push(
+          program?.name ? `${program.name} (major)` : "your major",
+        );
+      }
+      if (
+        minorModel?.required.some(
+          (r) =>
+            Boolean(findEquivalentInSet(r.code, beforeSet, equivMap)) &&
+            !findEquivalentInSet(r.code, afterSet, equivMap),
+        )
+      ) {
+        requiredFor.push(
+          minorProgram?.name ? `${minorProgram.name} (minor)` : "your minor",
+        );
+      }
+
+      if (requiredFor.length > 0) {
+        setPendingRemoveCourse({
+          termIndex,
+          slotIndex,
+          code,
+          requiredFor,
+          closeDetailsModal: options?.closeDetailsModal,
+        });
+        return;
+      }
+
+      clearSlot(termIndex, slotIndex);
+      if (options?.closeDetailsModal) setSelectedCourse(null);
+    },
+    [
+      terms,
+      customs,
+      model,
+      minorModel,
+      program,
+      minorProgram,
+      equivMap,
+      clearSlot,
+    ],
+  );
+
+  const handleConfirmRemoveCourse = useCallback(() => {
+    if (!pendingRemoveCourse) return;
+    if (
+      terms[pendingRemoveCourse.termIndex]?.slots[
+        pendingRemoveCourse.slotIndex
+      ] === pendingRemoveCourse.code
+    ) {
+      clearSlot(
+        pendingRemoveCourse.termIndex,
+        pendingRemoveCourse.slotIndex,
+      );
+    }
+    if (pendingRemoveCourse.closeDetailsModal) {
+      setSelectedCourse(null);
+    }
+    setPendingRemoveCourse(null);
+  }, [pendingRemoveCourse, terms, clearSlot]);
 
   const addSummer = useCallback(
     (year: number) => {
@@ -3338,7 +3441,7 @@ export function DegreePlannerClient({
                                         type="button"
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          clearSlot(termIndex, slotIndex);
+                                          requestClearSlot(termIndex, slotIndex);
                                         }}
                                         title="Remove"
                                         className="rounded px-0.5 text-sm leading-none text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/50"
@@ -3544,7 +3647,7 @@ export function DegreePlannerClient({
           onPlaceCourse={(ti, si, code) =>
             placeCourse(ti, si, code, undefined, { keepOpen: true })
           }
-          onClearSlot={(ti, si) => clearSlot(ti, si)}
+          onClearSlot={(ti, si) => requestClearSlot(ti, si)}
           onSaveCustom={handleSaveCustom}
           onToast={showToast}
         />
@@ -3566,11 +3669,86 @@ export function DegreePlannerClient({
           minorModel={minorModel}
           onClose={() => setSelectedCourse(null)}
           onRemove={() => {
-            clearSlot(selectedCourse.termIndex, selectedCourse.slotIndex);
-            setSelectedCourse(null);
+            requestClearSlot(
+              selectedCourse.termIndex,
+              selectedCourse.slotIndex,
+              { closeDetailsModal: true },
+            );
           }}
         />
       )}
+
+      {/* Required Course Removal Confirmation Modal */}
+      {pendingRemoveCourse &&
+        (() => {
+          const course = courseOf(
+            pendingRemoveCourse.code,
+            catalogMap,
+            customs,
+          );
+          const term = terms[pendingRemoveCourse.termIndex];
+          const termLabel = term
+            ? `Year ${term.year} ${term.season} ${termCalendarYear(startYear, term.year, term.season)}`
+            : null;
+          return (
+            <div
+              className="fixed inset-0 z-[1400] flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm"
+              onClick={() => setPendingRemoveCourse(null)}
+            >
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className="w-full max-w-md rounded-2xl border border-rose-200 bg-white p-6 shadow-2xl ring-4 ring-rose-100/60 dark:border-rose-900/70 dark:bg-slate-900 dark:ring-rose-950/40"
+              >
+                <div className="mb-3 flex items-center gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-600 dark:bg-rose-950 dark:text-rose-400">
+                    <span className="text-lg font-bold">!</span>
+                  </div>
+                  <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                    Remove required course?
+                  </h2>
+                </div>
+
+                <div className="mb-3 rounded-xl border border-slate-200/80 bg-slate-50/75 px-3 py-2 text-xs dark:border-slate-800 dark:bg-slate-950/50">
+                  <div className="font-mono font-semibold text-slate-900 dark:text-slate-100">
+                    {pendingRemoveCourse.code}
+                    {course?.title ? ` — ${course.title}` : ""}
+                  </div>
+                  {termLabel && (
+                    <div className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                      Currently scheduled in {termLabel}
+                    </div>
+                  )}
+                </div>
+
+                <p className="mb-6 text-sm text-slate-600 dark:text-slate-400">
+                  <strong>{pendingRemoveCourse.code}</strong> is a required
+                  course for{" "}
+                  <strong>{pendingRemoveCourse.requiredFor.join(" and ")}</strong>
+                  . Are you sure you want to remove it from your plan? You can
+                  always add it back later from the{" "}
+                  <strong>What you need</strong> sidebar.
+                </p>
+
+                <div className="flex items-center justify-end gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setPendingRemoveCourse(null)}
+                    className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleConfirmRemoveCourse}
+                    className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-rose-700"
+                  >
+                    Yes, remove course
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
       {/* Fixed Overload Tooltip (rendered at root so nothing can clip it) */}
       {overloadTooltip && (
