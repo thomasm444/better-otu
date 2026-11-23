@@ -184,13 +184,13 @@ export function StackedPortalView({
                   <span className="truncate font-medium text-ink">
                     {degreeProgress.title}
                   </span>
-                  <span className="shrink-0 font-mono font-medium text-accent-ink tabular-nums">
+                  <span className="shrink-0 font-mono font-medium text-emerald-600 tabular-nums dark:text-emerald-400">
                     {degreeProgress.plannedCredits} / 120 cr
                   </span>
                 </div>
-                <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-surface-subtle">
+                <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-slate-200/85 ring-1 ring-inset ring-slate-300/40 dark:bg-slate-900 dark:ring-slate-700/60">
                   <div
-                    className="h-full rounded-full bg-accent"
+                    className="h-full rounded-full bg-gradient-to-r from-sky-400 via-teal-400 to-emerald-400"
                     style={{ width: `${Math.max(degreeProgress.percent, 6)}%` }}
                   />
                 </div>
@@ -236,8 +236,8 @@ export function StackedPortalView({
                 <p className="text-sm font-medium text-ink">
                   Progress bar &amp; degree requirements
                 </p>
-                <div className="mt-2.5 h-2 w-full overflow-hidden rounded-full bg-surface-subtle">
-                  <div className="h-full w-2/5 rounded-full bg-accent" />
+                <div className="mt-2.5 h-2 w-full overflow-hidden rounded-full bg-slate-200/85 ring-1 ring-inset ring-slate-300/40 dark:bg-slate-900 dark:ring-slate-700/60">
+                  <div className="h-full w-2/5 rounded-full bg-gradient-to-r from-sky-400 via-teal-400 to-emerald-400" />
                 </div>
                 <p className="mt-1.5 text-xs text-ink-muted">
                   Track prerequisites, credits, and multi-year course pathways

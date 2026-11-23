@@ -413,13 +413,13 @@ export function ClassicPortalView({
                   <span className="truncate text-ink">
                     {degreeProgress.title}
                   </span>
-                  <span className="shrink-0 font-mono text-accent-ink tabular-nums">
+                  <span className="shrink-0 font-mono text-emerald-600 tabular-nums dark:text-emerald-400">
                     {degreeProgress.plannedCredits}/120 cr
                   </span>
                 </div>
-                <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-line-subtle">
+                <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-200/85 ring-1 ring-inset ring-slate-300/40 dark:bg-slate-900 dark:ring-slate-700/60">
                   <div
-                    className="h-full rounded-full bg-accent"
+                    className="h-full rounded-full bg-gradient-to-r from-sky-400 via-teal-400 to-emerald-400"
                     style={{ width: `${Math.max(degreeProgress.percent, 6)}%` }}
                   />
                 </div>
@@ -436,12 +436,12 @@ export function ClassicPortalView({
                       profileDegreeName ||
                       "Program roadmap"}
                   </span>
-                  <span className="shrink-0 font-mono text-accent-ink tabular-nums">
+                  <span className="shrink-0 font-mono text-emerald-600 tabular-nums dark:text-emerald-400">
                     0/120 cr
                   </span>
                 </div>
-                <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-line-subtle">
-                  <div className="h-full w-0 rounded-full bg-accent" />
+                <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-slate-200/85 ring-1 ring-inset ring-slate-300/40 dark:bg-slate-900 dark:ring-slate-700/60">
+                  <div className="h-full w-0 rounded-full bg-gradient-to-r from-sky-400 via-teal-400 to-emerald-400" />
                 </div>
                 <p className="mt-1.5 truncate text-[11px] text-ink-muted">
                   {latestPlan?.start_year || profile?.year_of_study
