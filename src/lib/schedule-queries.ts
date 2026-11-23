@@ -42,8 +42,15 @@ const TERM_WEEK_ANCHORS: Record<
 > = {
   "202609": { anchorMonday: "2026-09-07", readingWeekMonday: "2026-10-12" },
   "202701": { anchorMonday: "2027-01-11", readingWeekMonday: "2027-02-15" },
+  "202705": { anchorMonday: "2027-05-03", readingWeekMonday: "2027-06-21" },
   "202605": { anchorMonday: "2026-05-04", readingWeekMonday: "2026-06-22" },
+  "202505": { anchorMonday: "2025-05-05", readingWeekMonday: "2025-06-23" },
 };
+
+const PREVIEW_SUMMER_TERMS: Array<{ code: string; label: string }> = [
+  { code: "202605", label: "Spring/Summer 2026" },
+  { code: "202505", label: "Spring/Summer 2025" },
+];
 
 /**
  * Infers teaching-week parity ("week1" = odd teaching weeks, "week2" = even teaching weeks)
@@ -431,52 +438,86 @@ function inferCourseLevel(courseNumber: string): number {
   return Math.floor(Number(m[1]) / 1000) * 1000;
 }
 
+async function fetchTermSections(
+  supabase: ReturnType<typeof getPublicClient>,
+  termCode: string,
+): Promise<RawCourseRow[]> {
+  return (await collectPages((from, to) =>
+    supabase
+      .from("courses")
+      .select(
+        `
+        crn,
+        subject,
+        course_number,
+        course_title,
+        sequence_number,
+        schedule_type_description,
+        instructional_method,
+        instructional_method_description,
+        campus_description,
+        credit_hours,
+        seats_available,
+        maximum_enrollment,
+        wait_available,
+        open_section,
+        link_identifier,
+        is_section_linked,
+        course_faculty ( display_name, primary_indicator, rmp_professors ( id, legacy_id, full_name, avg_rating, avg_difficulty, num_ratings, would_take_again_percent, professor_salaries ( calendar_year, salary_paid, taxable_benefits, job_title, first_name, last_name ) ) ),
+        course_meetings ( building, room, begin_time, end_time, start_date, end_date, meeting_schedule_type, monday, tuesday, wednesday, thursday, friday, saturday, sunday )
+      `,
+      )
+      .eq("term", termCode)
+      .order("subject", { ascending: true })
+      .order("course_number", { ascending: true })
+      .order("crn", { ascending: true })
+      .range(from, to),
+  )) as RawCourseRow[];
+}
+
 export async function getTermScheduleCatalog(
   term: string = getDefaultScheduleTerm(),
+  previewTerm?: string,
 ): Promise<TermScheduleCatalog> {
   "use cache";
   cacheLife("hours");
-  cacheTag("schedule-catalog", `schedule-catalog-${term}`, "sections");
+  cacheTag(
+    "schedule-catalog",
+    `schedule-catalog-${term}`,
+    ...(previewTerm ? [`schedule-catalog-preview-${previewTerm}`] : []),
+    "sections",
+  );
 
   const supabase = getPublicClient();
   const termInfo =
     SCHEDULE_TERMS.find((t) => t.code === term) ?? SCHEDULE_TERMS[0];
 
   const [rawSections, catalogCourses, degreeSubjects] = await Promise.all([
-    collectPages((from, to) =>
-      supabase
-        .from("courses")
-        .select(
-          `
-          crn,
-          subject,
-          course_number,
-          course_title,
-          sequence_number,
-          schedule_type_description,
-          instructional_method,
-          instructional_method_description,
-          campus_description,
-          credit_hours,
-          seats_available,
-          maximum_enrollment,
-          wait_available,
-          open_section,
-          link_identifier,
-          is_section_linked,
-          course_faculty ( display_name, primary_indicator, rmp_professors ( id, legacy_id, full_name, avg_rating, avg_difficulty, num_ratings, would_take_again_percent, professor_salaries ( calendar_year, salary_paid, taxable_benefits, job_title, first_name, last_name ) ) ),
-          course_meetings ( building, room, begin_time, end_time, start_date, end_date, meeting_schedule_type, monday, tuesday, wednesday, thursday, friday, saturday, sunday )
-        `,
-        )
-        .eq("term", termInfo.code)
-        .order("subject", { ascending: true })
-        .order("course_number", { ascending: true })
-        .order("crn", { ascending: true })
-        .range(from, to),
-    ),
+    fetchTermSections(supabase, termInfo.code),
     getCatalogCourses(),
     getDegreeSubjects(),
   ]);
+
+  const hasOfficialCourses = rawSections.length > 0;
+  let isPreview = false;
+  let activePreviewTerm: { code: string; label: string } | null = null;
+  let effectiveSections = rawSections;
+  let availablePreviewTerms: Array<{ code: string; label: string }> = [];
+
+  if (!hasOfficialCourses && termInfo.season === "Summer") {
+    availablePreviewTerms = PREVIEW_SUMMER_TERMS;
+    const requestedPreview = previewTerm
+      ? (PREVIEW_SUMMER_TERMS.find((p) => p.code === previewTerm) ?? null)
+      : null;
+    if (requestedPreview) {
+      effectiveSections = await fetchTermSections(
+        supabase,
+        requestedPreview.code,
+      );
+      isPreview = true;
+      activePreviewTerm = requestedPreview;
+    }
+  }
 
   const catalogByCode = new Map<string, (typeof catalogCourses)[number]>();
   const catalogByCompact = new Map<string, (typeof catalogCourses)[number]>();
@@ -500,8 +541,9 @@ export async function getTermScheduleCatalog(
   const subjectsSet = new Set<string>();
   const instructorsSet = new Set<string>();
 
-  for (const row of rawSections as RawCourseRow[]) {
-    const sec = normalizeSection(row, termInfo.code);
+  const normalizationTerm = activePreviewTerm?.code ?? termInfo.code;
+  for (const row of effectiveSections) {
+    const sec = normalizeSection(row, normalizationTerm);
     if (!sec) continue;
     subjectsSet.add(sec.subject);
     if (sec.instructor) instructorsSet.add(sec.instructor);
@@ -619,6 +661,11 @@ export async function getTermScheduleCatalog(
   return {
     term: termInfo.code,
     termLabel: termInfo.label,
+    hasOfficialCourses,
+    isPreview,
+    previewTerm: activePreviewTerm?.code ?? null,
+    previewTermLabel: activePreviewTerm?.label ?? null,
+    ...(availablePreviewTerms.length > 0 ? { availablePreviewTerms } : {}),
     courses,
     allCatalogCourses,
     subjects: [...subjectsSet].sort((a, b) => a.localeCompare(b, "en")),

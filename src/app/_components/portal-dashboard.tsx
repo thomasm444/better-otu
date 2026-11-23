@@ -5,6 +5,7 @@ import Link from "next/link";
 import React, { useEffect, useState } from "react";
 
 import { ClassicPortalView } from "@/app/_components/classic-portal-view";
+import { StackedPortalView } from "@/app/_components/stacked-portal-view";
 import {
   GoogleLogoIcon,
   GoogleShortcutsModal,
@@ -47,6 +48,8 @@ interface PortalDashboardProps {
   nonStandardCredits?: Record<string, number>;
 }
 
+type HomeView = "classic" | "stacked";
+
 interface CustomShortcut {
   id: string;
   label: string;
@@ -54,6 +57,7 @@ interface CustomShortcut {
 }
 
 const CUSTOM_SHORTCUTS_STORAGE_KEY = "better-otu:portal-custom-shortcuts:v1";
+const HOME_VIEW_STORAGE_KEY = "better-otu:home-view:v1";
 
 const QUICK_BUILDINGS = ["SHA", "SIR", "ERC", "BIT", "SCI", "ENG", "UP", "U5"] as const;
 
@@ -164,6 +168,7 @@ export function PortalDashboard({
   footer,
   nonStandardCredits,
 }: PortalDashboardProps) {
+  const [homeView, setHomeView] = useState<HomeView>("classic");
   const [firstName, setFirstName] = useState<string | null>(null);
   const [profile, setProfile] = useState<StudentProfileWithPrograms | null>(null);
   const [academicStartYear, setAcademicStartYear] = useState<number>(DEFAULT_START_YEAR);
@@ -182,9 +187,13 @@ export function PortalDashboard({
   const [googleShortcuts, setGoogleShortcuts] = useState<GoogleShortcutsState>(EMPTY_GOOGLE_STATE);
   const [isGoogleModalOpen, setIsGoogleModalOpen] = useState(false);
 
-  // Load saved custom shortcuts and Google shortcuts from localStorage
+  // Load saved Home view, custom shortcuts, and Google shortcuts from localStorage
   useEffect(() => {
     try {
+      const savedView = window.localStorage.getItem(HOME_VIEW_STORAGE_KEY);
+      if (savedView === "classic" || savedView === "stacked") {
+        queueMicrotask(() => setHomeView(savedView));
+      }
       const loadedGoogle = loadGoogleShortcutsState();
       if (loadedGoogle.accounts.length > 0 || loadedGoogle.meetLinks.length > 0) {
         queueMicrotask(() => setGoogleShortcuts(loadedGoogle));
@@ -420,6 +429,15 @@ export function PortalDashboard({
     saveGoogleShortcutsState(next);
   };
 
+  const handleSelectHomeView = (nextView: HomeView) => {
+    setHomeView(nextView);
+    try {
+      window.localStorage.setItem(HOME_VIEW_STORAGE_KEY, nextView);
+    } catch {
+      // Ignore storage errors
+    }
+  };
+
   const degreeProgress = computeDegreeProgress(latestPlan, nonStandardCredits);
   const visibleCourseCodes = savedCourseCodes.slice(0, 4);
   const yearLabel = formatYearOfStudy(profile?.year_of_study);
@@ -434,22 +452,57 @@ export function PortalDashboard({
     academicStartYear,
   );
 
+  const sharedProps = {
+    termLabel,
+    profile,
+    profileDegreeName,
+    profileMinorName,
+    derivedProfileStartYear,
+    degreeProgress,
+    latestPlan,
+    liveTimeLabel,
+    freeRoomsTotal,
+    quickBuildings: QUICK_BUILDINGS,
+    defaultShortcuts: DEFAULT_SHORTCUTS,
+    googleShortcuts,
+    customShortcuts,
+    onOpenAddShortcut: () => setIsAddShortcutOpen(true),
+    onRemoveCustomShortcut: handleRemoveShortcut,
+    onOpenGoogleModal: () => setIsGoogleModalOpen(true),
+    onRemoveMeetShortcut: handleRemoveMeetShortcut,
+  };
+
   return (
-    <main className="relative flex min-h-[calc(100dvh-var(--site-nav-height,2.75rem))] flex-1 flex-col overflow-x-clip bg-[#F8FAFC] font-sans text-slate-900 dark:bg-[#070B14] dark:text-slate-100">
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 bg-[radial-gradient(rgba(0,60,113,0.1)_1px,transparent_1px)] [background-size:22px_22px] [mask-image:radial-gradient(ellipse_85%_75%_at_50%_15%,#000_60%,transparent_100%)] dark:bg-[radial-gradient(rgba(148,163,184,0.14)_1px,transparent_1px)]"
-      />
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 top-0 h-[440px] bg-[radial-gradient(ellipse_62%_58%_at_22%_-6%,rgba(0,60,113,0.15),transparent_70%),radial-gradient(ellipse_50%_46%_at_84%_-8%,rgba(231,93,42,0.13),transparent_68%)] dark:bg-[radial-gradient(ellipse_62%_58%_at_22%_-6%,rgba(0,60,113,0.45),transparent_70%),radial-gradient(ellipse_50%_46%_at_84%_-8%,rgba(231,93,42,0.22),transparent_68%)]"
-      />
+    <main
+      className={`relative flex min-h-[calc(100dvh-var(--site-nav-height,2.75rem))] flex-1 flex-col overflow-x-clip font-sans text-slate-900 dark:text-slate-100 ${
+        homeView === "classic"
+          ? "bg-[#F8FAFC] dark:bg-[#070B14]"
+          : "bg-[#F8FAFD] dark:bg-[#090D16]"
+      }`}
+    >
+      {homeView === "classic" ? (
+        <>
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 bg-[radial-gradient(rgba(0,60,113,0.1)_1px,transparent_1px)] [background-size:22px_22px] [mask-image:radial-gradient(ellipse_85%_75%_at_50%_15%,#000_60%,transparent_100%)] dark:bg-[radial-gradient(rgba(148,163,184,0.14)_1px,transparent_1px)]"
+          />
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-x-0 top-0 h-[440px] bg-[radial-gradient(ellipse_62%_58%_at_22%_-6%,rgba(0,60,113,0.15),transparent_70%),radial-gradient(ellipse_50%_46%_at_84%_-8%,rgba(231,93,42,0.13),transparent_68%)] dark:bg-[radial-gradient(ellipse_62%_58%_at_22%_-6%,rgba(0,60,113,0.45),transparent_70%),radial-gradient(ellipse_50%_46%_at_84%_-8%,rgba(231,93,42,0.22),transparent_68%)]"
+          />
+        </>
+      ) : (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 top-0 h-80 bg-[radial-gradient(ellipse_70%_60%_at_50%_-10%,rgba(191,219,254,0.45),transparent_72%)] dark:bg-[radial-gradient(ellipse_70%_60%_at_50%_-10%,rgba(0,60,113,0.35),transparent_72%)]"
+        />
+      )}
 
       <div className="relative z-10 flex flex-1 flex-col">
         <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-5 py-7 sm:px-8 sm:py-10">
-          {/* Top Header: Greeting & Academic Summary */}
-          <header>
-            <div className="min-w-0">
+          {/* Top Header: Greeting, Academic Summary & Layout Switcher */}
+          <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+            <div className="min-w-0 flex-1">
               <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl dark:text-white">
                 {firstName ? `Welcome back, ${firstName}` : "Welcome to Better OTU"}
               </h1>
@@ -491,27 +544,77 @@ export function PortalDashboard({
                 </p>
               ) : null}
             </div>
+
+            <div
+              role="radiogroup"
+              aria-label="Home layout view"
+              className="inline-flex shrink-0 self-start rounded-xl border border-slate-200/90 bg-white/95 p-0.5 shadow-2xs backdrop-blur-xs dark:border-slate-800 dark:bg-slate-900/90"
+            >
+              <button
+                type="button"
+                role="radio"
+                aria-checked={homeView === "stacked"}
+                onClick={() => handleSelectHomeView("stacked")}
+                className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#003C71] ${
+                  homeView === "stacked"
+                    ? "bg-[#003C71] text-white shadow-2xs dark:bg-sky-500 dark:text-slate-950"
+                    : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
+                }`}
+              >
+                <svg
+                  className="h-3.5 w-3.5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <rect width="18" height="5" x="3" y="4" rx="1.5" />
+                  <rect width="18" height="5" x="3" y="10" rx="1.5" />
+                  <rect width="18" height="5" x="3" y="16" rx="1.5" />
+                </svg>
+                <span>Stacked</span>
+              </button>
+
+              <button
+                type="button"
+                role="radio"
+                aria-checked={homeView === "classic"}
+                onClick={() => handleSelectHomeView("classic")}
+                className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#003C71] ${
+                  homeView === "classic"
+                    ? "bg-[#003C71] text-white shadow-2xs dark:bg-sky-500 dark:text-slate-950"
+                    : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
+                }`}
+              >
+                <svg
+                  className="h-3.5 w-3.5"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <rect width="5" height="7" x="3" y="4" rx="1" />
+                  <rect width="5" height="7" x="9.5" y="4" rx="1" />
+                  <rect width="5" height="7" x="16" y="4" rx="1" />
+                  <rect width="10" height="7" x="3" y="13" rx="1" />
+                  <rect width="6" height="7" x="15" y="13" rx="1" />
+                </svg>
+                <span>Classic</span>
+              </button>
+            </div>
           </header>
 
-          <ClassicPortalView
-            termLabel={termLabel}
-            profile={profile}
-            profileDegreeName={profileDegreeName}
-            profileMinorName={profileMinorName}
-            derivedProfileStartYear={derivedProfileStartYear}
-            degreeProgress={degreeProgress}
-            latestPlan={latestPlan}
-            liveTimeLabel={liveTimeLabel}
-            freeRoomsTotal={freeRoomsTotal}
-            quickBuildings={QUICK_BUILDINGS}
-            defaultShortcuts={DEFAULT_SHORTCUTS}
-            googleShortcuts={googleShortcuts}
-            customShortcuts={customShortcuts}
-            onOpenAddShortcut={() => setIsAddShortcutOpen(true)}
-            onRemoveCustomShortcut={handleRemoveShortcut}
-            onOpenGoogleModal={() => setIsGoogleModalOpen(true)}
-            onRemoveMeetShortcut={handleRemoveMeetShortcut}
-          />
+          {homeView === "stacked" ? (
+            <StackedPortalView {...sharedProps} />
+          ) : (
+            <ClassicPortalView {...sharedProps} />
+          )}
         </div>
       </div>
 
