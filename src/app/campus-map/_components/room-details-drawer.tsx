@@ -213,7 +213,7 @@ export function RoomDetailsDrawer({
       onMouseDown={(e) => e.stopPropagation()}
       onTouchStart={(e) => e.stopPropagation()}
       onWheel={(e) => e.stopPropagation()}
-      className="absolute inset-x-2 bottom-[calc(max(0.75rem,env(safe-area-inset-bottom))+3.5rem)] top-auto z-[1050] flex max-h-[min(60dvh,calc(100%-4.5rem))] flex-col rounded-2xl border border-slate-200 bg-white/98 shadow-2xl backdrop-blur-md transition-all duration-200 lg:inset-x-auto lg:bottom-0 lg:left-0 lg:top-0 lg:max-h-none lg:w-full lg:max-w-[360px] lg:rounded-none lg:border-r lg:border-t-0 dark:border-zinc-800 dark:bg-zinc-900/98 dark:text-zinc-100"
+      className="absolute inset-x-2 bottom-[calc(max(0.75rem,env(safe-area-inset-bottom))+3.5rem)] top-auto z-[1050] flex max-h-[min(60dvh,calc(100%-4.5rem))] flex-col rounded-2xl border border-line bg-surface/98 text-ink shadow-[var(--shadow-lg)] backdrop-blur-md lg:inset-x-auto lg:bottom-0 lg:left-0 lg:top-0 lg:max-h-none lg:w-full lg:max-w-[360px] lg:rounded-none lg:border-r lg:border-t-0"
     >
       {/* Mobile Bottom Sheet Handle (tap or drag to collapse/expand) */}
       <button
@@ -474,11 +474,11 @@ export function RoomDetailsDrawer({
 
         {/* Room Metadata Grid */}
         <div className="grid grid-cols-2 gap-2 text-xs">
-          <div className="rounded-lg border border-slate-200/90 bg-slate-50/70 p-2.5 dark:border-zinc-800 dark:bg-zinc-800/40">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-zinc-400">
+          <div className="rounded-lg border border-line-subtle bg-surface-subtle p-2.5">
+            <div className="text-[11px] font-medium text-ink-muted">
               Floor
             </div>
-            <div className="mt-0.5 font-semibold text-slate-900 dark:text-zinc-100">
+            <div className="mt-0.5 font-medium text-ink">
               {formatFloor(p.floor)}
               {p.floorName && p.floorName !== formatFloor(p.floor)
                 ? ` (${p.floorName})`
@@ -486,34 +486,34 @@ export function RoomDetailsDrawer({
             </div>
           </div>
 
-          <div className="rounded-lg border border-slate-200/90 bg-slate-50/70 p-2.5 dark:border-zinc-800 dark:bg-zinc-800/40">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-zinc-400">
+          <div className="rounded-lg border border-line-subtle bg-surface-subtle p-2.5">
+            <div className="text-[11px] font-medium text-ink-muted">
               Capacity
             </div>
-            <div className="mt-0.5 font-semibold text-slate-900 dark:text-zinc-100">
+            <div className="mt-0.5 font-medium text-ink tabular-nums">
               {displayCapacity}
             </div>
             {capacitySource && (
-              <div className="truncate text-[10px] text-slate-500 dark:text-zinc-400">
+              <div className="truncate text-[10px] text-ink-muted">
                 Source: {capacitySource}
               </div>
             )}
           </div>
 
-          <div className="rounded-lg border border-slate-200/90 bg-slate-50/70 p-2.5 dark:border-zinc-800 dark:bg-zinc-800/40">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-zinc-400">
-              Room Type
+          <div className="rounded-lg border border-line-subtle bg-surface-subtle p-2.5">
+            <div className="text-[11px] font-medium text-ink-muted">
+              Room type
             </div>
-            <div className="mt-0.5 font-semibold text-slate-900 dark:text-zinc-100">
+            <div className="mt-0.5 font-medium text-ink">
               {p.type || (p.isLibraryRoom ? "Library Study Room" : "General Space")}
             </div>
           </div>
 
-          <div className="rounded-lg border border-slate-200/90 bg-slate-50/70 p-2.5 dark:border-zinc-800 dark:bg-zinc-800/40">
-            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-600 dark:text-zinc-400">
+          <div className="rounded-lg border border-line-subtle bg-surface-subtle p-2.5">
+            <div className="text-[11px] font-medium text-ink-muted">
               {p.configType ? "Configuration" : "Building"}
             </div>
-            <div className="mt-0.5 truncate font-semibold text-slate-900 dark:text-zinc-100">
+            <div className="mt-0.5 truncate font-medium text-ink">
               {p.configType || p.building || "—"}
             </div>
           </div>
@@ -523,10 +523,10 @@ export function RoomDetailsDrawer({
         {status.isBuildingContainer && status.subStatuses.length > 0 && (
           <div>
             <div className="mb-1.5 flex items-center justify-between">
-              <h3 className="text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-zinc-300">
+              <h3 className="text-xs font-medium text-ink-secondary">
                 Rooms in {p.building || roomCode}
               </h3>
-              <span className="text-[11px] font-medium text-slate-600 dark:text-zinc-400">
+              <span className="text-[11px] font-medium text-ink-muted tabular-nums">
                 {status.subStatuses.length} rooms
               </span>
             </div>
@@ -547,10 +547,10 @@ export function RoomDetailsDrawer({
                         }));
                       }
                     }}
-                    className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold transition ${
+                    className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors ${
                       isSelected
-                        ? "border-sky-600 bg-sky-600 text-white shadow-xs"
-                        : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                        ? "border-brand bg-brand text-brand-fg"
+                        : "border-line bg-surface text-ink-secondary hover:bg-surface-subtle hover:text-ink"
                     }`}
                   >
                     <span
@@ -569,10 +569,10 @@ export function RoomDetailsDrawer({
         {/* Today's Full Schedule Timeline */}
         <div>
           <div className="mb-2 flex items-center justify-between">
-            <h3 className="text-[11px] font-bold uppercase tracking-wider text-slate-600 dark:text-zinc-300">
-              {activeSubRoom ? `${activeSubRoom} — ` : ""}Today&apos;s Schedule
+            <h3 className="text-xs font-medium text-ink-secondary">
+              {activeSubRoom ? `${activeSubRoom} — ` : ""}Today&apos;s schedule
             </h3>
-            <span className="text-[11px] font-semibold text-slate-600 dark:text-zinc-400">
+            <span className="text-[11px] font-medium text-ink-muted tabular-nums">
               {todayIntervals.length}{" "}
               {todayIntervals.length === 1 ? "booking" : "bookings"}
             </span>
@@ -727,7 +727,7 @@ export function RoomDetailsDrawer({
           <button
             type="button"
             onClick={() => onOpenWeeklySchedule(feature, activeSubRoom ?? undefined)}
-            className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-sky-600 px-3 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-sky-700"
+            className="flex w-full items-center justify-center gap-1.5 rounded-lg bg-brand px-3 py-2 text-xs font-medium text-brand-fg transition-colors hover:bg-brand-hover"
           >
             <span>View Full Weekly Schedule</span>
           </button>

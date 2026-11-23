@@ -99,7 +99,7 @@ export function ProfileDrawer({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-md"
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-[#0b1018]/55 p-4 backdrop-blur-sm"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -108,18 +108,18 @@ export function ProfileDrawer({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="flex max-h-[88vh] w-full max-w-lg flex-col overflow-y-auto rounded-2xl border border-slate-200/90 bg-[#F8FAFD] p-5 shadow-2xl dark:border-slate-800 dark:bg-[#090D16] sm:p-6"
+        className="flex max-h-[88vh] w-full max-w-lg flex-col overflow-y-auto rounded-2xl border border-line bg-canvas p-5 shadow-[var(--shadow-lg)] sm:p-6"
       >
-        <div className="flex items-start justify-between gap-4 border-b border-slate-200/80 pb-4 dark:border-slate-800">
+        <div className="flex items-start justify-between gap-4 border-b border-line-subtle pb-4">
           <div className="min-w-0">
             <h2
               id={titleId}
-              className="truncate text-lg font-bold tracking-tight text-slate-900 dark:text-white"
+              className="truncate text-base font-semibold tracking-tight text-ink"
             >
               {resolvedName}
             </h2>
             {user.email && (
-              <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">
+              <p className="mt-0.5 truncate text-xs text-ink-muted">
                 {user.email}
               </p>
             )}
@@ -129,7 +129,7 @@ export function ProfileDrawer({
             type="button"
             onClick={onClose}
             aria-label="Close profile"
-            className="rounded-xl p-1.5 text-lg leading-none text-slate-400 transition-colors hover:bg-slate-200/70 hover:text-slate-700 focus-visible:ring-2 focus-visible:ring-[#003C71]/35 focus-visible:outline-none dark:hover:bg-slate-800 dark:hover:text-slate-200"
+            className="rounded-lg p-1.5 text-lg leading-none text-ink-muted transition-colors hover:bg-surface-subtle hover:text-ink focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none"
           >
             &times;
           </button>
@@ -137,30 +137,30 @@ export function ProfileDrawer({
 
         <div className="mt-5 flex-1 space-y-5">
           <div className="space-y-2">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
+            <p className="text-xs font-medium text-ink-muted">
               Preferences
             </p>
             <ProfilePreferencesCard />
           </div>
 
           <div className="space-y-2">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 dark:text-slate-500">
-              Academic Info
+            <p className="text-xs font-medium text-ink-muted">
+              Academic info
             </p>
             {loading && !payload ? (
-              <div className="divide-y divide-slate-100 rounded-2xl border border-[#BFD7F2]/80 bg-white dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-900">
+              <div className="divide-y divide-line-subtle rounded-xl border border-line bg-surface">
                 {[1, 2, 3].map((row) => (
                   <div key={row} className="flex items-center justify-between px-5 py-4">
                     <div className="space-y-2">
-                      <div className="h-3 w-14 animate-pulse rounded bg-slate-200/80 dark:bg-slate-800" />
-                      <div className="h-4 w-40 animate-pulse rounded bg-slate-200/80 dark:bg-slate-800" />
+                      <div className="h-3 w-14 rounded bg-surface-subtle" />
+                      <div className="h-4 w-40 rounded bg-surface-subtle" />
                     </div>
-                    <div className="h-7 w-16 animate-pulse rounded-lg bg-slate-100 dark:bg-slate-800" />
+                    <div className="h-7 w-16 rounded-lg bg-surface-subtle" />
                   </div>
                 ))}
               </div>
             ) : loadError ? (
-              <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-800 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200">
+              <div className="rounded-xl border border-danger-line bg-danger-soft px-4 py-3 text-xs text-danger">
                 {loadError}
               </div>
             ) : payload ? (
@@ -178,12 +178,12 @@ export function ProfileDrawer({
         </div>
 
         {onSignOut && (
-          <div className="mt-6 border-t border-slate-200/80 pt-4 dark:border-slate-800">
+          <div className="mt-6 border-t border-line-subtle pt-4">
             <button
               type="button"
               onClick={onSignOut}
               disabled={signingOut}
-              className="w-full rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition-colors hover:bg-slate-100 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+              className="w-full rounded-lg border border-line bg-surface px-4 py-2 text-xs font-medium text-ink-secondary transition-colors hover:bg-surface-subtle hover:text-ink focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none disabled:opacity-50"
             >
               {signingOut ? "Signing out..." : "Sign out"}
             </button>

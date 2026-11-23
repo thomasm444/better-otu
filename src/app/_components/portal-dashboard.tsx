@@ -489,63 +489,39 @@ export function PortalDashboard({
   };
 
   return (
-    <main
-      className={`relative flex min-h-[calc(100dvh-var(--site-nav-height,2.75rem))] flex-1 flex-col overflow-x-clip font-sans text-slate-900 dark:text-slate-100 ${
-        homeView === "classic"
-          ? "bg-[#F8FAFC] dark:bg-[#070B14]"
-          : "bg-[#F8FAFD] dark:bg-[#090D16]"
-      }`}
-    >
-      {homeView === "classic" ? (
-        <>
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-0 bg-[radial-gradient(rgba(0,60,113,0.1)_1px,transparent_1px)] [background-size:22px_22px] [mask-image:radial-gradient(ellipse_85%_75%_at_50%_15%,#000_60%,transparent_100%)] dark:bg-[radial-gradient(rgba(148,163,184,0.14)_1px,transparent_1px)]"
-          />
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-x-0 top-0 h-[440px] bg-[radial-gradient(ellipse_62%_58%_at_22%_-6%,rgba(0,60,113,0.15),transparent_70%),radial-gradient(ellipse_50%_46%_at_84%_-8%,rgba(231,93,42,0.13),transparent_68%)] dark:bg-[radial-gradient(ellipse_62%_58%_at_22%_-6%,rgba(0,60,113,0.45),transparent_70%),radial-gradient(ellipse_50%_46%_at_84%_-8%,rgba(231,93,42,0.22),transparent_68%)]"
-          />
-        </>
-      ) : (
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-x-0 top-0 h-80 bg-[radial-gradient(ellipse_70%_60%_at_50%_-10%,rgba(191,219,254,0.45),transparent_72%)] dark:bg-[radial-gradient(ellipse_70%_60%_at_50%_-10%,rgba(0,60,113,0.35),transparent_72%)]"
-        />
-      )}
-
+    <main className="relative flex min-h-[calc(100dvh-var(--site-nav-height,2.75rem))] flex-1 flex-col overflow-x-clip bg-canvas font-sans text-ink">
       <div className="relative z-10 flex flex-1 flex-col">
-        <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-5 py-7 sm:px-8 sm:py-10">
-          {/* Top Header: Brand Logo, Greeting, Academic Summary & Layout Switcher */}
+        <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-6 py-8 sm:px-8 sm:py-10">
+          {/* Top Header: Brand Logo, Greeting & Academic Summary */}
           <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
             <div className="flex min-w-0 flex-1 items-center gap-4">
               <Image
                 src="/images/better-otu-logo-light.svg"
                 alt="Better OTU logo"
-                width={80}
-                height={80}
+                width={64}
+                height={64}
                 priority
-                className="block h-16 w-16 shrink-0 object-contain sm:h-20 sm:w-20 dark:hidden"
+                className="block h-14 w-14 shrink-0 object-contain sm:h-16 sm:w-16 dark:hidden"
               />
               <Image
                 src="/images/better-otu-logo-dark.svg"
                 alt="Better OTU logo"
-                width={80}
-                height={80}
+                width={64}
+                height={64}
                 priority
-                className="hidden h-16 w-16 shrink-0 object-contain sm:h-20 sm:w-20 dark:block"
+                className="hidden h-14 w-14 shrink-0 object-contain sm:h-16 sm:w-16 dark:block"
               />
 
               <div className="min-w-0 flex-1">
-                <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl dark:text-white">
+                <h1 className="text-2xl font-semibold tracking-tight text-ink sm:text-3xl">
                   {firstName ? `Welcome back, ${firstName}` : "Welcome to Better OTU"}
                 </h1>
-                <p className="mt-0.5 text-xs font-medium text-slate-500 dark:text-slate-400">
+                <p className="mt-1 text-xs font-medium text-ink-muted">
                   Ontario Tech University &bull; {termLabel}
                 </p>
                 {hasAcademicSummary ? (
-                  <p className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-slate-600 dark:text-slate-300">
-                    <span className="font-medium text-[#003C71] dark:text-sky-300">
+                  <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-ink-secondary">
+                    <span className="font-medium text-accent-ink">
                       {[
                         yearLabel,
                         profileDegreeName,
@@ -554,15 +530,12 @@ export function PortalDashboard({
                         .filter(Boolean)
                         .join(" · ")}
                     </span>
-                    <span
-                      aria-hidden="true"
-                      className="text-slate-300 dark:text-slate-600"
-                    >
+                    <span aria-hidden="true" className="text-line-strong">
                       &bull;
                     </span>
                     <Link
                       href="/profile"
-                      className="font-medium text-slate-500 underline decoration-slate-300 underline-offset-2 transition-colors hover:text-[#003C71] dark:text-slate-400 dark:decoration-slate-700 dark:hover:text-sky-300"
+                      className="font-medium text-ink-muted underline decoration-line-strong underline-offset-2 transition-colors hover:text-accent-ink"
                     >
                       Edit
                     </Link>
@@ -571,7 +544,7 @@ export function PortalDashboard({
                   <p className="mt-1 text-xs">
                     <Link
                       href="/onboarding"
-                      className="font-medium text-[#003C71] underline decoration-[#9AC0EB] underline-offset-2 transition-colors hover:text-[#002D56] dark:text-sky-300 dark:decoration-sky-700 dark:hover:text-sky-200"
+                      className="font-medium text-accent-ink underline decoration-accent-line underline-offset-2 transition-colors hover:text-ink"
                     >
                       Personalize your year &amp; degree &rarr;
                     </Link>
@@ -599,20 +572,21 @@ export function PortalDashboard({
           onClick={(e) => {
             if (e.target === e.currentTarget) setIsAddShortcutOpen(false);
           }}
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4 backdrop-blur-xs"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-[#0b1018]/55 p-4 backdrop-blur-sm"
         >
           <form
             onSubmit={handleAddShortcut}
-            className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-5 shadow-2xl dark:border-slate-800 dark:bg-slate-900"
+            className="w-full max-w-sm rounded-2xl border border-line bg-surface p-6 shadow-[var(--shadow-lg)]"
           >
             <div className="flex items-center justify-between">
-              <h2 className="text-base font-bold text-slate-900 dark:text-white">
-                Add Quick Shortcut
+              <h2 className="text-base font-semibold text-ink">
+                Add quick shortcut
               </h2>
               <button
                 type="button"
                 onClick={() => setIsAddShortcutOpen(false)}
-                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800"
+                aria-label="Close"
+                className="rounded-lg p-1 text-ink-muted transition-colors hover:bg-surface-subtle hover:text-ink"
               >
                 &times;
               </button>
@@ -620,42 +594,42 @@ export function PortalDashboard({
 
             <div className="mt-4 space-y-3 text-xs">
               <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300">
+                <label className="block font-medium text-ink-secondary">
                   Name
                 </label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Gmail, GitHub, Discord"
+                  placeholder="Gmail, GitHub, Discord"
                   value={shortcutName}
                   onChange={(e) => setShortcutName(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-300 bg-transparent px-3 py-2 text-sm text-slate-900 outline-none focus:border-[#003C71] dark:border-slate-700 dark:text-white dark:focus:border-sky-400"
+                  className="mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-muted focus:border-accent focus:ring-2 focus:ring-focus focus:outline-none"
                 />
               </div>
 
               <div>
-                <label className="block font-semibold text-slate-700 dark:text-slate-300">
+                <label className="block font-medium text-ink-secondary">
                   URL
                 </label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. mail.google.com"
+                  placeholder="mail.google.com"
                   value={shortcutUrl}
                   onChange={(e) => setShortcutUrl(e.target.value)}
-                  className="mt-1 w-full rounded-lg border border-slate-300 bg-transparent px-3 py-2 text-sm text-slate-900 outline-none focus:border-[#003C71] dark:border-slate-700 dark:text-white dark:focus:border-sky-400"
+                  className="mt-1 w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm text-ink placeholder:text-ink-muted focus:border-accent focus:ring-2 focus:ring-focus focus:outline-none"
                 />
               </div>
             </div>
 
-            <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3 dark:border-slate-800">
+            <div className="mt-5 flex items-center justify-between border-t border-line-subtle pt-4">
               <button
                 type="button"
                 onClick={() => {
                   setIsAddShortcutOpen(false);
                   setIsGoogleModalOpen(true);
                 }}
-                className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[#003C71] hover:underline dark:text-sky-300"
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-accent-ink hover:underline"
               >
                 <GoogleLogoIcon className="h-3.5 w-3.5" />
                 <span>Add Google links instead</span>
@@ -664,15 +638,15 @@ export function PortalDashboard({
                 <button
                   type="button"
                   onClick={() => setIsAddShortcutOpen(false)}
-                  className="rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+                  className="rounded-lg px-3 py-1.5 text-xs font-medium text-ink-secondary transition-colors hover:bg-surface-subtle hover:text-ink"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="rounded-lg bg-[#003C71] px-4 py-1.5 text-xs font-semibold text-white transition hover:bg-[#002D56]"
+                  className="rounded-lg bg-brand px-4 py-1.5 text-xs font-medium text-brand-fg transition-colors hover:bg-brand-hover"
                 >
-                  Save Shortcut
+                  Save shortcut
                 </button>
               </div>
             </div>

@@ -648,32 +648,32 @@ export function CoursePickerModal({
 
   return (
     <div
-      className="fixed inset-0 z-[1300] flex items-start justify-center bg-slate-950/40 px-4 pt-[calc(var(--site-nav-height,2.75rem)+4vh)] pb-[4vh] backdrop-blur-xs"
+      className="fixed inset-0 z-[1300] flex items-start justify-center bg-[#0b1018]/55 px-4 pt-[calc(var(--site-nav-height,2.75rem)+4vh)] pb-[4vh] backdrop-blur-sm"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="flex max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-8vh)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900">
+      <div className="flex max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-8vh)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-[var(--shadow-lg)]">
         {/* Header */}
-        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200/80 bg-gradient-to-r from-sky-50/70 via-white to-violet-50/60 px-5 py-3.5 dark:border-slate-800 dark:from-sky-950/30 dark:via-slate-900 dark:to-violet-950/30">
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line-subtle bg-surface-subtle/60 px-5 py-3.5">
           <div className="min-w-0 flex-1">
-            <h3 className="text-[15px] font-semibold text-slate-900 dark:text-slate-100">
+            <h3 className="text-[15px] font-semibold text-ink">
               {titleText}
             </h3>
-            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+            <p className="mt-0.5 text-xs text-ink-muted">
               {subText}
             </p>
           </div>
           <div className="flex items-center gap-2">
             {!initialTransferMode && terms.length > 0 && (
-              <label className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400">
+              <label className="flex items-center gap-1.5 text-xs text-ink-secondary">
                 <span>Add to:</span>
                 <span className="relative inline-flex items-center">
                   <select
                     value={selectedTermIndex}
                     onChange={(e) => setSelectedTermIndex(Number(e.target.value))}
                     aria-label="Target year and term"
-                    className="appearance-none rounded-xl border border-slate-200/90 bg-white py-1.5 pr-8 pl-3 text-xs font-medium text-slate-900 focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                    className="appearance-none rounded-lg border border-line bg-surface py-1.5 pr-8 pl-3 text-xs font-medium text-ink focus:border-accent focus:ring-2 focus:ring-focus focus:outline-none"
                   >
                     {terms.map((t, idx) => {
                       const usedCount = t.slots.filter(Boolean).length;
@@ -700,7 +700,7 @@ export function CoursePickerModal({
                     stroke="currentColor"
                     strokeWidth={1.75}
                     aria-hidden="true"
-                    className="pointer-events-none absolute right-2.5 h-3.5 w-3.5 text-slate-500 dark:text-slate-400"
+                    className="pointer-events-none absolute right-2.5 h-3.5 w-3.5 text-ink-muted"
                   >
                     <path
                       strokeLinecap="round"
@@ -715,7 +715,7 @@ export function CoursePickerModal({
               type="button"
               onClick={onClose}
               aria-label="Close"
-              className="rounded-xl px-2 py-1 text-base text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+              className="rounded-lg px-2 py-1 text-base text-ink-muted transition-colors hover:bg-surface-subtle hover:text-ink"
             >
               ×
             </button>
@@ -724,7 +724,7 @@ export function CoursePickerModal({
 
         {/* Search, Subject Box & Filter Chips */}
         {!initialTransferMode && (
-          <div className="space-y-2.5 border-b border-slate-200/80 px-5 py-3 dark:border-slate-800">
+          <div className="space-y-2.5 border-b border-line-subtle px-5 py-3">
             <div className="flex flex-wrap items-center gap-2">
               <input
                 ref={searchInputRef}
@@ -741,9 +741,9 @@ export function CoursePickerModal({
                     handleAddCourse(filteredRows[0].code);
                   }
                 }}
-                placeholder="Search code or title…"
+                placeholder="Search code or title"
                 autoComplete="off"
-                className="min-w-[200px] flex-1 rounded-xl border border-slate-200/90 bg-slate-50/70 px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-400/20 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:bg-slate-900"
+                className="min-w-[200px] flex-1 rounded-lg border border-line bg-surface-subtle px-3 py-1.5 text-sm text-ink placeholder:text-ink-muted focus:border-accent focus:bg-surface focus:ring-2 focus:ring-focus focus:outline-none"
               />
               {[
                 {
@@ -767,10 +767,10 @@ export function CoursePickerModal({
                   type="button"
                   aria-pressed={chip.active}
                   onClick={chip.onClick}
-                  className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                  className={`rounded-md border px-2.5 py-1 text-xs transition-colors ${
                     chip.active
-                      ? "border-sky-200 bg-sky-50 font-medium text-sky-800 dark:border-sky-800 dark:bg-sky-950/60 dark:text-sky-300"
-                      : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400"
+                      ? "border-accent-line bg-accent-soft font-medium text-accent-ink"
+                      : "border-line bg-surface text-ink-secondary hover:border-line-strong hover:text-ink"
                   }`}
                 >
                   {chip.label}
@@ -781,10 +781,10 @@ export function CoursePickerModal({
                   type="button"
                   aria-pressed={filterBucket}
                   onClick={() => setFilterBucket((v) => !v)}
-                  className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                  className={`rounded-md border px-2.5 py-1 text-xs transition-colors ${
                     filterBucket
-                      ? "border-sky-200 bg-sky-50 font-medium text-sky-800 dark:border-sky-800 dark:bg-sky-950/60 dark:text-sky-300"
-                      : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400"
+                      ? "border-accent-line bg-accent-soft font-medium text-accent-ink"
+                      : "border-line bg-surface text-ink-secondary hover:border-line-strong hover:text-ink"
                   }`}
                 >
                   Fits requirement
@@ -794,9 +794,9 @@ export function CoursePickerModal({
                 type="button"
                 onClick={() => openCustomForm(query)}
                 title="A course not listed in the timetable"
-                className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600 transition-colors hover:border-sky-400 hover:text-sky-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                className="rounded-md border border-line bg-surface px-2.5 py-1 text-xs font-medium text-ink-secondary transition-colors hover:border-accent-line hover:text-accent-ink"
               >
-                ＋ Custom course
+                + Custom course
               </button>
             </div>
 

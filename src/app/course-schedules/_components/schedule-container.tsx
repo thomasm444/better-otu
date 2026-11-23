@@ -1494,14 +1494,14 @@ export function ScheduleContainer({
   return (
     <div className="space-y-4">
       {/* Mobile 2-Tab Bar (< lg) */}
-      <div className="grid grid-cols-2 rounded-2xl border border-slate-200/80 bg-white/85 p-1 text-xs font-semibold shadow-[0_1px_4px_rgba(15,23,42,0.03)] backdrop-blur-sm lg:hidden dark:border-slate-800/80 dark:bg-slate-900/85">
+      <div className="grid grid-cols-2 rounded-xl border border-line bg-surface p-1 text-xs font-medium shadow-[var(--shadow-sm)] lg:hidden">
         <button
           type="button"
           onClick={() => setMobileTab("schedule")}
-          className={`rounded-xl py-2 transition ${
+          className={`rounded-lg py-2 transition-colors ${
             mobileTab === "schedule"
-              ? "bg-sky-600 text-white shadow-xs dark:bg-sky-500"
-              : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
+              ? "bg-brand text-brand-fg"
+              : "text-ink-muted hover:text-ink"
           }`}
         >
           Schedule ({plannedCourses.length})
@@ -1512,10 +1512,10 @@ export function ScheduleContainer({
             setMobileTab("lookup");
             setLookupTabTrigger((n) => n + 1);
           }}
-          className={`rounded-xl py-2 transition ${
+          className={`rounded-lg py-2 transition-colors ${
             mobileTab === "lookup"
-              ? "bg-sky-600 text-white shadow-xs dark:bg-sky-500"
-              : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
+              ? "bg-brand text-brand-fg"
+              : "text-ink-muted hover:text-ink"
           }`}
         >
           Course Lookup &amp; Explore
@@ -1531,7 +1531,7 @@ export function ScheduleContainer({
           }`}
         >
           {/* Control Toolbar */}
-          <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-2xl border border-slate-200/80 bg-white/88 p-3 shadow-[0_2px_10px_rgba(15,23,42,0.04)] backdrop-blur-sm dark:border-slate-800/80 dark:bg-slate-900/85">
+          <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-2xl border border-line bg-surface p-3 shadow-[var(--shadow-sm)]">
             <div className="flex flex-wrap items-center gap-2">
               {/* Semester Selector */}
               <select
@@ -1539,7 +1539,7 @@ export function ScheduleContainer({
                 disabled={loadingTerm}
                 onChange={(e) => void handleTermChange(e.target.value)}
                 aria-label="Select semester"
-                className="rounded-xl border border-slate-200/90 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-800 shadow-[0_1px_2px_rgba(15,23,42,0.03)] transition focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20 focus:outline-none disabled:opacity-60 dark:border-slate-700/80 dark:bg-slate-800/90 dark:text-slate-100"
+                className="rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs font-medium text-ink transition-colors focus:border-accent focus:ring-2 focus:ring-focus focus:outline-none disabled:opacity-60"
               >
                 {terms.map((t) => (
                   <option key={t.code} value={t.code}>
@@ -1550,7 +1550,7 @@ export function ScheduleContainer({
 
               {/* View Mode Switcher (Combined, Week 1, Week 2 only when biweekly classes exist) */}
               {hasBiweeklyClass && (
-                <div className="inline-flex rounded-xl border border-slate-200/90 bg-slate-100/75 p-0.5 text-xs font-medium dark:border-slate-700/80 dark:bg-slate-800/80">
+                <div className="inline-flex rounded-lg border border-line bg-surface-subtle p-0.5 text-xs font-medium">
                   {(
                     [
                       { id: "combined", label: "Combined" },
@@ -1562,10 +1562,10 @@ export function ScheduleContainer({
                       key={mode.id}
                       type="button"
                       onClick={() => setViewMode(mode.id)}
-                      className={`rounded-lg px-2.5 py-1 transition ${
+                      className={`rounded-md px-2.5 py-1 transition-colors ${
                         viewMode === mode.id
-                          ? "bg-sky-600 text-white shadow-xs dark:bg-sky-500 dark:text-white"
-                          : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
+                          ? "bg-surface text-ink shadow-[var(--shadow-sm)]"
+                          : "text-ink-muted hover:text-ink"
                       }`}
                     >
                       {mode.label}
@@ -1585,10 +1585,10 @@ export function ScheduleContainer({
                     : "Show RateMyProfessors ratings"
                 }
                 aria-label="Toggle RateMyProfessors ratings"
-                className={`inline-flex cursor-pointer items-center justify-center rounded-xl border px-2.5 py-1.5 text-xs font-medium shadow-[0_1px_2px_rgba(15,23,42,0.03)] transition ${
+                className={`inline-flex cursor-pointer items-center justify-center rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
                   showRmp
-                    ? "border-amber-400 bg-amber-50 text-amber-800 hover:bg-amber-100 dark:border-amber-600 dark:bg-amber-950/70 dark:text-amber-200"
-                    : "border-slate-200/90 bg-white text-slate-500 hover:border-sky-300 hover:bg-sky-50/60 hover:text-sky-900 dark:border-slate-700/80 dark:bg-slate-800/90 dark:text-slate-400 dark:hover:border-sky-700 dark:hover:text-slate-200"
+                    ? "border-warning-line bg-warning-soft text-warning"
+                    : "border-line bg-surface text-ink-muted hover:border-line-strong hover:bg-surface-subtle hover:text-ink"
                 }`}
               >
                 <svg
@@ -1597,8 +1597,8 @@ export function ScheduleContainer({
                   aria-hidden="true"
                   className={`h-3.5 w-3.5 shrink-0 transition-colors ${
                     showRmp
-                      ? "text-amber-500 dark:text-amber-400"
-                      : "text-slate-400 dark:text-slate-500"
+                      ? "text-warning"
+                      : "text-ink-muted"
                   }`}
                 >
                   <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
@@ -1629,10 +1629,10 @@ export function ScheduleContainer({
                     return next;
                   });
                 }}
-                className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl border px-3 py-1.5 text-xs font-semibold shadow-xs transition ${
+                className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
                   isEditMode
-                    ? "border-orange-500 bg-orange-500 text-white shadow-sm shadow-orange-500/25 hover:bg-orange-600 dark:border-orange-500 dark:bg-orange-500 dark:hover:bg-orange-600"
-                    : "border-slate-200/90 bg-white text-slate-700 hover:border-sky-300 hover:bg-sky-50/50 hover:text-sky-900 dark:border-slate-700/80 dark:bg-slate-800/90 dark:text-slate-100 dark:hover:border-sky-700 dark:hover:bg-slate-800"
+                    ? "border-accent bg-accent text-accent-fg hover:bg-accent-hover"
+                    : "border-line bg-surface text-ink-secondary hover:border-line-strong hover:bg-surface-subtle hover:text-ink"
                 }`}
               >
                 <span>{isEditMode ? "Done editing" : "Edit schedule"}</span>
@@ -1649,10 +1649,10 @@ export function ScheduleContainer({
                     : `Export ${exportBannerCrns.length} CRN${exportBannerCrns.length === 1 ? "" : "s"} to Banner Add/Drop`
                 }
                 onClick={() => setIsBannerModalOpen(true)}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200/90 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-xs transition hover:border-sky-300 hover:bg-sky-50/50 hover:text-sky-900 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700/80 dark:bg-slate-800/90 dark:text-slate-100 dark:hover:border-sky-700 dark:hover:bg-slate-800"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-1.5 text-xs font-medium text-ink-secondary transition-colors hover:border-line-strong hover:bg-surface-subtle hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <span>Export to Add/Drop</span>
-                <span className="inline-flex min-w-4 items-center justify-center rounded-full bg-slate-200/80 px-1.5 py-0.5 text-[10px] font-bold text-slate-700 dark:bg-slate-700 dark:text-slate-200">
+                <span className="inline-flex min-w-4 items-center justify-center rounded-md bg-surface-subtle px-1.5 py-0.5 font-mono text-[10px] font-medium text-ink-secondary tabular-nums">
                   {exportBannerCrns.length}
                 </span>
               </button>
@@ -1661,7 +1661,7 @@ export function ScheduleContainer({
               <button
                 type="button"
                 onClick={() => setIsCalendarModalOpen(true)}
-                className="inline-flex items-center gap-1.5 rounded-xl bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white shadow-xs transition hover:bg-sky-700 dark:bg-sky-500 dark:hover:bg-sky-600"
+                className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-xs font-medium text-brand-fg transition-colors hover:bg-brand-hover"
               >
                 <span>Export / Sync Calendar</span>
               </button>
@@ -1678,25 +1678,25 @@ export function ScheduleContainer({
                         setImportMenuOpen(false);
                         setBlockMenuOpen((v) => !v);
                       }}
-                      className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1.5 text-xs font-medium shadow-[0_1px_2px_rgba(15,23,42,0.03)] transition ${
+                      className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
                         isBlockingMode || blockedSlots.length > 0
-                          ? "border-rose-300 bg-rose-50 text-rose-800 dark:border-rose-800 dark:bg-rose-950/50 dark:text-rose-200"
-                          : "border-slate-200/90 bg-white text-slate-700 hover:border-sky-300 hover:bg-sky-50/50 dark:border-slate-700/80 dark:bg-slate-800/90 dark:text-slate-200 dark:hover:bg-slate-800"
+                          ? "border-danger-line bg-danger-soft text-danger"
+                          : "border-line bg-surface text-ink-secondary hover:border-line-strong hover:bg-surface-subtle hover:text-ink"
                       }`}
                     >
                       <span>Block Times</span>
                       {blockedSlots.length > 0 && (
-                        <span className="rounded-full bg-rose-600 px-1.5 text-[10px] font-bold text-white">
+                        <span className="rounded-md bg-danger px-1.5 font-mono text-[10px] font-medium text-white tabular-nums">
                           {blockedSlots.length}
                         </span>
                       )}
                     </button>
 
                     {blockMenuOpen && (
-                      <div className="absolute left-0 z-40 mt-2 w-72 max-w-[calc(100vw-2rem)] rounded-2xl border border-slate-200/90 bg-white/98 p-3 text-xs shadow-xl shadow-slate-900/10 backdrop-blur-md dark:border-slate-700 dark:bg-slate-900">
-                        <div className="flex items-center justify-between border-b border-slate-100 pb-2 dark:border-slate-800">
-                          <span className="font-semibold text-slate-900 dark:text-slate-100">
-                            Block Off Unavailable Times
+                      <div className="absolute left-0 z-40 mt-2 w-72 max-w-[calc(100vw-2rem)] rounded-xl border border-line bg-surface p-3 text-xs shadow-[var(--shadow-lg)]">
+                        <div className="flex items-center justify-between border-b border-line-subtle pb-2">
+                          <span className="font-medium text-ink">
+                            Block unavailable times
                           </span>
                           {blockedSlots.length > 0 && (
                             <button
@@ -1705,7 +1705,7 @@ export function ScheduleContainer({
                                 markDirty();
                                 setBlockedSlots([]);
                               }}
-                              className="text-[11px] text-rose-600 hover:underline"
+                              className="text-xs text-danger hover:underline"
                             >
                               Clear all
                             </button>
@@ -1723,28 +1723,28 @@ export function ScheduleContainer({
                             });
                             setBlockMenuOpen(false);
                           }}
-                          className={`mt-2 w-full rounded-xl border px-2.5 py-1.5 text-left font-medium transition ${
+                          className={`mt-2 w-full rounded-lg border px-2.5 py-1.5 text-left font-medium transition-colors ${
                             isBlockingMode
-                              ? "border-rose-500 bg-rose-50 text-rose-800 dark:bg-rose-950 dark:text-rose-200"
-                              : "border-slate-200 bg-slate-50 text-slate-700 hover:border-sky-300 hover:bg-sky-50/50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                              ? "border-danger-line bg-danger-soft text-danger"
+                              : "border-line bg-surface-subtle text-ink-secondary hover:border-line-strong hover:text-ink"
                           }`}
                         >
                           {isBlockingMode
-                            ? "✓ Drag-to-Block Grid Mode Active"
-                            : "🖱 Drag on Grid to Block Times"}
+                            ? "Drag-to-block grid mode active"
+                            : "Drag on grid to block times"}
                         </button>
 
                         {/* Quick Presets */}
                         <div className="mt-2.5 space-y-1">
-                          <p className="text-[10.5px] font-medium uppercase tracking-wider text-slate-400">
-                            Quick Presets
+                          <p className="text-[11px] font-medium text-ink-muted">
+                            Quick presets
                           </p>
                           {TIME_BLOCK_PRESETS.map((preset) => (
                             <button
                               key={preset.id}
                               type="button"
                               onClick={() => handleApplyBlockPreset(preset)}
-                              className="block w-full rounded-lg px-2 py-1 text-left text-slate-700 transition-colors hover:bg-sky-50/70 dark:text-slate-300 dark:hover:bg-slate-800"
+                              className="block w-full rounded-md px-2 py-1 text-left text-ink-secondary transition-colors hover:bg-surface-subtle hover:text-ink"
                             >
                               + {preset.label}
                             </button>
@@ -1763,10 +1763,10 @@ export function ScheduleContainer({
                             );
                             setBlockMenuOpen(false);
                           }}
-                          className="mt-3 space-y-2 border-t border-slate-100 pt-2.5 dark:border-slate-800"
+                          className="mt-3 space-y-2 border-t border-line-subtle pt-2.5"
                         >
-                          <p className="text-[10.5px] font-medium uppercase tracking-wider text-slate-400">
-                            Custom Block
+                          <p className="text-[11px] font-medium text-ink-muted">
+                            Custom block
                           </p>
                           <div className="grid grid-cols-2 gap-1.5">
                             <select
@@ -1774,7 +1774,7 @@ export function ScheduleContainer({
                               onChange={(e) =>
                                 setBlkDay(e.target.value as DayOfWeek)
                               }
-                              className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-slate-900 focus:border-sky-400 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                              className="rounded-lg border border-line bg-surface px-2 py-1 text-ink focus:border-accent focus:outline-none"
                             >
                               {DAYS_OF_WEEK.map((d) => (
                                 <option key={d.key} value={d.key}>
@@ -1786,8 +1786,8 @@ export function ScheduleContainer({
                               type="text"
                               value={blkLabel}
                               onChange={(e) => setBlkLabel(e.target.value)}
-                              placeholder="Reason (e.g. Work)"
-                              className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-slate-900 focus:border-sky-400 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                              placeholder="Reason (Work)"
+                              className="rounded-lg border border-line bg-surface px-2 py-1 text-ink placeholder:text-ink-muted focus:border-accent focus:outline-none"
                             />
                           </div>
                           <div className="grid grid-cols-2 gap-1.5">
@@ -1795,20 +1795,20 @@ export function ScheduleContainer({
                               type="time"
                               value={blkStart}
                               onChange={(e) => setBlkStart(e.target.value)}
-                              className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-slate-900 focus:border-sky-400 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                              className="rounded-lg border border-line bg-surface px-2 py-1 text-ink focus:border-accent focus:outline-none"
                             />
                             <input
                               type="time"
                               value={blkEnd}
                               onChange={(e) => setBlkEnd(e.target.value)}
-                              className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-slate-900 focus:border-sky-400 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                              className="rounded-lg border border-line bg-surface px-2 py-1 text-ink focus:border-accent focus:outline-none"
                             />
                           </div>
                           <button
                             type="submit"
-                            className="w-full rounded-xl bg-rose-600 py-1.5 font-medium text-white transition-colors hover:bg-rose-700"
+                            className="w-full rounded-lg bg-danger py-1.5 font-medium text-white transition-opacity hover:opacity-90"
                           >
-                            Add Time Block
+                            Add time block
                           </button>
                         </form>
                       </div>
@@ -1819,7 +1819,7 @@ export function ScheduleContainer({
                     <button
                       type="button"
                       onClick={() => setIsBlockingMode(false)}
-                      className="rounded-lg bg-rose-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-rose-700"
+                      className="rounded-lg bg-danger px-2.5 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90"
                     >
                       Done Blocking
                     </button>
@@ -1829,7 +1829,7 @@ export function ScheduleContainer({
                     <button
                       type="button"
                       onClick={() => setIsCustomBlockDragMode(false)}
-                      className="rounded-lg bg-teal-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-teal-700"
+                      className="rounded-lg bg-accent px-2.5 py-1.5 text-xs font-medium text-accent-fg transition-colors hover:bg-accent-hover"
                     >
                       Done Custom Block
                     </button>
@@ -1844,43 +1844,43 @@ export function ScheduleContainer({
                           setBlockMenuOpen(false);
                           setImportMenuOpen((v) => !v);
                         }}
-                        className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200/90 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 shadow-[0_1px_2px_rgba(15,23,42,0.03)] transition hover:border-sky-300 hover:bg-sky-50/50 dark:border-slate-700/80 dark:bg-slate-800/90 dark:text-slate-200 dark:hover:bg-slate-800"
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs font-medium text-ink-secondary transition-colors hover:border-line-strong hover:bg-surface-subtle hover:text-ink"
                         title={`Choose a saved Degree Plan to import courses for ${catalog.termLabel}`}
                       >
                         <span>Import Degree Plan</span>
-                        <span className="rounded-full bg-sky-100/85 px-1.5 text-[10px] font-semibold text-sky-700 dark:bg-sky-950/70 dark:text-sky-300">
+                        <span className="rounded-md bg-accent-soft px-1.5 font-mono text-[10px] font-medium text-accent-ink tabular-nums">
                           {degreePlanOptions.length}
                         </span>
                       </button>
 
                       {importMenuOpen && (
-                        <div className="absolute right-0 z-40 mt-2 max-h-80 w-80 max-w-[calc(100vw-2rem)] overflow-auto rounded-2xl border border-slate-200/90 bg-white/98 shadow-xl shadow-slate-900/10 backdrop-blur-md dark:border-slate-700 dark:bg-slate-900">
-                          <div className="border-b border-slate-100 px-3 py-2 dark:border-slate-800">
-                            <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                        <div className="absolute right-0 z-40 mt-2 max-h-80 w-80 max-w-[calc(100vw-2rem)] overflow-auto rounded-xl border border-line bg-surface shadow-[var(--shadow-lg)]">
+                          <div className="border-b border-line-subtle px-3 py-2">
+                            <p className="text-xs font-medium text-ink">
                               Import Degree Plan ({degreePlanOptions.length})
                             </p>
-                            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                            <p className="text-[11px] text-ink-muted">
                               Pick a plan to import {catalog.termLabel} courses
                             </p>
                           </div>
 
-                          <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                          <div className="divide-y divide-line-subtle">
                             {degreePlanOptions.map((plan) => (
                               <button
                                 key={plan.id}
                                 type="button"
                                 onClick={() => handleImportFromDegreePlan(plan)}
-                                className="flex w-full flex-col gap-1 px-3 py-2.5 text-left transition-colors hover:bg-sky-50/60 dark:hover:bg-slate-800/70"
+                                className="flex w-full flex-col gap-1 px-3 py-2.5 text-left transition-colors hover:bg-surface-subtle"
                               >
                                 <div className="flex items-start justify-between gap-2">
-                                  <span className="text-xs font-semibold text-slate-900 dark:text-slate-100">
+                                  <span className="text-xs font-medium text-ink">
                                     {plan.label}
                                   </span>
                                   <span
-                                    className={`shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                                    className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium ${
                                       plan.termCourseCodes.length > 0
-                                        ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300"
-                                        : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
+                                        ? "bg-positive-soft text-positive"
+                                        : "bg-surface-subtle text-ink-muted"
                                     }`}
                                   >
                                     {plan.termCourseCodes.length} in{" "}
@@ -1888,7 +1888,7 @@ export function ScheduleContainer({
                                   </span>
                                 </div>
 
-                                <span className="text-[10.5px] text-slate-500 dark:text-slate-400">
+                                <span className="text-[11px] text-ink-muted">
                                   {plan.catalogYear
                                     ? `${plan.catalogYear} plan · `
                                     : ""}
@@ -1899,7 +1899,7 @@ export function ScheduleContainer({
                                     : "courses"}
                                 </span>
 
-                                <span className="line-clamp-2 text-[10.5px] text-slate-600 dark:text-slate-300">
+                                <span className="line-clamp-2 text-[11px] text-ink-secondary">
                                   {plan.termCourseCodes.length > 0
                                     ? plan.termCourseCodes.join(", ")
                                     : `No courses scheduled for ${catalog.termLabel}`}
@@ -1921,7 +1921,7 @@ export function ScheduleContainer({
                       customBlocks.length === 0 &&
                       blockedSlots.length === 0
                     }
-                    className="rounded-xl border border-rose-200 bg-white px-2.5 py-1.5 text-xs font-medium text-rose-600 transition-colors hover:bg-rose-50 disabled:opacity-40 dark:border-rose-900/60 dark:bg-slate-800/90 dark:text-rose-400 dark:hover:bg-rose-950/40"
+                    className="rounded-lg border border-danger-line bg-surface px-2.5 py-1.5 text-xs font-medium text-danger transition-colors hover:bg-danger-soft disabled:opacity-40"
                     title="Clear all courses, custom blocks, and blocked times from this semester schedule"
                   >
                     Clear Schedule
@@ -1935,23 +1935,17 @@ export function ScheduleContainer({
               <div
                 className={
                   catalog.isPreview
-                    ? "flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-300/90 bg-amber-50/90 px-4 py-3 text-xs text-amber-950 shadow-sm dark:border-amber-700/80 dark:bg-amber-950/40 dark:text-amber-100"
-                    : "flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white/90 px-4 py-3 text-xs text-slate-700 shadow-sm dark:border-slate-800/80 dark:bg-slate-900/85 dark:text-slate-200"
+                    ? "flex flex-wrap items-center justify-between gap-3 rounded-xl border border-warning-line bg-warning-soft px-4 py-3 text-xs text-warning"
+                    : "flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-surface px-4 py-3 text-xs text-ink-secondary"
                 }
               >
                 <div className="space-y-0.5">
-                  <div className="font-semibold">
+                  <div className="font-medium text-ink">
                     {catalog.isPreview
                       ? `Unofficial Preview — Using ${catalog.previewTermLabel} courses`
                       : `${catalog.termLabel} courses are not in the database yet`}
                   </div>
-                  <div
-                    className={
-                      catalog.isPreview
-                        ? "text-[11px] text-amber-800 dark:text-amber-200/90"
-                        : "text-[11px] text-slate-500 dark:text-slate-400"
-                    }
-                  >
+                  <div className="text-xs text-ink-muted">
                     {catalog.isPreview
                       ? `${catalog.termLabel} courses are not in the database yet. Sections and times shown are from ${catalog.previewTermLabel} for reference only and are not official.`
                       : `No official ${catalog.termLabel} classes are available yet. You can preview a previous summer term for reference only (not official).`}
@@ -1967,10 +1961,10 @@ export function ScheduleContainer({
                         type="button"
                         disabled={loadingTerm || activePreview}
                         onClick={() => void handlePreviewTermChange(p.code)}
-                        className={`rounded-lg border px-2.5 py-1 text-[11px] font-medium transition ${
+                        className={`rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors ${
                           activePreview
-                            ? "border-amber-500 bg-amber-600 text-white dark:border-amber-400 dark:bg-amber-500 dark:text-slate-950"
-                            : "border-amber-300 bg-white text-amber-900 hover:bg-amber-100 disabled:opacity-50 dark:border-amber-700 dark:bg-amber-950/60 dark:text-amber-100 dark:hover:bg-amber-900/70"
+                            ? "border-warning bg-warning text-white"
+                            : "border-warning-line bg-surface text-warning hover:bg-warning-soft disabled:opacity-50"
                         }`}
                       >
                         {activePreview
@@ -1984,7 +1978,7 @@ export function ScheduleContainer({
                       type="button"
                       disabled={loadingTerm}
                       onClick={() => void handlePreviewTermChange(null)}
-                      className="rounded-lg border border-amber-300/90 bg-white/80 px-2.5 py-1 text-[11px] font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-50 dark:border-amber-700 dark:bg-slate-900 dark:text-amber-100 dark:hover:bg-amber-900/50"
+                      className="rounded-lg border border-warning-line bg-surface px-2.5 py-1 text-xs font-medium text-warning transition-colors hover:bg-warning-soft disabled:opacity-50"
                     >
                       Exit preview
                     </button>
@@ -1994,21 +1988,22 @@ export function ScheduleContainer({
             )}
 
           {/* Status & Summary Strip */}
-          <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200/80 bg-white/90 px-3.5 py-2 text-xs shadow-[0_1px_4px_rgba(15,23,42,0.03)] backdrop-blur-sm dark:border-slate-800/80 dark:bg-slate-900/85">
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-line bg-surface px-3.5 py-2 text-xs shadow-[var(--shadow-sm)]">
             <div className="flex flex-wrap items-center gap-3">
-              <span className="font-semibold text-slate-800 dark:text-slate-200">
+              <span className="font-medium text-ink tabular-nums">
                 {plannedCourses.filter((c) => c.mode === "planned").length}{" "}
                 planned ({totalPlannedCredits} cr)
               </span>
               {plannedCourses.some((c) => c.mode === "exploring") && (
-                <span className="rounded-full border border-dashed border-amber-400 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800 dark:border-amber-700 dark:bg-amber-950/60 dark:text-amber-300">
+                <span className="rounded-md border border-dashed border-warning-line bg-warning-soft px-2 py-0.5 text-[11px] font-medium text-warning">
                   {plannedCourses.filter((c) => c.mode === "exploring").length}{" "}
                   exploring (tentative)
                 </span>
               )}
               {conflictCount > 0 && (
-                <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-semibold text-rose-800 dark:bg-rose-950 dark:text-rose-200">
-                  ⚠ {conflictCount} conflicting{" "}
+                <span className="inline-flex items-center gap-1.5 rounded-md bg-danger-soft px-2 py-0.5 text-[11px] font-medium text-danger">
+                  <span className="h-1.5 w-1.5 rounded-full bg-danger" />
+                  {conflictCount} conflicting{" "}
                   {conflictCount === 1 ? "block" : "blocks"}
                 </span>
               )}
@@ -2024,45 +2019,46 @@ export function ScheduleContainer({
   return (
                   <span
                     title={`0 seats available: ${fullCourses.join(", ")}`}
-                    className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800 dark:border-amber-800 dark:bg-amber-950/60 dark:text-amber-300"
+                    className="inline-flex items-center gap-1.5 rounded-md border border-warning-line bg-warning-soft px-2 py-0.5 text-[11px] font-medium text-warning"
                   >
-                    ⚠ {fullCourses.length}{" "}
+                    <span className="h-1.5 w-1.5 rounded-full bg-warning" />
+                    {fullCourses.length}{" "}
                     {fullCourses.length === 1 ? "class" : "classes"} may be full
                   </span>
                 );
               })()}
             </div>
 
-            <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400">
+            <div className="flex items-center gap-2 text-[11px] text-ink-muted">
               {loadingTerm && <span>Loading {activeTerm}...</span>}
               {syncStatus === "saving" && <span>Saving to account...</span>}
               {syncStatus === "saved" && (
-                <span className="text-emerald-600 dark:text-emerald-400">
-                  ✓ Saved to DB
+                <span className="text-positive">
+                  Saved to DB
                 </span>
               )}
               {syncStatus === "local" && (
                 <span>Saved locally (sign in for DB &amp; live sync)</span>
               )}
               {syncStatus === "error" && (
-                <span className="text-rose-600">Sync error (saved locally)</span>
+                <span className="text-danger">Sync error (saved locally)</span>
               )}
             </div>
           </div>
 
           {/* Async / Unscheduled Sections Bar */}
           {asyncCoursesSummary.length > 0 && (
-            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-teal-200/80 bg-teal-50/50 px-3.5 py-2 text-xs dark:border-teal-900/50 dark:bg-teal-950/20">
-              <span className="font-semibold text-teal-800 dark:text-teal-300">
-                Async / No Fixed Time:
+            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-accent-line bg-accent-soft px-3.5 py-2 text-xs">
+              <span className="font-medium text-accent-ink">
+                Async / No fixed time:
               </span>
               {asyncCoursesSummary.map((item) => (
                 <span
                   key={`${item.courseCode}-${item.crn}`}
-                  className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${
+                  className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[11px] font-medium ${
                     item.mode === "exploring"
-                      ? "border-dashed border-amber-400 bg-white text-amber-800 dark:bg-zinc-900 dark:text-amber-300"
-                      : "border-teal-300 bg-white text-teal-900 dark:border-teal-800 dark:bg-zinc-900 dark:text-teal-200"
+                      ? "border-dashed border-warning-line bg-surface text-warning"
+                      : "border-accent-line bg-surface text-ink"
                   }`}
                 >
                   <span>
@@ -2072,7 +2068,7 @@ export function ScheduleContainer({
                     <button
                       type="button"
                       onClick={() => handleRemoveCourse(item.courseCode)}
-                      className="text-zinc-400 hover:text-rose-600"
+                      className="text-ink-muted hover:text-danger"
                       title={`Remove ${item.courseCode}`}
                     >
                       &times;

@@ -659,14 +659,14 @@ export function RequirementsSidebar({
             )}
           </span>
         </div>
-        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-200/80 dark:bg-slate-800">
+        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface-subtle">
           <div
-            className={`h-full rounded-full transition-all duration-300 ${
+            className={`h-full rounded-full transition-[width] duration-300 ${
               done
-                ? "bg-gradient-to-r from-emerald-400 to-teal-400"
+                ? "bg-positive"
                 : accent === "minor"
-                  ? "bg-gradient-to-r from-violet-400 to-purple-400"
-                  : "bg-gradient-to-r from-sky-400 to-teal-400"
+                  ? "bg-secondary-brand"
+                  : "bg-accent"
             }`}
             style={{ width: `${pct}%` }}
           />
@@ -748,13 +748,13 @@ export function RequirementsSidebar({
   };
 
   return (
-    <aside className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white/92 shadow-[0_2px_12px_rgba(15,23,42,0.04)] backdrop-blur-sm dark:border-slate-800/80 dark:bg-slate-900/88 md:max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-var(--planner-header-h,152px)-24px)] md:overflow-auto">
-      <div className="sticky top-0 z-10 border-b border-slate-200/75 bg-gradient-to-r from-sky-50/85 via-white/95 to-violet-50/85 px-4 pt-3 pb-2.5 backdrop-blur-md dark:border-slate-800 dark:from-sky-950/35 dark:via-slate-900/95 dark:to-violet-950/35">
+    <aside className="overflow-hidden rounded-2xl border border-line bg-surface shadow-[var(--shadow-sm)] md:max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-var(--planner-header-h,152px)-24px)] md:overflow-auto">
+      <div className="sticky top-0 z-10 border-b border-line-subtle bg-surface-subtle/60 px-4 pt-3 pb-2.5 backdrop-blur-sm">
         <div className="flex items-center justify-between gap-2">
-          <h2 className="text-xs font-semibold tracking-wider text-slate-600 uppercase dark:text-slate-300">
+          <h2 className="text-xs font-medium text-ink">
             What you need
           </h2>
-          <span className="truncate text-[11px] text-slate-400 dark:text-slate-500">
+          <span className="truncate text-[11px] text-ink-muted">
             {activeTab === "major"
               ? subheader || "—"
               : minorProgram?.name || "No minor selected"}
@@ -762,11 +762,11 @@ export function RequirementsSidebar({
         </div>
 
         {activeTab === "major" && (
-          <div className="mt-1 text-[11px] text-slate-500 tabular-nums dark:text-slate-400">
+          <div className="mt-1 text-[11px] text-ink-muted tabular-nums">
             {creditSummary.transfer > 0 ? (
               <span>
                 {creditSummary.planned} cr planned + {creditSummary.transfer} cr transfer ={" "}
-                <strong className="font-semibold text-slate-700 dark:text-slate-200">
+                <strong className="font-semibold text-ink">
                   {creditSummary.total} cr
                 </strong>
                 {totalTargetCredits ? ` / ${totalTargetCredits} cr` : ""}
@@ -781,22 +781,22 @@ export function RequirementsSidebar({
         )}
 
         {/* Major | Minor Switcher Tabs */}
-        <div className="mt-2.5 grid grid-cols-2 gap-1 rounded-xl bg-slate-100/90 p-1 dark:bg-slate-800/80">
+        <div className="mt-2.5 grid grid-cols-2 gap-1 rounded-lg border border-line bg-surface-subtle p-0.5">
           <button
             type="button"
             onClick={() => onTabChange("major")}
-            className={`flex items-center justify-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-all ${
+            className={`flex items-center justify-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors ${
               activeTab === "major"
-                ? "bg-white text-sky-900 shadow-xs ring-1 ring-sky-200/75 dark:bg-slate-900 dark:text-sky-200 dark:ring-sky-800/60"
-                : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
+                ? "bg-surface text-ink shadow-[var(--shadow-sm)]"
+                : "text-ink-muted hover:text-ink"
             }`}
           >
             <span>Major</span>
             <span
-              className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold tabular-nums ${
+              className={`rounded-md px-1.5 py-0.5 font-mono text-[10px] font-medium tabular-nums ${
                 activeTab === "major"
-                  ? "bg-sky-100/85 text-sky-700 dark:bg-sky-950/75 dark:text-sky-300"
-                  : "bg-slate-200/75 text-slate-600 dark:bg-slate-700 dark:text-slate-300"
+                  ? "bg-accent-soft text-accent-ink"
+                  : "bg-surface-hover text-ink-secondary"
               }`}
             >
               {doneRequired.length}/{model.required.length}

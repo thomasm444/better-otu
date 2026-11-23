@@ -25,60 +25,51 @@ function NavChrome({
   rightSlot: React.ReactNode;
 }) {
   return (
-    <header className="sticky top-0 z-[1200] h-[var(--site-nav-height,2.75rem)] shrink-0 border-b border-black/[.08] bg-white/95 backdrop-blur-sm dark:border-white/[.12] dark:bg-zinc-950/95">
-      <div className="mx-auto flex h-full max-w-[1600px] items-center justify-between gap-1.5 px-2 sm:gap-2 sm:px-5">
-        <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:gap-5">
+    <header className="sticky top-0 z-[1200] h-[var(--site-nav-height,2.75rem)] shrink-0 border-b border-line-subtle bg-surface/95 backdrop-blur-sm">
+      <div className="mx-auto flex h-full max-w-[1600px] items-center justify-between gap-2 px-3 sm:px-6">
+        <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-6">
           <Link
             href="/"
-            className="inline-flex shrink-0 items-center gap-2 text-xs font-semibold tracking-tight text-zinc-900 transition-colors hover:text-[#0077CA] sm:text-sm dark:text-zinc-100"
+            className="inline-flex shrink-0 items-center gap-2 rounded-md text-xs font-medium tracking-tight text-ink transition-colors hover:text-accent-ink focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none sm:text-sm"
           >
             <Image
               src="/images/better-otu-logo-light.svg"
               alt=""
-              width={28}
-              height={28}
+              width={24}
+              height={24}
               priority
-              className="block h-7 w-7 shrink-0 object-contain dark:hidden"
+              className="block h-6 w-6 shrink-0 object-contain dark:hidden"
             />
             <Image
               src="/images/better-otu-logo-dark.svg"
               alt=""
-              width={28}
-              height={28}
+              width={24}
+              height={24}
               priority
-              className="hidden h-7 w-7 shrink-0 object-contain dark:block"
+              className="hidden h-6 w-6 shrink-0 object-contain dark:block"
             />
             <span>Better OTU</span>
           </Link>
 
           <nav
             aria-label="Primary navigation"
-            className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:gap-1"
+            className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           >
-            {NAV_ITEMS.map((item, idx) => {
+            {NAV_ITEMS.map((item) => {
               const active = pathname !== null && isActivePath(pathname, item.href);
               return (
-                <div key={item.href} className="flex shrink-0 items-center">
-                  {idx > 0 && (
-                    <span
-                      aria-hidden="true"
-                      className="mx-0.5 hidden select-none text-xs text-zinc-300 dark:text-zinc-700 sm:inline"
-                    >
-                      ·
-                    </span>
-                  )}
-                  <Link
-                    href={item.href}
-                    aria-current={active ? "page" : undefined}
-                    className={`rounded-md px-1.5 py-1 text-[11px] font-medium transition-colors whitespace-nowrap sm:px-2.5 sm:text-[13px] ${
-                      active
-                        ? "bg-[#003C71]/10 text-[#003C71] dark:bg-[#0077CA]/20 dark:text-sky-300"
-                        : "text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800/80 dark:hover:text-zinc-100"
-                    }`}
-                  >
-                    {item.label}
-                  </Link>
-                </div>
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  aria-current={active ? "page" : undefined}
+                  className={`shrink-0 rounded-md px-2 py-1 text-xs font-medium transition-colors whitespace-nowrap focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none sm:px-2.5 sm:text-[13px] ${
+                    active
+                      ? "bg-accent-soft text-accent-ink ring-1 ring-inset ring-accent-line"
+                      : "text-ink-secondary hover:bg-surface-subtle hover:text-ink"
+                  }`}
+                >
+                  {item.label}
+                </Link>
               );
             })}
           </nav>
@@ -108,7 +99,7 @@ export function SiteNavFallback() {
     <NavChrome
       pathname={null}
       rightSlot={
-        <div className="h-7 w-24 animate-pulse rounded-md bg-zinc-200 dark:bg-zinc-800" />
+        <div className="h-7 w-24 rounded-md bg-surface-subtle" />
       }
     />
   );

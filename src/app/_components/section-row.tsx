@@ -19,7 +19,7 @@ export function SectionRow({ row }: { row: Section }) {
 
   return (
     <tr className="border-t border-black/[.06] align-top dark:border-white/[.10]">
-      <td className="whitespace-nowrap px-4 py-3 font-clash">
+      <td className="whitespace-nowrap px-4 py-3 font-code font-semibold">
         {row.subject} {row.course_number}
       </td>
       <td className="px-4 py-3">

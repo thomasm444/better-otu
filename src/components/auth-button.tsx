@@ -99,12 +99,12 @@ export function AuthButton({
   if (compact) {
     return (
       <>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-2">
           {loading ? (
-            <div className="h-7 w-24 animate-pulse rounded-md bg-zinc-200 dark:bg-zinc-800" />
+            <div className="h-7 w-24 rounded-md bg-surface-subtle" />
           ) : user ? (
-            <div className="flex items-center gap-1 sm:gap-1.5">
-              <span className="hidden max-w-[140px] truncate text-xs font-medium text-zinc-700 dark:text-zinc-300 md:inline">
+            <div className="flex items-center gap-1.5">
+              <span className="hidden max-w-[140px] truncate text-xs text-ink-secondary md:inline">
                 {displayName}
               </span>
               <button
@@ -112,10 +112,10 @@ export function AuthButton({
                 type="button"
                 onClick={() => setProfileOpen(true)}
                 aria-expanded={profileOpen}
-                className={`whitespace-nowrap rounded-md border px-1.5 py-0.5 text-[11px] font-medium transition-colors sm:px-2 sm:py-1 sm:text-xs ${
+                className={`whitespace-nowrap rounded-md border px-2 py-1 text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none ${
                   profileOpen || isProfileActive
-                    ? "border-[#003C71]/30 bg-[#003C71]/10 text-[#003C71] dark:border-[#0077CA]/40 dark:bg-[#0077CA]/20 dark:text-sky-300"
-                    : "border-zinc-200 text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                    ? "border-accent-line bg-accent-soft text-accent-ink"
+                    : "border-line bg-surface text-ink-secondary hover:bg-surface-subtle hover:text-ink"
                 }`}
               >
                 Profile
@@ -124,7 +124,7 @@ export function AuthButton({
                 type="button"
                 onClick={handleSignOut}
                 disabled={submitting}
-                className="whitespace-nowrap rounded-md border border-zinc-200 px-1.5 py-0.5 text-[11px] font-medium text-zinc-700 transition-colors hover:bg-zinc-100 disabled:opacity-50 sm:px-2 sm:py-1 sm:text-xs dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                className="whitespace-nowrap rounded-md border border-line bg-surface px-2 py-1 text-xs font-medium text-ink-secondary transition-colors hover:bg-surface-subtle hover:text-ink focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none disabled:opacity-50"
               >
                 {submitting ? "Signing out..." : "Sign out"}
               </button>
@@ -134,7 +134,7 @@ export function AuthButton({
               type="button"
               onClick={handleSignIn}
               disabled={submitting}
-              className="inline-flex h-7 items-center gap-1.5 rounded-md border border-zinc-300 bg-white px-2.5 text-xs font-medium text-zinc-900 shadow-xs transition-colors hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+              className="inline-flex h-7 items-center gap-1.5 rounded-md border border-line bg-surface px-2.5 text-xs font-medium text-ink transition-colors hover:bg-surface-subtle focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none disabled:opacity-50"
             >
               {submitting ? (
                 "Redirecting..."
@@ -153,13 +153,13 @@ export function AuthButton({
         {errorMessage && (
           <div
             role="alert"
-            className="fixed top-12 right-3 z-[2000] flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs text-red-700 shadow-md dark:border-red-900/50 dark:bg-red-950/90 dark:text-red-300"
+            className="fixed top-12 right-3 z-[2000] flex items-center gap-2 rounded-lg border border-danger-line bg-danger-soft px-3 py-1.5 text-xs text-danger shadow-[var(--shadow-md)]"
           >
             <span>{errorMessage}</span>
             <button
               type="button"
               onClick={() => setErrorMessage(null)}
-              className="font-semibold hover:underline"
+              className="font-medium hover:underline"
               aria-label="Dismiss error"
             >
               Dismiss
@@ -184,15 +184,15 @@ export function AuthButton({
   return (
     <div className="flex flex-col items-end gap-2">
       {loading ? (
-        <div className="h-9 w-48 animate-pulse rounded-lg bg-zinc-200 dark:bg-zinc-800" />
+        <div className="h-9 w-48 rounded-lg bg-surface-subtle" />
       ) : user ? (
-        <div className="flex items-center gap-3 rounded-xl border border-black/[.08] bg-white px-3 py-1.5 shadow-xs dark:border-white/[.12] dark:bg-zinc-900">
+        <div className="flex items-center gap-3 rounded-xl border border-line bg-surface px-3 py-1.5 shadow-[var(--shadow-sm)]">
           <div className="text-right">
-            <p className="text-xs font-medium text-zinc-900 dark:text-zinc-100">
+            <p className="text-xs font-medium text-ink">
               {displayName}
             </p>
             {user.email && (
-              <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+              <p className="text-[11px] text-ink-muted">
                 {user.email}
               </p>
             )}
@@ -202,7 +202,7 @@ export function AuthButton({
             type="button"
             onClick={() => setProfileOpen(true)}
             aria-expanded={profileOpen}
-            className="rounded-lg border border-zinc-200 px-2.5 py-1 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+            className="rounded-lg border border-line bg-surface px-2.5 py-1 text-xs font-medium text-ink-secondary transition-colors hover:bg-surface-subtle hover:text-ink"
           >
             Profile
           </button>
@@ -210,7 +210,7 @@ export function AuthButton({
             type="button"
             onClick={handleSignOut}
             disabled={submitting}
-            className="rounded-lg border border-zinc-200 px-2.5 py-1 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-100 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
+            className="rounded-lg border border-line bg-surface px-2.5 py-1 text-xs font-medium text-ink-secondary transition-colors hover:bg-surface-subtle hover:text-ink disabled:opacity-50"
           >
             {submitting ? "Signing out..." : "Sign out"}
           </button>
@@ -220,7 +220,7 @@ export function AuthButton({
           type="button"
           onClick={handleSignIn}
           disabled={submitting}
-          className="inline-flex items-center gap-2 rounded-lg border border-zinc-300 bg-white px-3.5 py-2 text-sm font-medium text-zinc-900 shadow-xs transition-colors hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+          className="inline-flex items-center gap-2 rounded-lg border border-line bg-surface px-3.5 py-2 text-sm font-medium text-ink shadow-[var(--shadow-sm)] transition-colors hover:bg-surface-subtle disabled:opacity-50"
         >
           {submitting ? "Redirecting..." : "Sign in with @ontariotechu.net"}
         </button>
@@ -229,13 +229,13 @@ export function AuthButton({
       {errorMessage && (
         <div
           role="alert"
-          className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-1.5 text-xs text-red-700 dark:border-red-900/50 dark:bg-red-950/50 dark:text-red-300"
+          className="flex items-center gap-2 rounded-lg border border-danger-line bg-danger-soft px-3 py-1.5 text-xs text-danger"
         >
           <span>{errorMessage}</span>
           <button
             type="button"
             onClick={() => setErrorMessage(null)}
-            className="font-semibold hover:underline"
+            className="font-medium hover:underline"
             aria-label="Dismiss error"
           >
             Dismiss
