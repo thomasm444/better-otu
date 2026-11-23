@@ -28,7 +28,7 @@ import {
   getTorontoNowParts,
 } from "@/lib/campus-map-dates";
 import {
-  fetchLatestDegreePlan,
+  fetchAllDegreePlans,
   type DegreePlanRecord,
 } from "@/lib/degree-plan-storage";
 import { DEFAULT_START_YEAR } from "@/lib/degree-planner";
@@ -152,13 +152,22 @@ function computeDegreeProgress(
   }
   let plannedCourses = 0;
   let plannedCredits = 0;
+  const countedKeys = new Set<string>();
   for (const term of plan.terms ?? []) {
     for (const slot of term.slots ?? []) {
       if (!slot) continue;
       const key = slot.toUpperCase();
+      countedKeys.add(key);
       plannedCourses += 1;
       plannedCredits += customCredits.get(key) ?? nonStandardCredits?.[key] ?? 3;
     }
+  }
+  for (const c of plan.customs ?? []) {
+    if (!c.transfer) continue;
+    const key = c.code ? c.code.toUpperCase() : "";
+    if (key && countedKeys.has(key)) continue;
+    if (key) countedKeys.add(key);
+    plannedCredits += Number(c.credit_hours) || 0;
   }
   const percent = Math.min(100, Math.round((plannedCredits / 120) * 100));
   return {
@@ -261,9 +270,9 @@ export function PortalDashboard({
         return;
       }
 
-      const [coursesRes, planRes, profileRes] = await Promise.allSettled([
+      const [coursesRes, plansRes, profileRes] = await Promise.allSettled([
         fetchStudentCourses(supabase),
-        user.email ? fetchLatestDegreePlan(supabase, user.email) : Promise.resolve(null),
+        user.email ? fetchAllDegreePlans(supabase, user.email) : Promise.resolve([]),
         fetchStudentProfileWithPrograms(supabase, user.id),
       ]);
 
@@ -286,12 +295,20 @@ export function PortalDashboard({
         setSavedCourseCodes(localFallback);
       }
 
-      if (planRes.status === "fulfilled") {
-        setLatestPlan(planRes.value);
+      const loadedProfile =
+        profileRes.status === "fulfilled" ? profileRes.value : null;
+      if (profileRes.status === "fulfilled") {
+        setProfile(loadedProfile);
       }
 
-      if (profileRes.status === "fulfilled") {
-        setProfile(profileRes.value);
+      if (plansRes.status === "fulfilled") {
+        const allPlans = plansRes.value;
+        const profilePlan = loadedProfile?.degree_program_id
+          ? allPlans.find(
+              (p) => p.program_id === loadedProfile.degree_program_id,
+            )
+          : undefined;
+        setLatestPlan(profilePlan ?? allPlans[0] ?? null);
       }
     };
 

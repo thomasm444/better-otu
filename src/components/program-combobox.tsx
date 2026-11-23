@@ -19,7 +19,7 @@ const PROGRAM_SEARCH_ALIASES: Record<string, string> = {
   it: "information technology",
 };
 
-function programIdentityKey(program: ProgramSummary): string {
+export function programIdentityKey(program: ProgramSummary): string {
   const name = program.name
     .toLowerCase()
     .replace(/[\u2013\u2014-]+/g, "-")

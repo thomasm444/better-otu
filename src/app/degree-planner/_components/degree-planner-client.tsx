@@ -652,7 +652,10 @@ export function DegreePlannerClient({
           return;
         }
 
-        const latest = allPlans[0];
+        const profilePlan = profile?.degree_program_id
+          ? allPlans.find((p) => p.program_id === profile.degree_program_id)
+          : undefined;
+        const latest = profilePlan ?? allPlans[0];
         if (!latest) {
           setStartYear(derivedStartYear);
           setCatalogYear(
@@ -2695,14 +2698,8 @@ export function DegreePlannerClient({
 
       {/* Main Layout */}
       <main className="mx-auto max-w-[1440px] p-4">
-        {program && model && (
-          <div
-            className={`mb-3 ${
-              sidebarOpen
-                ? "grid grid-cols-1 items-center gap-3 lg:grid-cols-[minmax(0,1fr)_395px] lg:gap-5"
-                : "flex flex-wrap items-center gap-3"
-            }`}
-          >
+        {program && model && sidebarOpen && (
+          <div className="mb-3 grid grid-cols-1 items-center gap-3 lg:grid-cols-[minmax(0,1fr)_395px] lg:gap-5">
             {!loadingProgram && academicYears.length > 0 ? (
               <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3.5 gap-y-1.5 rounded-2xl border border-slate-200/75 bg-white/75 px-3.5 py-2 text-[11.5px] text-slate-500 shadow-[0_1px_6px_rgba(15,23,42,0.03)] backdrop-blur-xs dark:border-slate-800/80 dark:bg-slate-900/55 dark:text-slate-400">
                 <span className="inline-flex items-center gap-1.5">
@@ -2742,7 +2739,7 @@ export function DegreePlannerClient({
                 onClick={() => setSidebarOpen((open) => !open)}
                 className="inline-flex min-w-[138px] shrink-0 items-center justify-center rounded-xl border border-slate-200/90 bg-white/95 px-3 py-1.5 text-xs font-medium text-slate-700 shadow-[0_1px_4px_rgba(15,23,42,0.04)] transition-colors hover:border-sky-300 hover:bg-sky-50/60 hover:text-sky-800 dark:border-slate-700/80 dark:bg-slate-900/95 dark:text-slate-200 dark:hover:border-sky-700 dark:hover:text-sky-200"
               >
-                {sidebarOpen ? "Push to side ▶" : "◀ What you need"}
+                Push to side ▶
               </button>
             </div>
           </div>
@@ -2752,11 +2749,42 @@ export function DegreePlannerClient({
           className={
             program && model && sidebarOpen
               ? "grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_395px]"
-              : ""
+              : program && model && !sidebarOpen
+                ? "grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3"
+                : ""
           }
         >
         {/* Planner Grid */}
-        <section>
+        <section className="min-w-0">
+          {program && model && !sidebarOpen && !loadingProgram && academicYears.length > 0 && (
+            <div className="mb-3 flex min-w-0 flex-wrap items-center gap-x-3.5 gap-y-1.5 rounded-2xl border border-slate-200/75 bg-white/75 px-3.5 py-2 text-[11.5px] text-slate-500 shadow-[0_1px_6px_rgba(15,23,42,0.03)] backdrop-blur-xs dark:border-slate-800/80 dark:bg-slate-900/55 dark:text-slate-400">
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2.5 w-1 rounded-full bg-sky-400" />
+                <span>Major core</span>
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2.5 w-1 rounded-full bg-emerald-400" />
+                <span>Elective</span>
+              </span>
+              {minorProgram && (
+                <span className="inline-flex items-center gap-1.5">
+                  <span className="h-2.5 w-1 rounded-full bg-violet-400" />
+                  <span>Minor</span>
+                </span>
+              )}
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2.5 w-1 rounded-full bg-indigo-400" />
+                <span>Custom course</span>
+              </span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="h-2.5 w-1 rounded-full bg-amber-400" />
+                <span>Needs check</span>
+              </span>
+              <span className="ml-auto hidden text-[11px] text-slate-400 sm:inline dark:text-slate-500">
+                Drag to move · Click any course for details
+              </span>
+            </div>
+          )}
           {loadingProgram ? (
             <div className="rounded-2xl border border-slate-200/80 bg-white/85 p-10 text-center text-sm text-slate-500 shadow-xs backdrop-blur-xs dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400">
               Loading program requirements…
@@ -3333,7 +3361,18 @@ export function DegreePlannerClient({
                 }}
               />
             </div>
-          ) : null
+          ) : (
+            <div className="flex justify-end">
+              <button
+                type="button"
+                aria-expanded={false}
+                onClick={() => setSidebarOpen(true)}
+                className="inline-flex min-h-[138px] shrink-0 items-center justify-center rounded-xl border border-slate-200/90 bg-white/95 px-1.5 py-3 text-xs font-medium text-slate-700 shadow-[0_1px_4px_rgba(15,23,42,0.04)] transition-colors [writing-mode:vertical-rl] hover:border-sky-300 hover:bg-sky-50/60 hover:text-sky-800 dark:border-slate-700/80 dark:bg-slate-900/95 dark:text-slate-200 dark:hover:border-sky-700 dark:hover:text-sky-200"
+              >
+                ◀ What you need
+              </button>
+            </div>
+          )
         ) : (
           <aside className="rounded-2xl border border-slate-200/80 bg-white/85 shadow-xs backdrop-blur-xs dark:border-slate-800 dark:bg-slate-900/80">
             <div className="border-b border-slate-200/75 px-4 py-3 dark:border-slate-800">

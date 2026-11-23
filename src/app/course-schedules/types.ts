@@ -82,6 +82,15 @@ export interface NormalizedMeetingSlot {
   dates: string[];
 }
 
+export interface ProfessorSalaryRecord {
+  calendarYear: number;
+  salaryPaid: number;
+  taxableBenefits: number;
+  jobTitle: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+}
+
 export interface SectionRmpInfo {
   legacyId: number | null;
   fullName: string;
@@ -114,6 +123,7 @@ export interface ScheduleSection {
   creditHours: number | null;
   instructor: string | null;
   rmp?: SectionRmpInfo | null;
+  salaries?: ProfessorSalaryRecord[];
   weekPattern: WeekPattern;
   meetings: NormalizedMeetingSlot[];
 }

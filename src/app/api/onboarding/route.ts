@@ -27,9 +27,31 @@ type ProgramLookupRow = {
 
 type ExistingPlanRow = {
   id: string;
+  program_id: string;
+  degree_name: string | null;
   start_year: number | null;
   terms: unknown;
 };
+
+function normalizeProgramNameKey(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[\u2013\u2014-]+/g, "-")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isSameDegreeProgram(
+  a: { name: string; credential?: string | null },
+  b: { name: string; credential?: string | null },
+): boolean {
+  if (normalizeProgramNameKey(a.name) !== normalizeProgramNameKey(b.name)) {
+    return false;
+  }
+  const credA = (a.credential ?? "").trim().toLowerCase();
+  const credB = (b.credential ?? "").trim().toLowerCase();
+  return !credA || !credB || credA === credB;
+}
 
 function parseOptionalStringId(value: unknown): {
   valid: boolean;
@@ -235,9 +257,80 @@ export async function POST(request: Request) {
     );
   }
 
+  let existingPlan: ExistingPlanRow | null = null;
+  let effectiveDegreeProgramId: string | null = degreeProgram?.program_id ?? null;
+
+  if (degreeProgram) {
+    const { data: userPlansRaw, error: existingPlanError } = await supabase
+      .from("degree_plans")
+      .select("id, program_id, degree_name, start_year, terms")
+      .eq("user_email", email)
+      .order("updated_at", { ascending: false });
+
+    if (existingPlanError) {
+      console.error("Onboarding degree_plans lookup failed:", existingPlanError);
+      return NextResponse.json(
+        { error: "Failed to save onboarding data." },
+        { status: 500 },
+      );
+    }
+
+    const userPlans = (userPlansRaw ?? []) as ExistingPlanRow[];
+    const hasPlanTerms = (p: ExistingPlanRow) =>
+      Array.isArray(p.terms) && p.terms.length > 0;
+
+    const exactMatch =
+      userPlans.find((p) => p.program_id === degreeProgram.program_id) ?? null;
+
+    if (exactMatch && hasPlanTerms(exactMatch)) {
+      existingPlan = exactMatch;
+    } else if (userPlans.length > 0) {
+      // Check if the student already has a saved plan for this same degree
+      // under a different catalog year (e.g. 2026-27 catalog while in 2nd year).
+      const otherIds = [
+        ...new Set(
+          userPlans
+            .map((p) => p.program_id)
+            .filter((id) => id && id !== degreeProgram.program_id),
+        ),
+      ];
+      const existingProgMap = new Map<string, ProgramLookupRow>();
+      if (otherIds.length > 0) {
+        const { data: existingProgRows } = await supabase
+          .from("degree_programs")
+          .select("program_id, name, catalog_year, credential")
+          .in("program_id", otherIds);
+        for (const row of (existingProgRows ?? []) as ProgramLookupRow[]) {
+          existingProgMap.set(row.program_id, row);
+        }
+      }
+
+      const sameDegreePlans = userPlans.filter((p) => {
+        if (p.program_id === degreeProgram.program_id) return false;
+        const prog = existingProgMap.get(p.program_id);
+        if (prog) {
+          return isSameDegreeProgram(prog, degreeProgram);
+        }
+        return Boolean(
+          p.degree_name &&
+            normalizeProgramNameKey(p.degree_name) ===
+              normalizeProgramNameKey(degreeProgram.name),
+        );
+      });
+
+      const nonEmptySameDegree = sameDegreePlans.find(hasPlanTerms) ?? null;
+      existingPlan =
+        nonEmptySameDegree ?? exactMatch ?? sameDegreePlans[0] ?? null;
+    }
+
+    if (existingPlan) {
+      effectiveDegreeProgramId = existingPlan.program_id;
+    }
+  }
+
   const profileFields = {
     year_of_study: yearOfStudy,
-    degree_program_id: degreeProgram?.program_id ?? null,
+    degree_program_id: effectiveDegreeProgramId,
     has_minor: hasMinor,
     minor_program_id: minorProgram?.program_id ?? null,
     onboarding_completed_at:
@@ -275,22 +368,6 @@ export async function POST(request: Request) {
   if (degreeProgram) {
     const derivedStartYear = yearOfStudyToStartYear(yearOfStudy);
 
-    const { data: existingPlanRaw, error: existingPlanError } = await supabase
-      .from("degree_plans")
-      .select("id, start_year, terms")
-      .eq("user_email", email)
-      .eq("program_id", degreeProgram.program_id)
-      .maybeSingle();
-
-    if (existingPlanError) {
-      console.error("Onboarding degree_plans lookup failed:", existingPlanError);
-      return NextResponse.json(
-        { error: "Failed to save onboarding data." },
-        { status: 500 },
-      );
-    }
-
-    const existingPlan = existingPlanRaw as ExistingPlanRow | null;
     if (!existingPlan) {
       const { error: planInsertError } = await supabase
         .from("degree_plans")
@@ -316,7 +393,9 @@ export async function POST(request: Request) {
     } else {
       const hasTerms =
         Array.isArray(existingPlan.terms) && existingPlan.terms.length > 0;
-      const planPatch: Record<string, unknown> = {};
+      const planPatch: Record<string, unknown> = {
+        updated_at: nowIso,
+      };
 
       if (hasMinor !== null) {
         planPatch.minor_program_id = hasMinor
@@ -331,20 +410,17 @@ export async function POST(request: Request) {
         planPatch.start_year = derivedStartYear;
       }
 
-      if (Object.keys(planPatch).length > 0) {
-        planPatch.updated_at = nowIso;
-        const { error: planUpdateError } = await supabase
-          .from("degree_plans")
-          .update(planPatch)
-          .eq("id", existingPlan.id);
+      const { error: planUpdateError } = await supabase
+        .from("degree_plans")
+        .update(planPatch)
+        .eq("id", existingPlan.id);
 
-        if (planUpdateError) {
-          console.error("Onboarding degree_plans update failed:", planUpdateError);
-          return NextResponse.json(
-            { error: "Failed to save onboarding data." },
-            { status: 500 },
-          );
-        }
+      if (planUpdateError) {
+        console.error("Onboarding degree_plans update failed:", planUpdateError);
+        return NextResponse.json(
+          { error: "Failed to save onboarding data." },
+          { status: 500 },
+        );
       }
     }
   }

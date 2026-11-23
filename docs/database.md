@@ -3,7 +3,7 @@
 Supabase (Postgres), all in the `public` schema, populated from Banner course-schedule scrapes, Undergraduate Academic Calendar scrapes, campus map/booking feeds, and authenticated student data.
 
 The authoritative DDL lives in [`supabase/migrations/`](../supabase/migrations/) —
-sixteen committed, idempotent migrations. Apply them oldest first:
+seventeen committed, idempotent migrations. Apply them oldest first:
 
 | migration | what it does |
 | --- | --- |
@@ -23,6 +23,7 @@ sixteen committed, idempotent migrations. Apply them oldest first:
 | `20261120000000_degree_plans_minor.sql` | adds `minor_program_id text` to `degree_plans` so an attached minor persists with the saved plan |
 | `20261120160000_profiles_onboarding.sql` | adds student onboarding columns (`year_of_study`, `degree_program_id`, `has_minor`, `minor_program_id`, `onboarding_completed_at`, `onboarding_skipped_at`) to `profiles` with FKs to `degree_programs`, backfills missing profiles, and adds student `INSERT` RLS |
 | `20261121180000_backend_security_and_perf.sql` | adds payload `CHECK` constraints on user-writable tables, tightens `profiles` email RLS, adds `search_vocab(p_term)` & `get_program_detail_json(p_program_id)` RPCs, drops redundant indexes, and adds composite indexes on `exam_schedules` and `degree_plans` |
+| `20261123000000_professor_salaries.sql` | creates `professor_salaries` linked to `rmp_professors` for annual Ontario Public Sector Salary Disclosure records |
 
 ```bash
 # With the Supabase CLI
@@ -43,6 +44,7 @@ erDiagram
     rmp_professors ||--o{ course_faculty : "links instructors"
     rmp_professors ||--o{ exam_schedules : "links exam instructors"
     rmp_professors ||--o{ rmp_professor_courses : "has per-course ratings"
+    rmp_professors ||--o{ professor_salaries : "has annual salaries"
     catalog_courses ||--o{ rmp_professor_courses : "canonical course"
 
     courses {
@@ -106,6 +108,18 @@ erDiagram
         numeric avg_difficulty
         numeric would_take_again_percent
         integer num_ratings
+    }
+    professor_salaries {
+        bigint id PK
+        text rmp_professor_id FK
+        text sector
+        text last_name
+        text first_name
+        numeric salary_paid
+        numeric taxable_benefits
+        text employer
+        text job_title
+        integer calendar_year
     }
 ```
 
@@ -438,6 +452,12 @@ Created by `20261112180000_auth_and_student_courses.sql`, `20261112200000_degree
 - `student_courses` (`id` uuid PK, `user_id` → `auth.users.id`, `course_code`, `selected_crn`, `semester`, `status`, `grade`; unique `(user_id, course_code, semester)`). RLS: user-scoped CRUD. Caps: `selected_crn <= 16384` bytes, `course_code <= 32`, `semester <= 16` chars.
 - `degree_plans` (`user_email`, `degree_name`, `start_year`, `catalog_year`, `program_id`, `minor_program_id`, `terms` jsonb, `customs` jsonb, `user_id`, `id` uuid PK; unique `(user_email, program_id)`). RLS: user-scoped CRUD matching both `auth.uid()` and JWT `email`, indexed on `(user_id, program_id)` and `(user_email, updated_at desc)`. Caps: `pg_column_size(terms) <= 65536`, `pg_column_size(customs) <= 65536`, `degree_name <= 200`, `program_id <= 64` chars.
 - `exam_schedules` also carries composite index `exam_schedules_term_year_season_crn_idx` on `(term_year, term_season, crn)` for `.ics` calendar exports.
+
+## Professor Salaries
+
+Created by `20261123000000_professor_salaries.sql`. Publicly readable (`SELECT` for `anon`, `authenticated`); writes require `service_role`.
+
+- `professor_salaries` (`id` PK, `rmp_professor_id` FK → `rmp_professors.id` on delete cascade, `sector`, `last_name`, `first_name`, `salary_paid` numeric(12,2), `taxable_benefits` numeric(10,2), `employer`, `job_title`, `calendar_year` integer, `updated_at` timestamptz; unique `(rmp_professor_id, calendar_year, last_name, first_name)`). Indexed on `(rmp_professor_id, calendar_year desc)` and `(calendar_year)`.
 
 ## Example queries
 

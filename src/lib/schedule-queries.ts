@@ -11,6 +11,7 @@ import {
   type DayOfWeek,
   type DeliveryMode,
   type NormalizedMeetingSlot,
+  type ProfessorSalaryRecord,
   type ScheduleCourseGroup,
   type ScheduleSection,
   type SectionRmpInfo,
@@ -119,6 +120,15 @@ type RawCourseMeeting = {
   sunday: boolean;
 };
 
+type RawProfessorSalary = {
+  calendar_year: number | null;
+  salary_paid: number | string | null;
+  taxable_benefits: number | string | null;
+  job_title: string | null;
+  first_name: string | null;
+  last_name: string | null;
+};
+
 type RawRmpProfessor = {
   id: string;
   legacy_id: number | null;
@@ -127,6 +137,7 @@ type RawRmpProfessor = {
   avg_difficulty: number | string | null;
   num_ratings: number | null;
   would_take_again_percent: number | string | null;
+  professor_salaries?: RawProfessorSalary[] | null;
 };
 
 type RawCourseFaculty = {
@@ -210,6 +221,31 @@ function normalizeSection(row: RawCourseRow, term: string): ScheduleSection | nu
             parsedWta !== null && Number.isFinite(parsedWta) ? parsedWta : null,
         }
       : null;
+
+  const salaryByYear = new Map<number, ProfessorSalaryRecord>();
+  for (const s of rawRmp?.professor_salaries ?? []) {
+    const year = s.calendar_year != null ? Number(s.calendar_year) : NaN;
+    const paid = s.salary_paid != null ? Number(s.salary_paid) : NaN;
+    if (!Number.isFinite(year) || !Number.isFinite(paid)) continue;
+    const benefits =
+      s.taxable_benefits != null && Number.isFinite(Number(s.taxable_benefits))
+        ? Number(s.taxable_benefits)
+        : 0;
+    const existing = salaryByYear.get(year);
+    if (!existing || paid > existing.salaryPaid) {
+      salaryByYear.set(year, {
+        calendarYear: year,
+        salaryPaid: paid,
+        taxableBenefits: benefits,
+        jobTitle: s.job_title?.trim() || null,
+        firstName: s.first_name?.trim() || null,
+        lastName: s.last_name?.trim() || null,
+      });
+    }
+  }
+  const salaries = Array.from(salaryByYear.values()).sort(
+    (a, b) => a.calendarYear - b.calendarYear,
+  );
 
   // Group meeting rows by (day, startTime, endTime) so biweekly dates & shared rooms merge cleanly.
   const slotGroups = new Map<
@@ -383,6 +419,7 @@ function normalizeSection(row: RawCourseRow, term: string): ScheduleSection | nu
         : null,
     instructor: faculty?.display_name ?? null,
     rmp,
+    ...(salaries.length > 0 ? { salaries } : {}),
     weekPattern: sectionWeekPattern,
     meetings,
   };
@@ -427,7 +464,7 @@ export async function getTermScheduleCatalog(
           open_section,
           link_identifier,
           is_section_linked,
-          course_faculty ( display_name, primary_indicator, rmp_professors ( id, legacy_id, full_name, avg_rating, avg_difficulty, num_ratings, would_take_again_percent ) ),
+          course_faculty ( display_name, primary_indicator, rmp_professors ( id, legacy_id, full_name, avg_rating, avg_difficulty, num_ratings, would_take_again_percent, professor_salaries ( calendar_year, salary_paid, taxable_benefits, job_title, first_name, last_name ) ) ),
           course_meetings ( building, room, begin_time, end_time, start_date, end_date, meeting_schedule_type, monday, tuesday, wednesday, thursday, friday, saturday, sunday )
         `,
         )

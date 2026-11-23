@@ -62,12 +62,26 @@ async function OnboardingContent({
     redirect("/login?next=%2Fonboarding");
   }
 
-  const [allPrograms, profileResult] = await Promise.all([
+  const [allPrograms, profileResult, plansResult] = await Promise.all([
     getProgramSummaries(),
     supabase.from("profiles").select("*").eq("id", user.id).maybeSingle(),
+    supabase
+      .from("degree_plans")
+      .select("program_id, minor_program_id, terms, updated_at")
+      .eq("user_email", email)
+      .order("updated_at", { ascending: false }),
   ]);
 
   const initialProfile = (profileResult.data as StudentProfile | null) ?? null;
+  const savedPlans = ((plansResult.data ?? []) as Array<{
+    program_id: string;
+    minor_program_id: string | null;
+    terms: unknown;
+  }>).map((row) => ({
+    program_id: String(row.program_id),
+    minor_program_id: row.minor_program_id ? String(row.minor_program_id) : null,
+    hasTerms: Array.isArray(row.terms) && row.terms.length > 0,
+  }));
 
   const filteredPrograms = allPrograms.filter(
     (p) => p.catalog_year >= MIN_PLAN_CATALOG_YEAR,
@@ -85,6 +99,7 @@ async function OnboardingContent({
       programs={programs}
       availableCatalogYears={availableCatalogYears}
       initialProfile={initialProfile}
+      savedPlans={savedPlans}
       nextPath={nextPath}
       currentAcademicStartYear={currentAcademicStartYear}
     />

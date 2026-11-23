@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { evalPrereq, matchesBucket } from "@/lib/degree-planner";
 import type { ElectiveMatch } from "@/lib/degree-types";
 import {
@@ -15,6 +16,7 @@ import {
   type CourseComponentType,
   type DayOfWeek,
   type PlannedCourseEntry,
+  type ProfessorSalaryRecord,
   type ScheduleBlock,
   type ScheduleCourseGroup,
   type ScheduleSection,
@@ -24,6 +26,7 @@ import {
   type TermScheduleCatalog,
 } from "../types";
 import { RmpStarBadge } from "./rmp-badge";
+import { SalaryLineChart } from "./salary-line-chart";
 
 interface CourseLookupPanelProps {
   catalog: TermScheduleCatalog;
@@ -270,6 +273,7 @@ export function CourseLookupPanel({
     name: string;
     courseCode: string;
     rmp: SectionRmpInfo | null;
+    salaries: ProfessorSalaryRecord[];
     anchor: { left: number; top?: number; bottom?: number };
   } | null>(null);
 
@@ -278,20 +282,80 @@ export function CourseLookupPanel({
     name: string,
     courseCode: string,
     rmp: SectionRmpInfo | null,
+    salaries: ProfessorSalaryRecord[],
   ) => {
     const rect = e.currentTarget.getBoundingClientRect();
+    const estimatedHeight = 430;
     const spaceBelow = window.innerHeight - rect.bottom;
     const spaceAbove = rect.top;
-    const placeBelow = spaceBelow >= 250 || spaceBelow >= spaceAbove;
-    const left = Math.max(12, Math.min(rect.left, window.innerWidth - 332));
+    const placeBelow = spaceBelow >= estimatedHeight || spaceBelow >= spaceAbove;
+    const left = Math.max(12, Math.min(rect.left, window.innerWidth - 372));
     setProfProfile({
       name,
       courseCode,
       rmp,
+      salaries,
       anchor: placeBelow
-        ? { left, top: rect.bottom + 6 }
-        : { left, bottom: window.innerHeight - rect.top + 6 },
+        ? {
+            left,
+            top: Math.max(
+              12,
+              Math.min(rect.bottom + 6, window.innerHeight - estimatedHeight - 12),
+            ),
+          }
+        : {
+            left,
+            bottom: Math.max(
+              12,
+              Math.min(
+                window.innerHeight - rect.top + 6,
+                window.innerHeight - estimatedHeight - 12,
+              ),
+            ),
+          },
     });
+  };
+
+  const renderCourseProfTrigger = (
+    course: ScheduleCourseGroup | undefined,
+    entry: PlannedCourseEntry,
+    selectedRmp: SectionRmpInfo | null,
+  ) => {
+    if (!course) return null;
+    const lecCrn = entry.selectedCrns["LEC"];
+    const preferredCrn = lecCrn ?? Object.values(entry.selectedCrns)[0];
+    const sec = preferredCrn
+      ? course.sections.find((s) => s.crn === preferredCrn)
+      : undefined;
+    const profName = sec?.instructor?.trim();
+    if (!profName) return null;
+
+    if (!showRmp) {
+      return (
+        <p className="mt-0.5 truncate text-[11px] text-slate-500 dark:text-slate-400">
+          Prof: {profName}
+        </p>
+      );
+    }
+
+    return (
+      <button
+        type="button"
+        onClick={(e) =>
+          openProfProfile(
+            e,
+            profName,
+            entry.courseCode,
+            sec?.rmp ?? selectedRmp ?? null,
+            sec?.salaries ?? [],
+          )
+        }
+        className="mt-0.5 inline-flex max-w-full cursor-pointer items-center gap-1 truncate text-[11px] font-medium text-sky-700 hover:underline dark:text-sky-400"
+        title={`View ${profName}'s profile`}
+      >
+        <span className="truncate">Prof: {profName}</span>
+      </button>
+    );
   };
 
   // Completed courses editor popover
@@ -2008,38 +2072,7 @@ export function CourseLookupPanel({
                               <p className="truncate text-xs text-slate-600 dark:text-slate-400">
                                 {course?.title ?? "Course not offered this term"}
                               </p>
-                              {(() => {
-                                if (!course) return null;
-                                const lecCrn = entry.selectedCrns["LEC"];
-                                const preferredCrn =
-                                  lecCrn ?? Object.values(entry.selectedCrns)[0];
-                                const sec = preferredCrn
-                                  ? course.sections.find(
-                                      (s) => s.crn === preferredCrn,
-                                    )
-                                  : undefined;
-                                const profName = sec?.instructor?.trim();
-                                if (!profName) return null;
-                                return (
-                                  <button
-                                    type="button"
-                                    onClick={(e) =>
-                                      openProfProfile(
-                                        e,
-                                        profName,
-                                        entry.courseCode,
-                                        sec?.rmp ?? selectedRmp ?? null,
-                                      )
-                                    }
-                                    className="mt-0.5 inline-flex max-w-full items-center gap-1 truncate text-[11px] font-medium text-sky-700 hover:underline dark:text-sky-400"
-                                    title={`View ${profName}'s profile`}
-                                  >
-                                    <span className="truncate">
-                                      Prof: {profName}
-                                    </span>
-                                  </button>
-                                );
-                              })()}
+                              {renderCourseProfTrigger(course, entry, selectedRmp)}
                             </div>
                             <div className="flex shrink-0 items-center gap-1">
                               {renderCourseVisibilityButton(entry)}
@@ -2174,38 +2207,7 @@ export function CourseLookupPanel({
                               <p className="truncate text-xs text-zinc-600 dark:text-zinc-400">
                                 {course?.title ?? entry.courseCode}
                               </p>
-                              {(() => {
-                                if (!course) return null;
-                                const lecCrn = entry.selectedCrns["LEC"];
-                                const preferredCrn =
-                                  lecCrn ?? Object.values(entry.selectedCrns)[0];
-                                const sec = preferredCrn
-                                  ? course.sections.find(
-                                      (s) => s.crn === preferredCrn,
-                                    )
-                                  : undefined;
-                                const profName = sec?.instructor?.trim();
-                                if (!profName) return null;
-                                return (
-                                  <button
-                                    type="button"
-                                    onClick={(e) =>
-                                      openProfProfile(
-                                        e,
-                                        profName,
-                                        entry.courseCode,
-                                        sec?.rmp ?? selectedRmp ?? null,
-                                      )
-                                    }
-                                    className="mt-0.5 inline-flex max-w-full items-center gap-1 truncate text-[11px] font-medium text-sky-700 hover:underline dark:text-sky-400"
-                                    title={`View ${profName}'s profile`}
-                                  >
-                                    <span className="truncate">
-                                      Prof: {profName}
-                                    </span>
-                                  </button>
-                                );
-                              })()}
+                              {renderCourseProfTrigger(course, entry, selectedRmp)}
                             </div>
                             <div className="flex shrink-0 items-center gap-1">
                               {renderCourseVisibilityButton(entry)}
@@ -2334,7 +2336,7 @@ export function CourseLookupPanel({
         </div>
       )}
 
-      {profProfile && (() => {
+      {showRmp && profProfile && typeof document !== "undefined" && createPortal((() => {
         const rating = profProfile.rmp?.avgRating ?? null;
         const popoutTone =
           rating == null
@@ -2355,7 +2357,7 @@ export function CourseLookupPanel({
                 top: profProfile.anchor.top,
                 bottom: profProfile.anchor.bottom,
               }}
-              className={`fixed z-50 w-80 rounded-2xl border p-4 shadow-2xl backdrop-blur-sm ${popoutTone}`}
+              className={`fixed z-50 max-h-[calc(100vh-24px)] w-[360px] max-w-[calc(100vw-24px)] overflow-y-auto rounded-2xl border p-4 shadow-2xl backdrop-blur-sm ${popoutTone}`}
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-start justify-between gap-2">
@@ -2379,8 +2381,20 @@ export function CourseLookupPanel({
 
               <div className="mt-3 space-y-2.5">
                 <div className="rounded-xl border border-black/10 bg-white/75 p-2.5 dark:border-white/10 dark:bg-black/25">
-                  <div className="text-[10.5px] font-semibold uppercase tracking-wider opacity-70">
-                    RateMyProfessors Rating
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-[10.5px] font-semibold uppercase tracking-wider opacity-70">
+                      RateMyProfessors Rating
+                    </div>
+                    {profProfile.rmp?.legacyId && (
+                      <a
+                        href={`https://www.ratemyprofessors.com/professor/${profProfile.rmp.legacyId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[10.5px] font-medium text-sky-700 hover:underline dark:text-sky-400"
+                      >
+                        View on RMP ↗
+                      </a>
+                    )}
                   </div>
                   {profProfile.rmp && profProfile.rmp.avgRating !== null ? (
                     <div className="mt-1.5 grid grid-cols-3 gap-1.5 text-center">
@@ -2423,18 +2437,39 @@ export function CourseLookupPanel({
                 </div>
 
                 <div className="rounded-xl border border-black/10 bg-white/75 p-2.5 dark:border-white/10 dark:bg-black/25">
-                  <div className="text-[10.5px] font-semibold uppercase tracking-wider opacity-70">
-                    Salary (Ontario Sunshine List)
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-[10.5px] font-semibold uppercase tracking-wider opacity-70">
+                      Salary (Ontario Sunshine List)
+                    </div>
+                    {(() => {
+                      const latestWithNames = [...profProfile.salaries]
+                        .reverse()
+                        .find((s) => s.firstName && s.lastName);
+                      if (!latestWithNames?.firstName || !latestWithNames?.lastName) {
+                        return null;
+                      }
+                      const toSlug = (v: string) =>
+                        v.trim().toLowerCase().replace(/\s+/g, "-");
+                      const sunshineUrl = `https://www.ontariosunshinelist.com/people/${toSlug(latestWithNames.firstName)}-${toSlug(latestWithNames.lastName)}/ontario-tech-university`;
+                      return (
+                        <a
+                          href={sunshineUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[10.5px] font-medium text-sky-700 hover:underline dark:text-sky-400"
+                        >
+                          View on Sunshine List ↗
+                        </a>
+                      );
+                    })()}
                   </div>
-                  <p className="mt-1 text-xs opacity-75">
-                    Salary data not connected yet.
-                  </p>
+                  <SalaryLineChart salaries={profProfile.salaries} />
                 </div>
               </div>
             </div>
           </>
         );
-      })()}
+      })(), document.body)}
     </aside>
   );
 }

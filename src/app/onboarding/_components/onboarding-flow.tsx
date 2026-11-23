@@ -6,6 +6,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   mergeProgramsPreferringCatalogYear,
   ProgramCombobox,
+  programIdentityKey,
   sortDegreePrograms,
   sortMinorPrograms,
 } from "@/components/program-combobox";
@@ -23,10 +24,17 @@ import {
 } from "@/lib/onboarding";
 import type { StudentProfile } from "@/lib/student-courses";
 
+interface SavedPlanSummary {
+  program_id: string;
+  minor_program_id: string | null;
+  hasTerms: boolean;
+}
+
 interface OnboardingFlowProps {
   programs: ProgramSummary[];
   availableCatalogYears: string[];
   initialProfile: StudentProfile | null;
+  savedPlans?: SavedPlanSummary[];
   nextPath: string;
   currentAcademicStartYear: number;
 }
@@ -37,23 +45,35 @@ export function OnboardingFlow({
   programs,
   availableCatalogYears,
   initialProfile,
+  savedPlans = [],
   nextPath,
   currentAcademicStartYear,
 }: OnboardingFlowProps) {
   const router = useRouter();
   const alreadyResolved = hasResolvedOnboarding(initialProfile);
 
+  const primarySavedPlan = useMemo(
+    () => savedPlans.find((p) => p.hasTerms) ?? savedPlans[0] ?? null,
+    [savedPlans],
+  );
+  const savedProgramIds = useMemo(
+    () => new Set(savedPlans.map((p) => p.program_id)),
+    [savedPlans],
+  );
+
   const [step, setStep] = useState<0 | 1 | 2>(0);
   const [yearOfStudy, setYearOfStudy] = useState<YearOfStudy | null>(
     initialProfile?.year_of_study ?? null,
   );
   const [degreeProgramId, setDegreeProgramId] = useState<string | null>(
-    initialProfile?.degree_program_id ?? null,
+    initialProfile?.degree_program_id ?? primarySavedPlan?.program_id ?? null,
   );
   const [minorProgramId, setMinorProgramId] = useState<string | null>(() =>
     initialProfile?.has_minor === false
       ? null
-      : (initialProfile?.minor_program_id ?? null),
+      : (initialProfile?.minor_program_id ??
+        primarySavedPlan?.minor_program_id ??
+        null),
   );
 
   const [submitting, setSubmitting] = useState(false);
@@ -110,8 +130,30 @@ export function OnboardingFlow({
       allDegreePrograms,
       targetCatalogYear,
     );
+    if (savedPlans.length > 0) {
+      const byIdentity = new Map<string, ProgramSummary>();
+      for (const prog of merged) {
+        byIdentity.set(programIdentityKey(prog), prog);
+      }
+      // Preserve the catalog year of any degree the student already has a saved plan for
+      // (preferring non-empty / most-recent plans first).
+      const orderedSaved = [
+        ...savedPlans.filter((p) => p.hasTerms),
+        ...savedPlans.filter((p) => !p.hasTerms),
+      ];
+      const preservedIdentities = new Set<string>();
+      for (const saved of orderedSaved) {
+        const savedProg = programsById.get(saved.program_id);
+        if (!savedProg || savedProg.credential === "Minor") continue;
+        const identity = programIdentityKey(savedProg);
+        if (preservedIdentities.has(identity)) continue;
+        preservedIdentities.add(identity);
+        byIdentity.set(identity, savedProg);
+      }
+      return sortDegreePrograms([...byIdentity.values()], "");
+    }
     return sortDegreePrograms(merged, "");
-  }, [allDegreePrograms, targetCatalogYear]);
+  }, [allDegreePrograms, targetCatalogYear, savedPlans, programsById]);
 
   const minorOptions = useMemo(() => {
     const merged = mergeProgramsPreferringCatalogYear(
@@ -151,7 +193,11 @@ export function OnboardingFlow({
         ? resolveCatalogYearForStartYear(nextStartYear, availableCatalogYears)
         : startYearToCatalogYear(nextStartYear);
 
-    if (selectedDegree && selectedDegree.catalog_year !== nextCatalogYear) {
+    if (
+      selectedDegree &&
+      selectedDegree.catalog_year !== nextCatalogYear &&
+      !savedProgramIds.has(selectedDegree.program_id)
+    ) {
       const remappedDegree = findProgramInCatalogYear(
         allDegreePrograms,
         selectedDegree,
