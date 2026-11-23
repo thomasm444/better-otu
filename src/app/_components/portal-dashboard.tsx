@@ -41,6 +41,11 @@ import {
   fetchStudentProfileWithPrograms,
   type StudentProfileWithPrograms,
 } from "@/lib/student-courses";
+import {
+  HOME_VIEW_CHANGE_EVENT,
+  HOME_VIEW_STORAGE_KEY,
+  getStoredHomeView,
+} from "@/lib/preferences";
 import { createClient } from "@/lib/supabase/client";
 
 interface PortalDashboardProps {
@@ -58,7 +63,6 @@ interface CustomShortcut {
 }
 
 const CUSTOM_SHORTCUTS_STORAGE_KEY = "better-otu:portal-custom-shortcuts:v1";
-const HOME_VIEW_STORAGE_KEY = "better-otu:home-view:v1";
 
 const QUICK_BUILDINGS = ["SHA", "SIR", "ERC", "BIT", "SCI", "ENG", "UP", "U5"] as const;
 
@@ -191,7 +195,7 @@ export function PortalDashboard({
   // Load saved Home view, custom shortcuts, and Google shortcuts from localStorage
   useEffect(() => {
     try {
-      const savedView = window.localStorage.getItem(HOME_VIEW_STORAGE_KEY);
+      const savedView = getStoredHomeView();
       if (savedView === "classic" || savedView === "stacked") {
         queueMicrotask(() => setHomeView(savedView));
       }
@@ -430,14 +434,25 @@ export function PortalDashboard({
     saveGoogleShortcutsState(next);
   };
 
-  const handleSelectHomeView = (nextView: HomeView) => {
-    setHomeView(nextView);
-    try {
-      window.localStorage.setItem(HOME_VIEW_STORAGE_KEY, nextView);
-    } catch {
-      // Ignore storage errors
-    }
-  };
+  useEffect(() => {
+    const onHomeViewChange = (e: Event) => {
+      const next = (e as CustomEvent<HomeView>).detail;
+      if (next === "classic" || next === "stacked") {
+        setHomeView(next);
+      }
+    };
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === HOME_VIEW_STORAGE_KEY) {
+        setHomeView(getStoredHomeView());
+      }
+    };
+    window.addEventListener(HOME_VIEW_CHANGE_EVENT, onHomeViewChange);
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener(HOME_VIEW_CHANGE_EVENT, onHomeViewChange);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, []);
 
   const degreeProgress = computeDegreeProgress(latestPlan, nonStandardCredits);
   const visibleCourseCodes = savedCourseCodes.slice(0, 4);
@@ -563,70 +578,6 @@ export function PortalDashboard({
                   </p>
                 ) : null}
               </div>
-            </div>
-
-            <div
-              role="radiogroup"
-              aria-label="Home layout view"
-              className="inline-flex shrink-0 self-start rounded-xl border border-slate-200/90 bg-white/95 p-0.5 shadow-2xs backdrop-blur-xs dark:border-slate-800 dark:bg-slate-900/90"
-            >
-              <button
-                type="button"
-                role="radio"
-                aria-checked={homeView === "stacked"}
-                onClick={() => handleSelectHomeView("stacked")}
-                className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#003C71] ${
-                  homeView === "stacked"
-                    ? "bg-[#003C71] text-white shadow-2xs dark:bg-sky-500 dark:text-slate-950"
-                    : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
-                }`}
-              >
-                <svg
-                  className="h-3.5 w-3.5"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <rect width="18" height="5" x="3" y="4" rx="1.5" />
-                  <rect width="18" height="5" x="3" y="10" rx="1.5" />
-                  <rect width="18" height="5" x="3" y="16" rx="1.5" />
-                </svg>
-                <span>Stacked</span>
-              </button>
-
-              <button
-                type="button"
-                role="radio"
-                aria-checked={homeView === "classic"}
-                onClick={() => handleSelectHomeView("classic")}
-                className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#003C71] ${
-                  homeView === "classic"
-                    ? "bg-[#003C71] text-white shadow-2xs dark:bg-sky-500 dark:text-slate-950"
-                    : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
-                }`}
-              >
-                <svg
-                  className="h-3.5 w-3.5"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <rect width="5" height="7" x="3" y="4" rx="1" />
-                  <rect width="5" height="7" x="9.5" y="4" rx="1" />
-                  <rect width="5" height="7" x="16" y="4" rx="1" />
-                  <rect width="10" height="7" x="3" y="13" rx="1" />
-                  <rect width="6" height="7" x="15" y="13" rx="1" />
-                </svg>
-                <span>Classic</span>
-              </button>
             </div>
           </header>
 

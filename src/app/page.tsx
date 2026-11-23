@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Suspense } from "react";
 
 import { getCatalogCourses } from "@/lib/degree-queries";
@@ -30,8 +31,8 @@ async function LastUpdatedNotice() {
   if (!info) return null;
 
   return (
-    <footer className="relative z-10 mx-auto w-full max-w-5xl px-4 pb-6 text-center sm:px-6 lg:px-8">
-      <p className="text-[11px] text-slate-400/90 dark:text-slate-500">
+    <>
+      <span>
         Last updated at{" "}
         <a
           href={info.actionsUrl}
@@ -43,7 +44,28 @@ async function LastUpdatedNotice() {
             {formatLastUpdated(info.timestamp)}
           </time>
         </a>
-      </p>
+      </span>
+      <span aria-hidden="true" className="text-slate-300 dark:text-slate-700">
+        &bull;
+      </span>
+    </>
+  );
+}
+
+function HomeFooter() {
+  return (
+    <footer className="relative z-10 mx-auto w-full max-w-5xl px-4 pb-6 text-center sm:px-6 lg:px-8">
+      <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] text-slate-400/90 dark:text-slate-500">
+        <Suspense fallback={null}>
+          <LastUpdatedNotice />
+        </Suspense>
+        <Link
+          href="/privacy-policy"
+          className="underline decoration-slate-300/70 underline-offset-2 transition-colors hover:text-slate-600 dark:decoration-slate-700 dark:hover:text-slate-300"
+        >
+          Privacy Policy
+        </Link>
+      </div>
     </footer>
   );
 }
@@ -71,11 +93,7 @@ async function PortalDashboardWithCredits({
 }
 
 export default function Home() {
-  const footer = (
-    <Suspense fallback={null}>
-      <LastUpdatedNotice />
-    </Suspense>
-  );
+  const footer = <HomeFooter />;
 
   return (
     <Suspense fallback={<PortalDashboard termLabel={TERM_LABEL} footer={footer} />}>

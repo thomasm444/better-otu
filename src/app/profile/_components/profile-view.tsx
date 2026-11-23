@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import React, { useEffect, useMemo, useState } from "react";
 
+import { ProfilePreferencesCard } from "@/components/profile-preferences-card";
 import {
   mergeProgramsPreferringCatalogYear,
   ProgramCombobox,
@@ -30,6 +31,7 @@ interface ProfileViewProps {
   displayName: string;
   email: string;
   currentAcademicStartYear: number;
+  embedded?: boolean;
 }
 
 type EditableField = "year" | "degree" | "minor";
@@ -41,6 +43,7 @@ export function ProfileView({
   displayName,
   email,
   currentAcademicStartYear,
+  embedded = false,
 }: ProfileViewProps) {
   const router = useRouter();
 
@@ -276,40 +279,54 @@ export function ProfileView({
     null;
 
   return (
-    <div className="mx-auto flex w-full max-w-xl flex-1 flex-col px-4 py-8 sm:px-6 sm:py-12">
-      <Link
-        href="/"
-        className="inline-flex w-fit items-center gap-1.5 text-xs font-medium text-slate-500 transition-colors hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
-      >
-        <svg
-          className="h-3.5 w-3.5"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2.2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          aria-hidden="true"
-        >
-          <path d="M19 12H5" />
-          <path d="m12 19-7-7 7-7" />
-        </svg>
-        <span>Back to Home</span>
-      </Link>
+    <div
+      className={
+        embedded
+          ? "flex w-full flex-col"
+          : "mx-auto flex w-full max-w-xl flex-1 flex-col px-4 py-8 sm:px-6 sm:py-12"
+      }
+    >
+      {!embedded && (
+        <>
+          <Link
+            href="/"
+            className="inline-flex w-fit items-center gap-1.5 text-xs font-medium text-slate-500 transition-colors hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
+          >
+            <svg
+              className="h-3.5 w-3.5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M19 12H5" />
+              <path d="m12 19-7-7 7-7" />
+            </svg>
+            <span>Back to Home</span>
+          </Link>
 
-      <header className="mt-6">
-        <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
-          {displayName}
-        </h1>
-        <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
-          {email}
-        </p>
-      </header>
+          <header className="mt-6">
+            <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
+              {displayName}
+            </h1>
+            <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
+              {email}
+            </p>
+          </header>
+
+          <div className="mt-6">
+            <ProfilePreferencesCard />
+          </div>
+        </>
+      )}
 
       {errorMessage && (
         <div
           role="alert"
-          className="mt-5 flex items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-800 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200"
+          className={`${embedded ? "mb-4" : "mt-5"} flex items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-800 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200`}
         >
           <span>{errorMessage}</span>
           <button
@@ -322,7 +339,9 @@ export function ProfileView({
         </div>
       )}
 
-      <section className="mt-6 divide-y divide-slate-100 overflow-visible rounded-2xl border border-[#BFD7F2]/80 bg-white shadow-[0_10px_30px_-18px_rgba(0,60,113,0.16)] dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-900 dark:shadow-black/45">
+      <section
+        className={`${embedded ? "" : "mt-6 "}divide-y divide-slate-100 overflow-visible rounded-2xl border border-[#BFD7F2]/80 bg-white shadow-[0_10px_30px_-18px_rgba(0,60,113,0.16)] dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-900 dark:shadow-black/45`}
+      >
         {/* Row 1: Year */}
         <div className="px-5 py-5 sm:px-6">
           <div className="flex items-start justify-between gap-4">

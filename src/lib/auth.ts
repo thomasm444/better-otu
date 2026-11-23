@@ -1,5 +1,6 @@
 "use client";
 
+import { getSafeNextPath } from "@/lib/onboarding";
 import { createClient } from "@/lib/supabase/client";
 
 export const ONTARIO_TECH_DOMAIN = "ontariotechu.net";
@@ -15,14 +16,17 @@ export function isOntarioTechEmail(email: string | null | undefined): boolean {
  */
 export async function signInWithOntarioTechGoogle(nextPath?: string) {
   const supabase = createClient();
-  const currentPath =
+  const safeNext = getSafeNextPath(
     nextPath ??
-    (typeof window !== "undefined"
-      ? `${window.location.pathname}${window.location.search}`
-      : "/");
+      (typeof window !== "undefined"
+        ? `${window.location.pathname}${window.location.search}`
+        : "/"),
+  );
 
   const callbackUrl = new URL("/auth/callback", window.location.origin);
-  callbackUrl.searchParams.set("next", currentPath);
+  if (safeNext !== "/") {
+    callbackUrl.searchParams.set("next", safeNext);
+  }
 
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "google",

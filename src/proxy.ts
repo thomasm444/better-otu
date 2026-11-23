@@ -11,12 +11,17 @@ import {
 const ALLOWED_EMAIL_DOMAIN = "@ontariotechu.net";
 
 function isPublicAuthPath(pathname: string): boolean {
-  return pathname === "/login" || pathname.startsWith("/auth/");
+  return (
+    pathname === "/login" ||
+    pathname === "/privacy-policy" ||
+    pathname.startsWith("/auth/")
+  );
 }
 
 function isOnboardingExemptPath(pathname: string): boolean {
   return (
     pathname === "/login" ||
+    pathname === "/privacy-policy" ||
     pathname === "/onboarding" ||
     pathname.startsWith("/onboarding/") ||
     pathname.startsWith("/auth/") ||

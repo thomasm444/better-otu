@@ -820,7 +820,7 @@ export async function getCampusMapData(
       if (floor) query = query.eq("floor", floor);
       if (building) query = query.eq("building", building);
       return query;
-    }, 500),
+    }, 300),
     collectPages((from, to) =>
       supabase
         .from("room_booking_details")
@@ -838,13 +838,11 @@ export async function getCampusMapData(
         .from("course_meetings")
         .select("id, building, building_description")
         .eq("term", CURRENT_TERM)
-        .not("building", "is", null)
-        .not("building_description", "is", null)
         .order("id", { ascending: true })
         .limit(limit);
       if (lastId !== null) query = query.gt("id", lastId);
       return query;
-    }),
+    }).catch(() => []),
   ]);
 
   if (unmappedRes.error) {

@@ -1,10 +1,10 @@
 "use client";
 
 import type { User } from "@supabase/supabase-js";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
+import { ProfileDrawer } from "@/components/profile-drawer";
 import { signInWithOntarioTechGoogle, signOut } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/client";
 
@@ -16,9 +16,11 @@ export function AuthButton({
   isProfileActive?: boolean;
 } = {}) {
   const router = useRouter();
+  const profileTriggerRef = useRef<HTMLButtonElement>(null);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -105,17 +107,19 @@ export function AuthButton({
               <span className="hidden max-w-[140px] truncate text-xs font-medium text-zinc-700 dark:text-zinc-300 md:inline">
                 {displayName}
               </span>
-              <Link
-                href="/profile"
-                aria-current={isProfileActive ? "page" : undefined}
+              <button
+                ref={profileTriggerRef}
+                type="button"
+                onClick={() => setProfileOpen(true)}
+                aria-expanded={profileOpen}
                 className={`whitespace-nowrap rounded-md border px-1.5 py-0.5 text-[11px] font-medium transition-colors sm:px-2 sm:py-1 sm:text-xs ${
-                  isProfileActive
+                  profileOpen || isProfileActive
                     ? "border-[#003C71]/30 bg-[#003C71]/10 text-[#003C71] dark:border-[#0077CA]/40 dark:bg-[#0077CA]/20 dark:text-sky-300"
                     : "border-zinc-200 text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
                 }`}
               >
                 Profile
-              </Link>
+              </button>
               <button
                 type="button"
                 onClick={handleSignOut}
@@ -162,6 +166,17 @@ export function AuthButton({
             </button>
           </div>
         )}
+        {user && (
+          <ProfileDrawer
+            isOpen={profileOpen}
+            onClose={() => setProfileOpen(false)}
+            user={user}
+            displayName={displayName}
+            onSignOut={handleSignOut}
+            signingOut={submitting}
+            triggerRef={profileTriggerRef}
+          />
+        )}
       </>
     );
   }
@@ -182,12 +197,15 @@ export function AuthButton({
               </p>
             )}
           </div>
-          <Link
-            href="/profile"
+          <button
+            ref={profileTriggerRef}
+            type="button"
+            onClick={() => setProfileOpen(true)}
+            aria-expanded={profileOpen}
             className="rounded-lg border border-zinc-200 px-2.5 py-1 text-xs font-medium text-zinc-700 transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
           >
             Profile
-          </Link>
+          </button>
           <button
             type="button"
             onClick={handleSignOut}
