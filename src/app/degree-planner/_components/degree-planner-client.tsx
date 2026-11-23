@@ -3116,10 +3116,13 @@ export function DegreePlannerClient({
                                               ? "border-rose-200 bg-rose-50 text-rose-900 dark:border-rose-700/80 dark:bg-slate-900 dark:text-rose-300"
                                               : flag.cls === "bad"
                                                 ? "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-700/80 dark:bg-slate-900 dark:text-amber-300"
-                                                : "border-slate-200 bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                                                : "border-sky-200 bg-sky-50 text-sky-900 dark:border-sky-700/80 dark:bg-slate-900 dark:text-sky-300"
                                           }`}
                                         >
-                                          {flag.icon} {flag.title}
+                                          {flag.icon === "i"
+                                            ? "Notice:"
+                                            : flag.icon}{" "}
+                                          {flag.title}
                                         </div>
                                       )}
                                       <span
@@ -3160,9 +3163,13 @@ export function DegreePlannerClient({
                                               ? "text-rose-600 dark:text-rose-400"
                                               : flag.cls === "bad"
                                                 ? "text-amber-600 dark:text-amber-400"
-                                                : "text-slate-400"
+                                                : "inline-flex h-4 w-4 items-center justify-center rounded-full bg-sky-100 text-[10px] font-bold text-sky-700 dark:bg-sky-950/90 dark:text-sky-300"
                                           }`}
-                                          title={flag.title}
+                                          title={
+                                            flag.icon === "i"
+                                              ? `Notice: ${flag.title}`
+                                              : flag.title
+                                          }
                                         >
                                           {flag.icon}
                                         </span>
@@ -3559,10 +3566,10 @@ function CourseDetailsModal({
             className={`mt-3 rounded-xl border px-3 py-2 text-xs font-medium ${
               flag.cls === "bad"
                 ? "border-amber-200 bg-amber-50/90 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300"
-                : "border-slate-200 bg-slate-50 text-slate-700 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300"
+                : "border-sky-200 bg-sky-50/90 text-sky-900 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-300"
             }`}
           >
-            {flag.icon} {flag.title}
+            {flag.icon === "i" ? "Notice:" : flag.icon} {flag.title}
           </div>
         )}
 
