@@ -659,14 +659,12 @@ export function RequirementsSidebar({
             )}
           </span>
         </div>
-        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-surface-subtle">
+        <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-200/80 dark:bg-slate-800">
           <div
             className={`h-full rounded-full transition-[width] duration-300 ${
               done
-                ? "bg-positive"
-                : accent === "minor"
-                  ? "bg-secondary-brand"
-                  : "bg-accent"
+                ? "bg-gradient-to-r from-emerald-400 to-teal-400"
+                : "bg-gradient-to-r from-sky-400 to-teal-400"
             }`}
             style={{ width: `${pct}%` }}
           />
