@@ -1016,10 +1016,17 @@ export function WeekScheduleGrid({
       }
     };
 
+    const preventTouchScroll = (ev: TouchEvent) => {
+      if (canDrag && ghosts.length > 0 && ev.cancelable) {
+        ev.preventDefault();
+      }
+    };
+
     const cleanup = () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
+      window.removeEventListener("touchmove", preventTouchScroll);
       cleanupDragRef.current = null;
     };
 
@@ -1045,6 +1052,11 @@ export function WeekScheduleGrid({
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onUp);
+    if (canDrag && ghosts.length > 0) {
+      window.addEventListener("touchmove", preventTouchScroll, {
+        passive: false,
+      });
+    }
   };
 
   const buildDraftCustomPreviews = (
@@ -1194,10 +1206,15 @@ export function WeekScheduleGrid({
       updatePreviews(selectedDays, latestStart, latestEnd);
     };
 
+    const preventTouchScroll = (ev: TouchEvent) => {
+      if (ev.cancelable) ev.preventDefault();
+    };
+
     const cleanup = () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
+      window.removeEventListener("touchmove", preventTouchScroll);
       cleanupDragRef.current = null;
     };
 
@@ -1237,6 +1254,7 @@ export function WeekScheduleGrid({
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onUp);
+    window.addEventListener("touchmove", preventTouchScroll, { passive: false });
   };
 
   const startBlockedSlotDrag = (
@@ -1289,10 +1307,15 @@ export function WeekScheduleGrid({
       setDragBlockedPreviews([nextSlot]);
     };
 
+    const preventTouchScroll = (ev: TouchEvent) => {
+      if (ev.cancelable) ev.preventDefault();
+    };
+
     const cleanup = () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
+      window.removeEventListener("touchmove", preventTouchScroll);
       cleanupDragRef.current = null;
     };
 
@@ -1313,6 +1336,7 @@ export function WeekScheduleGrid({
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onUp);
+    window.addEventListener("touchmove", preventTouchScroll, { passive: false });
   };
 
   const startCustomBlockDrag = (
@@ -1366,10 +1390,15 @@ export function WeekScheduleGrid({
       setDragCustomPreviews([{ ...nextBlock, id: `__draft_custom__-${block.id}` }]);
     };
 
+    const preventTouchScroll = (ev: TouchEvent) => {
+      if (ev.cancelable) ev.preventDefault();
+    };
+
     const cleanup = () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onUp);
+      window.removeEventListener("touchmove", preventTouchScroll);
       cleanupDragRef.current = null;
     };
 
@@ -1393,6 +1422,7 @@ export function WeekScheduleGrid({
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onUp);
+    window.addEventListener("touchmove", preventTouchScroll, { passive: false });
   };
 
   const resolvedBadge =
@@ -1708,7 +1738,11 @@ export function WeekScheduleGrid({
           <div
             ref={gridBodyRef}
             onPointerDown={startCreateBlockedDrag}
-            className={`grid flex-1 ${getGridColsClass(visibleDays.length)} divide-x divide-line-subtle`}
+            className={`grid flex-1 ${getGridColsClass(visibleDays.length)} divide-x divide-line-subtle ${
+              isEditMode && (isBlockingMode || isCustomBlockDragMode)
+                ? "touch-none select-none"
+                : ""
+            }`}
           >
             {visibleDays.map((day) => {
               const dayBlocks = positionedByDay[day.key];
@@ -1767,7 +1801,9 @@ export function WeekScheduleGrid({
                               ? "border-zinc-300/80 bg-zinc-200/40 text-zinc-500 opacity-40 grayscale dark:border-zinc-700/70 dark:bg-zinc-800/40 dark:text-zinc-400"
                               : "border-rose-300/90 text-rose-800 dark:border-rose-700/70 dark:text-rose-200"
                           } ${
-                            isEditMode ? "cursor-grab active:cursor-grabbing" : ""
+                            isEditMode
+                              ? "cursor-grab active:cursor-grabbing touch-none select-none"
+                              : ""
                           } ${isDraftBlocked ? "ring-2 ring-rose-500" : ""}`}
                         >
                           {isEditMode && !isDraftBlocked && (
@@ -1776,7 +1812,7 @@ export function WeekScheduleGrid({
                               onPointerDown={(ev) =>
                                 startBlockedSlotDrag(ev, slot, "resize-top")
                               }
-                              className="absolute inset-x-0 top-0 h-1.5 cursor-ns-resize"
+                              className="absolute inset-x-0 top-0 h-1.5 touch-none cursor-ns-resize"
                               title="Drag to adjust start time"
                             />
                           )}
@@ -1817,7 +1853,7 @@ export function WeekScheduleGrid({
                               onPointerDown={(ev) =>
                                 startBlockedSlotDrag(ev, slot, "resize-bottom")
                               }
-                              className="absolute inset-x-0 bottom-0 h-1.5 cursor-ns-resize"
+                              className="absolute inset-x-0 bottom-0 h-1.5 touch-none cursor-ns-resize"
                               title="Drag to adjust end time"
                             />
                           )}
@@ -1911,7 +1947,7 @@ export function WeekScheduleGrid({
                                     : `border ${style.bg} ${style.border} ${style.text} ${style.hoverBg} hover:z-30 hover:shadow-md`
                           } ${isDraftCustom ? "z-40 ring-2 ring-teal-500" : ""} ${
                             isEditMode && !isPreview
-                              ? "cursor-grab active:cursor-grabbing"
+                              ? "cursor-grab active:cursor-grabbing touch-none select-none"
                               : !isPreview
                                 ? "cursor-pointer"
                                 : ""
@@ -1936,7 +1972,7 @@ export function WeekScheduleGrid({
                               onPointerDown={(ev) =>
                                 startCustomBlockDrag(ev, block, "resize-top")
                               }
-                              className="absolute inset-x-0 top-0 z-10 h-1.5 cursor-ns-resize"
+                              className="absolute inset-x-0 top-0 z-10 h-1.5 touch-none cursor-ns-resize"
                               title="Drag to adjust start time"
                             />
                           )}
@@ -2029,7 +2065,7 @@ export function WeekScheduleGrid({
                               onPointerDown={(ev) =>
                                 startCustomBlockDrag(ev, block, "resize-bottom")
                               }
-                              className="absolute inset-x-0 bottom-0 z-10 h-1.5 cursor-ns-resize"
+                              className="absolute inset-x-0 bottom-0 z-10 h-1.5 touch-none cursor-ns-resize"
                               title="Drag to adjust end time"
                             />
                           )}
