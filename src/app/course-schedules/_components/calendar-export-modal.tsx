@@ -92,18 +92,18 @@ export function CalendarExportModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4 backdrop-blur-xs"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-lg rounded-2xl border border-zinc-200 bg-white p-6 shadow-2xl dark:border-zinc-800 dark:bg-zinc-950">
-        <div className="flex items-start justify-between gap-4 border-b border-zinc-200 pb-3 dark:border-zinc-800">
+      <div className="w-full max-w-lg rounded-2xl border border-slate-200/90 bg-white p-6 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-200/80 pb-3 dark:border-slate-800">
           <div>
-            <h3 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">
+            <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">
               Sync to Apple &amp; Google Calendar ({termLabel})
             </h3>
-            <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
               Includes weekly lectures, biweekly labs/tutorials, Reading Week &amp;
               holiday exclusions, and final exams.
             </p>
@@ -111,7 +111,7 @@ export function CalendarExportModal({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg p-1 text-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+            className="rounded-xl p-1 text-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200"
           >
             &times;
           </button>
@@ -143,7 +143,7 @@ export function CalendarExportModal({
 
           {/* Subscription Link */}
           <div>
-            <label className="block font-medium text-zinc-700 dark:text-zinc-300">
+            <label className="block font-medium text-slate-700 dark:text-slate-300">
               Dynamic Calendar Feed URL (iCalendar / .ics)
             </label>
             <div className="mt-1.5 flex gap-2">
@@ -152,12 +152,12 @@ export function CalendarExportModal({
                 readOnly
                 value={subscriptionUrl}
                 onFocus={(e) => e.target.select()}
-                className="flex-1 rounded-lg border border-zinc-300 bg-zinc-50 px-2.5 py-1.5 font-mono text-[11px] text-zinc-800 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200"
+                className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 font-mono text-[11px] text-slate-800 focus:border-sky-400 focus:outline-none dark:border-slate-700 dark:bg-slate-950/60 dark:text-slate-200"
               />
               <button
                 type="button"
                 onClick={handleCopy}
-                className="shrink-0 rounded-lg bg-zinc-900 px-3 py-1.5 font-medium text-white hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                className="shrink-0 rounded-xl bg-sky-600 px-3 py-1.5 font-medium text-white shadow-xs transition-colors hover:bg-sky-700"
               >
                 {copied ? "Copied!" : "Copy Link"}
               </button>
@@ -168,7 +168,7 @@ export function CalendarExportModal({
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <a
               href={webcalUrl}
-              className="flex items-center justify-center gap-2 rounded-xl border border-zinc-300 bg-white px-3 py-2.5 font-medium text-zinc-900 shadow-xs transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-800"
+              className="flex items-center justify-center gap-2 rounded-xl border border-slate-200/90 bg-white px-3 py-2.5 font-medium text-slate-800 shadow-xs transition hover:border-sky-300 hover:bg-sky-50/50 dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-100 dark:hover:border-sky-700 dark:hover:bg-slate-800"
             >
               <span>Subscribe in Apple Calendar</span>
             </a>
@@ -177,14 +177,14 @@ export function CalendarExportModal({
               href={googleSubscribeUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 px-3 py-2.5 font-medium text-blue-900 shadow-xs transition hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-950/60 dark:text-blue-200 dark:hover:bg-blue-900/60"
+              className="flex items-center justify-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2.5 font-medium text-sky-900 shadow-xs transition hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/60 dark:text-sky-200 dark:hover:bg-sky-900/60"
             >
               <span>Subscribe in Google Calendar</span>
             </a>
           </div>
 
-          <div className="rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-[11px] text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-400">
-            <p className="font-medium text-zinc-800 dark:text-zinc-200">
+          <div className="rounded-xl border border-slate-200/80 bg-slate-50/80 p-3 text-[11px] text-slate-600 dark:border-slate-800 dark:bg-slate-950/50 dark:text-slate-400">
+            <p className="font-medium text-slate-800 dark:text-slate-200">
               How Google Calendar subscription works:
             </p>
             <p className="mt-1">
@@ -197,18 +197,18 @@ export function CalendarExportModal({
           </div>
 
           {/* Footer / Direct Download */}
-          <div className="flex items-center justify-between border-t border-zinc-200 pt-3 dark:border-zinc-800">
+          <div className="flex items-center justify-between border-t border-slate-200/80 pt-3 dark:border-slate-800">
             <a
               href={downloadUrl}
               download={`better-otu-${term}.ics`}
-              className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 font-medium text-zinc-700 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+              className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 font-medium text-slate-700 transition-colors hover:border-sky-300 hover:bg-sky-50/50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
             >
               Download .ics Snapshot ({activeCrns.length} sections)
             </a>
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg px-3 py-1.5 font-medium text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
+              className="rounded-xl px-3 py-1.5 font-medium text-slate-600 transition-colors hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
             >
               Close
             </button>

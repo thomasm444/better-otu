@@ -473,16 +473,16 @@ function buildSectionGhosts(
 function DayHeaderStrip({ position }: { position: "top" | "bottom" }) {
   return (
     <div
-      className={`flex bg-zinc-100 text-zinc-700 select-none dark:bg-zinc-900 dark:text-zinc-300 ${
+      className={`flex bg-slate-50/90 text-slate-700 select-none dark:bg-slate-900/90 dark:text-slate-200 ${
         position === "top"
-          ? "border-b-2 border-zinc-300 dark:border-zinc-700"
-          : "border-t-2 border-zinc-300 dark:border-zinc-700"
+          ? "border-b border-slate-200/90 dark:border-slate-800"
+          : "border-t border-slate-200/90 dark:border-slate-800"
       }`}
     >
-      <div className="flex w-12 shrink-0 items-center justify-center border-r border-zinc-300 py-1.5 font-mono text-[10px] font-semibold text-zinc-400 sm:w-14 dark:border-zinc-800 dark:text-zinc-500">
+      <div className="flex w-12 shrink-0 items-center justify-center border-r border-slate-200/80 py-1.5 font-mono text-[10px] font-semibold text-slate-400 sm:w-14 dark:border-slate-800 dark:text-slate-500">
         {position === "top" ? "TIME" : "DAY"}
       </div>
-      <div className="grid flex-1 grid-cols-7 divide-x divide-zinc-300 dark:divide-zinc-800">
+      <div className="grid flex-1 grid-cols-7 divide-x divide-slate-200/80 dark:divide-slate-800">
         {DAYS_OF_WEEK.map((day) => (
           <div
             key={day.key}
@@ -1366,28 +1366,28 @@ export function WeekScheduleGrid({
   );
 
   return (
-    <div className="flex h-full flex-col rounded-xl border border-zinc-300/80 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+    <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white/92 shadow-[0_2px_12px_rgba(15,23,42,0.04)] backdrop-blur-sm dark:border-slate-800/80 dark:bg-slate-900/88">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200 px-4 py-2.5 dark:border-zinc-800">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/75 bg-gradient-to-r from-sky-50/85 via-white/95 to-indigo-50/55 px-4 py-2.5 dark:border-slate-800 dark:from-sky-950/35 dark:via-slate-900/95 dark:to-indigo-950/25">
         <div className="flex items-center gap-2.5">
           <span
-            className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider ${accentBadge}`}
+            className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider ${accentBadge}`}
           >
             {resolvedBadge}
           </span>
           <div>
-            <h2 className="text-sm font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
+            <h2 className="text-sm font-semibold tracking-tight text-slate-900 dark:text-slate-100">
               {title}
             </h2>
             {subtitle && (
-              <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
                 {subtitle}
               </p>
             )}
           </div>
         </div>
 
-        <div className="flex items-center gap-2 text-xs text-zinc-500">
+        <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
           {isEditMode && isBlockingMode && (
             <span className="rounded-full bg-rose-100 px-2.5 py-0.5 text-[11px] font-medium text-rose-700 dark:bg-rose-950/60 dark:text-rose-300">
               Drag on grid to block time
@@ -1495,8 +1495,8 @@ export function WeekScheduleGrid({
                           }}
                           className={`rounded-md px-2 py-0.5 text-[11px] font-medium transition ${
                             target.component === "ALL"
-                              ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-                              : "bg-white/80 text-zinc-800 hover:bg-white dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                              ? "bg-sky-600 text-white shadow-xs dark:bg-sky-500"
+                              : "bg-white/85 text-slate-700 hover:bg-white dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
                           }`}
                         >
                           All
@@ -1645,11 +1645,11 @@ export function WeekScheduleGrid({
 
         <div className="relative flex flex-1 select-none">
           {/* Times Column on the Left */}
-          <div className="flex w-12 flex-shrink-0 flex-col border-r border-zinc-300 bg-zinc-50/80 font-mono text-[10px] text-zinc-500 sm:w-14 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-400">
+          <div className="flex w-12 flex-shrink-0 flex-col border-r border-slate-200/90 bg-slate-50/70 font-mono text-[10px] text-slate-500 sm:w-14 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-400">
             {hours.map((hour) => (
               <div
                 key={hour}
-                className="relative flex flex-1 items-start justify-end border-b border-zinc-200/90 pr-1.5 pt-0.5 dark:border-zinc-800/80"
+                className="relative flex flex-1 items-start justify-end border-b border-slate-200/75 pr-1.5 pt-0.5 dark:border-slate-800/80"
               >
                 <span>{formatHourLabel(hour)}</span>
               </div>
@@ -1660,7 +1660,7 @@ export function WeekScheduleGrid({
           <div
             ref={gridBodyRef}
             onPointerDown={startCreateBlockedDrag}
-            className="grid flex-1 grid-cols-7 divide-x divide-zinc-200 dark:divide-zinc-800"
+            className="grid flex-1 grid-cols-7 divide-x divide-slate-200/80 dark:divide-slate-800/80"
           >
             {DAYS_OF_WEEK.map((day) => {
               const dayBlocks = positionedByDay[day.key];
@@ -1674,7 +1674,7 @@ export function WeekScheduleGrid({
                     {hours.map((hour) => (
                       <div
                         key={hour}
-                        className={`flex-1 border-b border-zinc-100 dark:border-zinc-900/70 ${
+                        className={`flex-1 border-b border-slate-100 dark:border-slate-800/55 ${
                           isEditMode && isBlockingMode
                             ? "cursor-crosshair hover:bg-rose-500/10"
                             : isEditMode && isCustomBlockDragMode
@@ -2223,12 +2223,12 @@ export function WeekScheduleGrid({
       {/* Selected Block Inspector Modal */}
       {selectedCourse && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm"
           onClick={(e) => {
             if (e.target === e.currentTarget) setSelectedCourse(null);
           }}
         >
-          <div className="w-full max-w-sm rounded-xl border border-zinc-200 bg-white p-5 shadow-xl dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="w-full max-w-sm rounded-2xl border border-slate-200/90 bg-white p-5 shadow-2xl dark:border-slate-700 dark:bg-slate-900">
             <div className="flex items-start justify-between">
               <div>
                 <div className="flex flex-wrap items-center gap-1.5">
@@ -2239,7 +2239,7 @@ export function WeekScheduleGrid({
                   >
                     {selectedCourse.type || "Class"}
                   </span>
-                  <span className="rounded bg-zinc-100 px-2 py-0.5 text-xs font-medium text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+                  <span className="rounded-md bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">
                     {selectedCourse.weekPattern === "both"
                       ? "Every Week"
                       : selectedCourse.weekPattern === "week1"
@@ -2252,17 +2252,17 @@ export function WeekScheduleGrid({
                     </span>
                   )}
                 </div>
-                <h3 className="mt-2 text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+                <h3 className="mt-2 text-lg font-semibold text-slate-900 dark:text-slate-100">
                   {selectedCourse.courseCode}
                 </h3>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
                   {selectedCourse.title}
                 </p>
               </div>
               <button
                 type="button"
                 onClick={() => setSelectedCourse(null)}
-                className="rounded-md p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200"
+                className="rounded-xl p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200"
               >
                 &times;
               </button>
@@ -2277,10 +2277,12 @@ export function WeekScheduleGrid({
               </div>
             )}
 
-            <div className="mt-4 space-y-2 border-t border-zinc-100 pt-3 text-xs dark:border-zinc-800">
+            <div className="mt-4 space-y-2 border-t border-slate-100 pt-3 text-xs dark:border-slate-800">
               <div className="flex justify-between gap-4">
-                <span className="text-zinc-500">Day &amp; Time</span>
-                <span className="font-medium capitalize text-zinc-800 dark:text-zinc-200">
+                <span className="text-slate-500 dark:text-slate-400">
+                  Day &amp; Time
+                </span>
+                <span className="font-medium capitalize text-slate-800 dark:text-slate-200">
                   {selectedCourse.day} &bull;{" "}
                   {formatTimeDisplay(selectedCourse.startTime)} &ndash;{" "}
                   {formatTimeDisplay(selectedCourse.endTime)}
@@ -2288,17 +2290,21 @@ export function WeekScheduleGrid({
               </div>
               {selectedCourse.room && (
                 <div className="flex justify-between gap-4">
-                  <span className="text-zinc-500">Room</span>
-                  <span className="font-medium text-zinc-800 dark:text-zinc-200">
+                  <span className="text-slate-500 dark:text-slate-400">
+                    Room
+                  </span>
+                  <span className="font-medium text-slate-800 dark:text-slate-200">
                     {selectedCourse.room}
                   </span>
                 </div>
               )}
               {selectedCourse.instructor && (
                 <div className="flex items-center justify-between gap-4">
-                  <span className="text-zinc-500">Instructor</span>
+                  <span className="text-slate-500 dark:text-slate-400">
+                    Instructor
+                  </span>
                   <div className="flex items-center gap-1.5">
-                    <span className="font-medium text-zinc-800 dark:text-zinc-200">
+                    <span className="font-medium text-slate-800 dark:text-slate-200">
                       {selectedCourse.instructor}
                     </span>
                     {showRmp && <RmpStarBadge rmp={selectedCourse.rmp} />}
@@ -2307,8 +2313,10 @@ export function WeekScheduleGrid({
               )}
               {selectedCourse.crn && (
                 <div className="flex justify-between gap-4">
-                  <span className="text-zinc-500">CRN</span>
-                  <span className="font-mono text-zinc-800 dark:text-zinc-200">
+                  <span className="text-slate-500 dark:text-slate-400">
+                    CRN
+                  </span>
+                  <span className="font-mono text-slate-800 dark:text-slate-200">
                     {selectedCourse.crn}
                   </span>
                 </div>
@@ -2319,7 +2327,20 @@ export function WeekScheduleGrid({
               !isEditMode &&
               !selectedCourse.isCustom &&
               selectedCourse.crn &&
-              onEnableEditModeAndSelectSection && (
+              onEnableEditModeAndSelectSection &&
+              !courses.some(
+                (b) =>
+                  !b.isCustom &&
+                  b.mode !== "preview" &&
+                  b.courseCode === selectedCourse.courseCode &&
+                  b.crn === selectedCourse.crn,
+              ) &&
+              !pickerGhosts.some(
+                (g) =>
+                  g.isCurrent &&
+                  g.courseCode === selectedCourse.courseCode &&
+                  g.crn === selectedCourse.crn,
+              ) && (
                 <div className="mt-4 rounded-lg border border-orange-300 bg-orange-50/90 p-3 text-xs text-orange-950 dark:border-orange-700/70 dark:bg-orange-950/50 dark:text-orange-100">
                   <p className="font-semibold">You are currently in View Mode</p>
                   <p className="mt-1 text-[11px] text-orange-900/90 dark:text-orange-200/90">
@@ -2439,7 +2460,20 @@ export function WeekScheduleGrid({
                   selectedCourse.crn &&
                   onEnableEditModeAndSelectSection &&
                   (selectedCourse.component || selectedCourse.type) &&
-                  !confirmViewModeAdd && (
+                  !confirmViewModeAdd &&
+                  !courses.some(
+                    (b) =>
+                      !b.isCustom &&
+                      b.mode !== "preview" &&
+                      b.courseCode === selectedCourse.courseCode &&
+                      b.crn === selectedCourse.crn,
+                  ) &&
+                  !pickerGhosts.some(
+                    (g) =>
+                      g.isCurrent &&
+                      g.courseCode === selectedCourse.courseCode &&
+                      g.crn === selectedCourse.crn,
+                  ) && (
                     <button
                       type="button"
                       onClick={() => setConfirmViewModeAdd(true)}
@@ -2451,7 +2485,7 @@ export function WeekScheduleGrid({
                 <button
                   type="button"
                   onClick={() => setSelectedCourse(null)}
-                  className="rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+                  className="rounded-xl bg-sky-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-sky-700 dark:bg-sky-500 dark:hover:bg-sky-600"
                 >
                   Close
                 </button>
@@ -2478,15 +2512,15 @@ export function WeekScheduleGrid({
                 top: slotGroupPicker.anchor.top,
                 bottom: slotGroupPicker.anchor.bottom,
               }}
-              className="fixed z-50 w-72 rounded-xl border border-zinc-200 bg-white p-3 shadow-2xl dark:border-zinc-700 dark:bg-zinc-900"
+              className="fixed z-50 w-72 rounded-2xl border border-slate-200/90 bg-white/98 p-3 shadow-2xl backdrop-blur-md dark:border-slate-700 dark:bg-slate-900"
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="flex items-center justify-between border-b border-zinc-200 pb-2 dark:border-zinc-800">
+              <div className="flex items-center justify-between border-b border-slate-200/80 pb-2 dark:border-slate-800">
                 <div>
-                  <div className="text-xs font-semibold text-zinc-900 dark:text-zinc-100">
+                  <div className="text-xs font-semibold text-slate-900 dark:text-slate-100">
                     {first.courseCode} · Choose {first.component}
                   </div>
-                  <div className="text-[10.5px] text-zinc-500">
+                  <div className="text-[10.5px] text-slate-500 dark:text-slate-400">
                     {formatTimeDisplay(first.startTime)}–
                     {formatTimeDisplay(first.endTime)}
                   </div>
@@ -2494,7 +2528,7 @@ export function WeekScheduleGrid({
                 <button
                   type="button"
                   onClick={() => setSlotGroupPicker(null)}
-                  className="rounded px-1.5 py-0.5 text-sm text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800"
+                  className="rounded-lg px-1.5 py-0.5 text-sm text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
                 >
                   ×
                 </button>
@@ -2516,14 +2550,14 @@ export function WeekScheduleGrid({
                       }
                       setSlotGroupPicker(null);
                     }}
-                    className={`flex w-full items-center justify-between gap-2 rounded-lg border px-2.5 py-2 text-left text-xs transition ${
+                    className={`flex w-full items-center justify-between gap-2 rounded-xl border px-2.5 py-2 text-left text-xs transition ${
                       opt.fits
-                        ? "border-zinc-200 bg-zinc-50/70 hover:border-emerald-400 hover:bg-emerald-50/60 dark:border-zinc-800 dark:bg-zinc-950/60 dark:hover:border-emerald-700"
+                        ? "border-slate-200 bg-slate-50/70 hover:border-sky-400 hover:bg-sky-50/60 dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-sky-700"
                         : "border-rose-200 bg-rose-50/60 hover:border-rose-400 dark:border-rose-900/60 dark:bg-rose-950/30"
                     }`}
                   >
                     <div className="min-w-0">
-                      <div className="flex items-center gap-1.5 font-semibold text-zinc-900 dark:text-zinc-100">
+                      <div className="flex items-center gap-1.5 font-semibold text-slate-900 dark:text-slate-100">
                         <span>CRN {opt.crn}</span>
                         {hasDiffWeeks && (
                           <span
@@ -2532,7 +2566,7 @@ export function WeekScheduleGrid({
                                 ? "bg-blue-100 text-blue-800 dark:bg-blue-950/70 dark:text-blue-200"
                                 : opt.weekPattern === "week2"
                                   ? "bg-purple-100 text-purple-800 dark:bg-purple-950/70 dark:text-purple-200"
-                                  : "bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
+                                  : "bg-slate-200 text-slate-700 dark:bg-slate-800 dark:text-slate-300"
                             }`}
                           >
                             {opt.weekPattern === "week1"
@@ -2543,7 +2577,7 @@ export function WeekScheduleGrid({
                           </span>
                         )}
                       </div>
-                      <div className="mt-0.5 truncate text-[10.5px] text-zinc-500">
+                      <div className="mt-0.5 truncate text-[10.5px] text-slate-500 dark:text-slate-400">
                         {opt.room}
                         {opt.section.seatsAvailable !== null
                           ? ` · ${opt.section.seatsAvailable} seats`
