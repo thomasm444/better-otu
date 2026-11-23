@@ -3105,6 +3105,7 @@ export function DegreePlannerClient({
           startYear={startYear}
           customs={customs}
           subjects={subjects}
+          degreeSubjects={bootstrap.subjects}
           subjectFaculty={subjectFaculty}
           onClose={() => {
             setPicker(null);

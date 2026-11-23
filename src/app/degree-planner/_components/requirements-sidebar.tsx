@@ -3,6 +3,8 @@
 import React, { useMemo, useState } from "react";
 
 import {
+  allocateBuckets,
+  type BucketAllocation,
   collectWarnings,
   courseOf,
   creditsOf,
@@ -110,6 +112,16 @@ export function RequirementsSidebar({
   const [changingMinor, setChangingMinor] = useState(false);
   const [pendingAddKey, setPendingAddKey] = useState<string | null>(null);
   const [selectedTermIndex, setSelectedTermIndex] = useState<number>(0);
+  const [expandedChoiceGroups, setExpandedChoiceGroups] = useState<
+    Record<string, boolean>
+  >({});
+
+  const toggleChoiceGroupExpanded = (groupKey: string) => {
+    setExpandedChoiceGroups((prev) => ({
+      ...prev,
+      [groupKey]: !prev[groupKey],
+    }));
+  };
 
   const openInlineTermChooser = (rowKey: string, code: string) => {
     if (pendingAddKey === rowKey) {
@@ -146,7 +158,11 @@ export function RequirementsSidebar({
     setPendingAddKey(rowKey);
   };
 
-  const renderInlineTermChooser = (rowKey: string, code: string) => {
+  const renderInlineTermChooser = (
+    rowKey: string,
+    code: string,
+    accent: "major" | "minor" = "minor",
+  ) => {
     if (pendingAddKey !== rowKey) return null;
     const course = courseOf(code, catalogMap, customs);
     const targetTerm = terms[selectedTermIndex];
@@ -159,11 +175,27 @@ export function RequirementsSidebar({
         : startYear,
       context: offeringContext,
     });
+    const isMajor = accent === "major";
 
     return (
-      <div className="mt-1.5 rounded-xl border border-violet-200/90 bg-violet-50/75 p-2.5 shadow-[0_1px_4px_rgba(124,58,237,0.06)] dark:border-violet-800/70 dark:bg-violet-950/35">
+      <div
+        className={`mt-1.5 rounded-xl border p-2.5 ${
+          isMajor
+            ? "border-sky-200/90 bg-sky-50/75 shadow-[0_1px_4px_rgba(14,165,233,0.06)] dark:border-sky-800/70 dark:bg-sky-950/35"
+            : "border-violet-200/90 bg-violet-50/75 shadow-[0_1px_4px_rgba(124,58,237,0.06)] dark:border-violet-800/70 dark:bg-violet-950/35"
+        }`}
+      >
         <div className="text-[11px] font-medium text-slate-800 dark:text-slate-200">
-          Add <span className="font-mono font-semibold text-violet-700 dark:text-violet-300">{code}</span>
+          Add{" "}
+          <span
+            className={`font-mono font-semibold ${
+              isMajor
+                ? "text-sky-700 dark:text-sky-300"
+                : "text-violet-700 dark:text-violet-300"
+            }`}
+          >
+            {code}
+          </span>
           {course?.title ? ` — ${course.title}` : ""}
         </div>
         <div className="mt-0.5 text-[10.5px] text-slate-500 dark:text-slate-400">
@@ -184,7 +216,11 @@ export function RequirementsSidebar({
               <select
                 value={selectedTermIndex}
                 onChange={(e) => setSelectedTermIndex(Number(e.target.value))}
-                className="mt-1 w-full rounded-lg border border-violet-200/90 bg-white px-2 py-1 text-xs font-medium text-slate-900 focus:border-violet-400 focus:ring-2 focus:ring-violet-400/20 focus:outline-none dark:border-violet-800/80 dark:bg-slate-900 dark:text-slate-100"
+                className={`mt-1 w-full rounded-lg border bg-white px-2 py-1 text-xs font-medium text-slate-900 focus:ring-2 focus:outline-none dark:bg-slate-900 dark:text-slate-100 ${
+                  isMajor
+                    ? "border-sky-200/90 focus:border-sky-400 focus:ring-sky-400/20 dark:border-sky-800/80"
+                    : "border-violet-200/90 focus:border-violet-400 focus:ring-violet-400/20 dark:border-violet-800/80"
+                }`}
               >
                 {terms.map((t, idx) => {
                   const usedCount = t.slots.filter(Boolean).length;
@@ -221,7 +257,11 @@ export function RequirementsSidebar({
                   onPlaceCourseInTerm(selectedTermIndex, code);
                   setPendingAddKey(null);
                 }}
-                className="rounded-lg bg-violet-600 px-2.5 py-1 text-[11px] font-semibold text-white shadow-xs transition-colors hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50"
+                className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold text-white shadow-xs transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                  isMajor
+                    ? "bg-sky-600 hover:bg-sky-700"
+                    : "bg-violet-600 hover:bg-violet-700"
+                }`}
               >
                 Add to plan
               </button>
@@ -229,6 +269,98 @@ export function RequirementsSidebar({
           </div>
         )}
       </div>
+    );
+  };
+
+  const renderCourseOptionRow = ({
+    rowKey,
+    code,
+    placedSet,
+    accent,
+    compact = false,
+  }: {
+    rowKey: string;
+    code: string;
+    placedSet: Set<string>;
+    accent: "major" | "minor";
+    compact?: boolean;
+  }) => {
+    const matchedCode = findEquivalentInSet(code, placedSet, equivMap);
+    const picked = Boolean(matchedCode);
+    const atIdx = matchedCode ? placedTermIndex(terms, matchedCode) : -1;
+    const placedTerm = atIdx >= 0 ? terms[atIdx] : null;
+    const course = courseOf(code, catalogMap, customs);
+    const isAdding = pendingAddKey === rowKey;
+    const isMajor = accent === "major";
+
+    return (
+      <li
+        key={rowKey}
+        className={compact ? "py-0.5 text-[11px]" : "py-0.5 text-[12px]"}
+      >
+        <div className="flex items-center gap-1.5">
+          <span
+            className={`w-3 shrink-0 text-center text-[10.5px] ${
+              picked
+                ? "text-emerald-600 dark:text-emerald-400"
+                : "text-slate-300 dark:text-slate-600"
+            }`}
+          >
+            {picked ? "✓" : "○"}
+          </span>
+          <span
+            className={`shrink-0 font-mono font-medium ${
+              compact ? "text-[10.5px]" : "text-[11px]"
+            } ${
+              isMajor
+                ? "text-sky-700 dark:text-sky-300"
+                : "text-violet-700 dark:text-violet-300"
+            }`}
+          >
+            {code}
+          </span>
+          <span
+            className={`min-w-0 flex-1 truncate ${
+              compact ? "text-[11px]" : "text-[11.5px]"
+            } ${
+              picked
+                ? "text-slate-400 dark:text-slate-500"
+                : "text-slate-700 dark:text-slate-300"
+            }`}
+            title={
+              course?.title
+                ? matchedCode && matchedCode !== code
+                  ? `${code} — ${course.title} (satisfied by ${matchedCode})`
+                  : `${code} — ${course.title}`
+                : code
+            }
+          >
+            {course?.title ?? "Course title unavailable"}
+          </span>
+          {picked && placedTerm ? (
+            <span className="shrink-0 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[9.5px] font-medium text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
+              Y{placedTerm.year} {placedTerm.season}
+            </span>
+          ) : !picked ? (
+            <button
+              type="button"
+              onClick={() => openInlineTermChooser(rowKey, code)}
+              className={`shrink-0 rounded-md border px-1.5 py-0.5 text-[10px] font-medium transition-colors ${
+                isAdding
+                  ? isMajor
+                    ? "border-sky-500 bg-sky-600 text-white"
+                    : "border-violet-500 bg-violet-600 text-white"
+                  : isMajor
+                    ? "border-slate-200 bg-white text-slate-600 hover:border-sky-400 hover:bg-sky-50/70 hover:text-sky-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-sky-500"
+                    : "border-slate-200 bg-white text-slate-700 hover:border-violet-400 hover:bg-violet-50/70 hover:text-violet-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-violet-500"
+              }`}
+            >
+              {isAdding ? "Close" : "+ Add"}
+            </button>
+          ) : null}
+        </div>
+        {!picked && renderInlineTermChooser(rowKey, code, accent)}
+      </li>
     );
   };
 
@@ -244,6 +376,45 @@ export function RequirementsSidebar({
   const fixedWithEquiv = expandWithEquivalents(fixed, equivMap);
   const freeCodes = [...placed].filter((code) => !fixedWithEquiv.has(code));
 
+  const majorElectiveAllocations = useMemo(
+    () => allocateBuckets(model.buckets, freeCodes, catalogMap, customs),
+    [model.buckets, freeCodes, catalogMap, customs],
+  );
+
+  // Exclude courses already consumed by subject/faculty-specific Major elective
+  // buckets (e.g. CSCI 3000+ / 4000+) before allocating general Breadth mix rules.
+  const breadthCandidateCodes = useMemo(() => {
+    const claimedBySpecificElectives = new Set<string>();
+    for (const b of model.buckets) {
+      const isSpecific =
+        Boolean(b.match.subjects?.length) ||
+        Boolean(b.match.faculties?.length) ||
+        Boolean(b.match.min_level) ||
+        Boolean(b.match.max_level);
+      if (!isSpecific) continue;
+      for (const code of majorElectiveAllocations.get(b.key)?.assignedCodes ??
+        []) {
+        claimedBySpecificElectives.add(code);
+      }
+    }
+    return freeCodes.filter((code) => !claimedBySpecificElectives.has(code));
+  }, [model.buckets, majorElectiveAllocations, freeCodes]);
+
+  const breadthAllocations = useMemo(
+    () =>
+      allocateBuckets(model.breadth, breadthCandidateCodes, catalogMap, customs),
+    [model.breadth, breadthCandidateCodes, catalogMap, customs],
+  );
+
+  const minorCourseSet = useMemo(() => {
+    if (!minorModel) return new Set<string>();
+    const raw = new Set<string>(minorModel.required.map((r) => r.code));
+    for (const g of minorModel.chooseGroups) {
+      for (const c of g.options) raw.add(c);
+    }
+    return expandWithEquivalents(raw, equivMap);
+  }, [minorModel, equivMap]);
+
   const minorStats = useMemo(() => {
     if (!minorProgram || !minorModel) return null;
 
@@ -256,6 +427,12 @@ export function RequirementsSidebar({
     }
     const minorFixedEquiv = expandWithEquivalents(minorFixed, equivMap);
     const minorFree = [...placed].filter((code) => !minorFixedEquiv.has(code));
+    const minorBucketAllocations = allocateBuckets(
+      minorModel.buckets,
+      minorFree,
+      catalogMap,
+      customs,
+    );
 
     let completedSteps = doneReq.length;
     let totalSteps = minorModel.required.length;
@@ -277,14 +454,7 @@ export function RequirementsSidebar({
     }
 
     for (const b of minorModel.buckets) {
-      const bCredits = minorFree.reduce(
-        (sum, code) =>
-          sum +
-          (matchesBucket(courseOf(code, catalogMap, customs), b.match)
-            ? creditsOf(code, catalogMap, customs)
-            : 0),
-        0,
-      );
+      const bCredits = minorBucketAllocations.get(b.key)?.credits ?? 0;
       placedCredits += Math.min(bCredits, b.credits);
     }
 
@@ -312,6 +482,7 @@ export function RequirementsSidebar({
     return {
       doneReq,
       minorFree,
+      minorBucketAllocations,
       completedSteps,
       totalSteps,
       placedCredits,
@@ -348,23 +519,22 @@ export function RequirementsSidebar({
 
   const renderBucket = (
     bucket: ElectiveBucket,
-    bucketFreeCodes: string[],
+    allocation: BucketAllocation | undefined,
+    poolFreeCodes: string[],
     onFindCourse: (bucketKey: string) => void,
     accent: "major" | "minor" = "major",
+    labelOverride?: string,
   ) => {
-    const credits = bucketFreeCodes.reduce(
-      (sum, code) =>
-        sum +
-        (matchesBucket(courseOf(code, catalogMap, customs), bucket.match)
-          ? creditsOf(code, catalogMap, customs)
-          : 0),
-      0,
-    );
+    const rawCredits = allocation?.credits ?? 0;
+    const assignedCodes = allocation?.assignedCodes ?? [];
+    const shownCredits = Math.min(rawCredits, bucket.credits);
+    const extraCredits = Math.max(0, rawCredits - bucket.credits);
     const pct = Math.min(
       100,
-      Math.round((credits / Math.max(1, bucket.credits)) * 100),
+      Math.round((shownCredits / Math.max(1, bucket.credits)) * 100),
     );
-    const done = credits >= bucket.credits;
+    const done = rawCredits >= bucket.credits;
+    const displayLabel = labelOverride ?? bucket.label;
 
     return (
       <div
@@ -373,16 +543,21 @@ export function RequirementsSidebar({
       >
         <div className="flex items-baseline gap-2 text-[12.5px]">
           <span className="min-w-0 flex-1 text-slate-800 dark:text-slate-200">
-            {bucket.label}
+            {displayLabel}
           </span>
           <span
-            className={`tabular-nums text-[11.5px] ${
+            className={`shrink-0 tabular-nums text-[11.5px] ${
               done
                 ? "font-semibold text-emerald-700 dark:text-emerald-400"
                 : "text-slate-500 dark:text-slate-400"
             }`}
           >
-            {credits}/{bucket.credits}
+            {shownCredits}/{bucket.credits} cr{done ? " ✓" : ""}
+            {extraCredits > 0 && (
+              <span className="ml-1 font-normal text-slate-400 dark:text-slate-500">
+                (+{extraCredits} extra)
+              </span>
+            )}
           </span>
         </div>
         <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-200/80 dark:bg-slate-800">
@@ -397,26 +572,62 @@ export function RequirementsSidebar({
             style={{ width: `${pct}%` }}
           />
         </div>
+        {assignedCodes.length > 0 && (
+          <div className="mt-1.5 flex flex-wrap items-center gap-1">
+            {assignedCodes.slice(0, 4).map((code) => {
+              const c = courseOf(code, catalogMap, customs);
+              const fromMinor = minorCourseSet.has(code);
+              return (
+                <span
+                  key={code}
+                  title={`${code}${c?.title ? ` — ${c.title}` : ""}${fromMinor ? " (also in Minor)" : ""}`}
+                  className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 font-mono text-[10px] ${
+                    fromMinor
+                      ? "border-violet-200/80 bg-violet-50/75 text-violet-700 dark:border-violet-800/70 dark:bg-violet-950/40 dark:text-violet-300"
+                      : "border-slate-200/85 bg-white text-slate-600 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                  }`}
+                >
+                  <span>{code}</span>
+                  {fromMinor && (
+                    <span className="font-sans text-[9px] font-semibold opacity-80">
+                      · Minor
+                    </span>
+                  )}
+                </span>
+              );
+            })}
+            {assignedCodes.length > 4 && (
+              <span
+                title={assignedCodes.slice(4).join(", ")}
+                className="text-[10px] font-medium text-slate-400 dark:text-slate-500"
+              >
+                +{assignedCodes.length - 4} more
+              </span>
+            )}
+          </div>
+        )}
         {bucket.subs.map((sub) => {
-          const subCredits = bucketFreeCodes.reduce(
-            (sum, code) =>
+          const rawSubCredits = poolFreeCodes.reduce((sum, code) => {
+            const c = courseOf(code, catalogMap, customs);
+            return (
               sum +
-              (matchesBucket(courseOf(code, catalogMap, customs), sub.match)
+              (matchesBucket(c, bucket.match) && matchesBucket(c, sub.match)
                 ? creditsOf(code, catalogMap, customs)
-                : 0),
-            0,
-          );
-          const subDone = subCredits >= sub.credits;
+                : 0)
+            );
+          }, 0);
+          const shownSub = Math.min(rawSubCredits, sub.credits);
+          const subDone = rawSubCredits >= sub.credits;
           return (
             <div
               key={sub.key}
-              className={`mt-1 ml-3 text-[11.5px] ${
+              className={`mt-1 ml-2 text-[11px] ${
                 subDone
                   ? "text-emerald-700 dark:text-emerald-400"
                   : "text-slate-500 dark:text-slate-400"
               }`}
             >
-              ↳ {sub.label}: {subCredits}/{sub.credits} cr
+              ↳ {sub.label}: {shownSub}/{sub.credits} cr{subDone ? " ✓" : ""}
             </div>
           );
         })}
@@ -430,7 +641,7 @@ export function RequirementsSidebar({
                 : "text-sky-600 dark:text-sky-400"
             }`}
           >
-            Find a course
+            {done ? "Browse more courses" : "Find a course"}
           </button>
         </div>
       </div>
@@ -593,7 +804,7 @@ export function RequirementsSidebar({
                 );
               })()}
             </summary>
-            <div className="space-y-1">
+            <div className="space-y-2 pl-3 pr-1 pb-1">
               {model.chooseGroups.map((group) => {
                 const hits = group.options.filter((c) =>
                   Boolean(findEquivalentInSet(c, placed, equivMap)),
@@ -603,17 +814,25 @@ export function RequirementsSidebar({
                   isOffered(c, offeringsMap, customs),
                 );
                 const hidden = group.options.length - available.length;
+                const listCodes =
+                  available.length > 0 ? available : group.options;
+                const groupKey = `major-choose:${group.id}`;
+                const expanded = Boolean(expandedChoiceGroups[groupKey]);
+                const visibleCodes =
+                  expanded || listCodes.length <= 6
+                    ? listCodes
+                    : listCodes.slice(0, 6);
                 return (
                   <div
                     key={group.id}
-                    className="rounded-xl px-2 py-1.5 pl-5 hover:bg-slate-50/90 dark:hover:bg-slate-800/50"
+                    className="rounded-xl border border-slate-200/75 bg-slate-50/65 p-2.5 dark:border-slate-800 dark:bg-slate-950/45"
                   >
-                    <div className="flex items-baseline gap-2 text-[12.5px]">
-                      <span className="min-w-0 flex-1 text-slate-800 dark:text-slate-200">
+                    <div className="mb-1.5 flex items-baseline justify-between gap-2 text-[12px]">
+                      <span className="min-w-0 flex-1 font-medium text-slate-800 dark:text-slate-200">
                         {group.label || "Choose"}
                       </span>
                       <span
-                        className={`tabular-nums text-[11.5px] ${
+                        className={`shrink-0 tabular-nums text-[11px] ${
                           ok
                             ? "font-semibold text-emerald-700 dark:text-emerald-400"
                             : "text-slate-500 dark:text-slate-400"
@@ -622,19 +841,42 @@ export function RequirementsSidebar({
                         {Math.min(hits.length, group.required)}/{group.required}
                       </span>
                     </div>
-                    <div className="mt-0.5 ml-3 text-[11.5px] text-slate-500 dark:text-slate-400">
-                      {available.slice(0, 6).join(" · ")}
-                      {available.length > 6 ? " …" : ""}
-                      {hidden > 0 && (
-                        <span
-                          title="Not offered in Fall 2026 / Winter 2027"
-                          className="text-amber-700 dark:text-amber-400"
-                        >
-                          {" "}
-                          · {hidden} not offered
-                        </span>
+                    <ul className="space-y-0.5">
+                      {visibleCodes.map((code) =>
+                        renderCourseOptionRow({
+                          rowKey: `major-choose:${group.id}:${code}`,
+                          code,
+                          placedSet: placed,
+                          accent: "major",
+                          compact: true,
+                        }),
                       )}
-                    </div>
+                    </ul>
+                    {(listCodes.length > 6 || hidden > 0) && (
+                      <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 text-[10.5px]">
+                        {listCodes.length > 6 ? (
+                          <button
+                            type="button"
+                            onClick={() => toggleChoiceGroupExpanded(groupKey)}
+                            className="font-medium text-sky-600 hover:underline dark:text-sky-400"
+                          >
+                            {expanded
+                              ? "Show fewer ▴"
+                              : `Show all ${listCodes.length} options ▾`}
+                          </button>
+                        ) : (
+                          <span />
+                        )}
+                        {hidden > 0 && (
+                          <span
+                            title="Not offered in recent Fall / Winter terms"
+                            className="text-amber-700 dark:text-amber-400"
+                          >
+                            {hidden} not offered
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -650,41 +892,52 @@ export function RequirementsSidebar({
                 ▸
               </span>
               <span>Electives</span>
-              <span className="ml-auto rounded-full bg-slate-100 px-2 py-0.5 tabular-nums text-[11px] font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-400">
-                {model.buckets.length}
-              </span>
+              {(() => {
+                const doneBuckets = model.buckets.filter(
+                  (b) =>
+                    (majorElectiveAllocations.get(b.key)?.credits ?? 0) >=
+                    b.credits,
+                ).length;
+                return (
+                  <span
+                    className={`ml-auto rounded-full px-2 py-0.5 tabular-nums text-[11px] font-semibold ${
+                      doneBuckets === model.buckets.length
+                        ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-400"
+                        : "bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400"
+                    }`}
+                  >
+                    {doneBuckets}/{model.buckets.length}
+                  </span>
+                );
+              })()}
             </summary>
             <div className="space-y-1">
               {model.buckets.map((b) =>
-                renderBucket(b, freeCodes, onPickBucket, "major"),
+                renderBucket(
+                  b,
+                  majorElectiveAllocations.get(b.key),
+                  freeCodes,
+                  onPickBucket,
+                  "major",
+                ),
               )}
             </div>
           </details>
         )}
 
-        {/* Breadth requirements */}
+        {/* Elective mix (Breadth) */}
         {model.breadth.length > 0 && (
           <details className="group" open>
             <summary className="flex cursor-pointer list-none items-center gap-2 rounded-xl px-2 py-2 text-[13px] font-semibold text-slate-800 transition-colors hover:bg-slate-50/90 dark:text-slate-100 dark:hover:bg-slate-800/60">
               <span className="text-[10px] text-slate-400 transition-transform group-open:rotate-90">
                 ▸
               </span>
-              <span>Breadth requirements</span>
+              <span>Elective mix (Breadth)</span>
               {(() => {
-                const done = model.breadth.filter((b) => {
-                  const credits = freeCodes.reduce(
-                    (sum, code) =>
-                      sum +
-                      (matchesBucket(
-                        courseOf(code, catalogMap, customs),
-                        b.match,
-                      )
-                        ? creditsOf(code, catalogMap, customs)
-                        : 0),
-                    0,
-                  );
-                  return credits >= b.credits;
-                }).length;
+                const done = model.breadth.filter(
+                  (b) =>
+                    (breadthAllocations.get(b.key)?.credits ?? 0) >= b.credits,
+                ).length;
                 return (
                   <span
                     className={`ml-auto rounded-full px-2 py-0.5 tabular-nums text-[11px] font-semibold ${
@@ -698,13 +951,22 @@ export function RequirementsSidebar({
                 );
               })()}
             </summary>
-            <p className="px-2 pb-1 pl-5 text-[11.5px] text-slate-500 dark:text-slate-400">
-              These overlap with the electives above — one course can satisfy
-              several.
+            <p className="px-2 pb-1 pl-5 text-[11px] leading-snug text-slate-500 dark:text-slate-400">
+              Checks the subject mix across your general electives (can overlap
+              with Minor courses).
             </p>
             <div className="space-y-1">
               {model.breadth.map((b) =>
-                renderBucket(b, freeCodes, onPickBucket, "major"),
+                renderBucket(
+                  b,
+                  breadthAllocations.get(b.key),
+                  breadthCandidateCodes,
+                  onPickBucket,
+                  "major",
+                  b.label === "Any elective"
+                    ? "General electives (any subject)"
+                    : undefined,
+                ),
               )}
             </div>
           </details>
@@ -941,67 +1203,14 @@ export function RequirementsSidebar({
                   </span>
                 </summary>
                 <ul className="mb-1.5 space-y-1 pl-4 pr-1">
-                  {minorModel.required.map((r) => {
-                    const matchedCode = findEquivalentInSet(
-                      r.code,
-                      placed,
-                      equivMap,
-                    );
-                    const done = Boolean(matchedCode);
-                    const atIdx = matchedCode
-                      ? placedTermIndex(terms, matchedCode)
-                      : -1;
-                    const placedTerm = atIdx >= 0 ? terms[atIdx] : null;
-                    const course = courseOf(r.code, catalogMap, customs);
-                    const rowKey = `req:${r.code}`;
-                    const isAdding = pendingAddKey === rowKey;
-                    return (
-                      <li key={r.code} className="py-0.5 text-[12px]">
-                        <div className="flex items-center gap-2">
-                          <span
-                            className={`w-3.5 shrink-0 text-center text-[11px] ${
-                              done
-                                ? "text-emerald-600 dark:text-emerald-400"
-                                : "text-slate-300 dark:text-slate-600"
-                            }`}
-                          >
-                            {done ? "✓" : "○"}
-                          </span>
-                          <span className="shrink-0 font-mono text-[11px] font-medium text-violet-700 dark:text-violet-300">
-                            {r.code}
-                          </span>
-                          <span
-                            className={`min-w-0 flex-1 truncate ${
-                              done
-                                ? "text-slate-400 dark:text-slate-500"
-                                : "text-slate-700 dark:text-slate-300"
-                            }`}
-                            title={course?.title ?? ""}
-                          >
-                            {course?.title ?? ""}
-                          </span>
-                          {done && placedTerm ? (
-                            <span className="shrink-0 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
-                              Y{placedTerm.year} {placedTerm.season}
-                            </span>
-                          ) : !done ? (
-                            <button
-                              type="button"
-                              onClick={() => openInlineTermChooser(rowKey, r.code)}
-                              className={`shrink-0 rounded-lg border px-1.5 py-0.5 text-[10.5px] font-medium transition-colors ${
-                                isAdding
-                                  ? "border-violet-500 bg-violet-600 text-white"
-                                  : "border-violet-200 bg-violet-50/75 text-violet-700 hover:bg-violet-100 dark:border-violet-800 dark:bg-violet-950/50 dark:text-violet-300"
-                              }`}
-                            >
-                              {isAdding ? "Close" : "+ Add"}
-                            </button>
-                          ) : null}
-                        </div>
-                        {!done && renderInlineTermChooser(rowKey, r.code)}
-                      </li>
-                    );
-                  })}
+                  {minorModel.required.map((r) =>
+                    renderCourseOptionRow({
+                      rowKey: `req:${r.code}`,
+                      code: r.code,
+                      placedSet: placed,
+                      accent: "minor",
+                    }),
+                  )}
                 </ul>
               </details>
             )}
@@ -1065,69 +1274,14 @@ export function RequirementsSidebar({
                           </span>
                         </div>
                         <ul className="space-y-1">
-                          {listCodes.map((code) => {
-                            const matchedCode = findEquivalentInSet(
+                          {listCodes.map((code) =>
+                            renderCourseOptionRow({
+                              rowKey: `choose:${group.id}:${code}`,
                               code,
-                              placed,
-                              equivMap,
-                            );
-                            const picked = Boolean(matchedCode);
-                            const atIdx = matchedCode
-                              ? placedTermIndex(terms, matchedCode)
-                              : -1;
-                            const placedTerm = atIdx >= 0 ? terms[atIdx] : null;
-                            const course = courseOf(code, catalogMap, customs);
-                            const rowKey = `choose:${group.id}:${code}`;
-                            const isAdding = pendingAddKey === rowKey;
-                            return (
-                              <li key={code} className="py-0.5 text-[12px]">
-                                <div className="flex items-center gap-1.5">
-                                  <span
-                                    className={`w-3.5 shrink-0 text-center text-[11px] ${
-                                      picked
-                                        ? "text-emerald-600 dark:text-emerald-400"
-                                        : "text-slate-300 dark:text-slate-600"
-                                    }`}
-                                  >
-                                    {picked ? "✓" : "○"}
-                                  </span>
-                                  <span className="shrink-0 font-mono text-[11px] font-medium text-violet-700 dark:text-violet-300">
-                                    {code}
-                                  </span>
-                                  <span
-                                    className={`min-w-0 flex-1 truncate text-[11.5px] ${
-                                      picked
-                                        ? "text-slate-400 dark:text-slate-500"
-                                        : "text-slate-700 dark:text-slate-300"
-                                    }`}
-                                    title={course?.title ?? code}
-                                  >
-                                    {course?.title ?? "Course title unavailable"}
-                                  </span>
-                                  {picked && placedTerm ? (
-                                    <span className="shrink-0 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
-                                      Y{placedTerm.year} {placedTerm.season}
-                                    </span>
-                                  ) : !picked ? (
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        openInlineTermChooser(rowKey, code)
-                                      }
-                                      className={`shrink-0 rounded-lg border px-1.5 py-0.5 text-[10.5px] font-medium transition-colors ${
-                                        isAdding
-                                          ? "border-violet-500 bg-violet-600 text-white"
-                                          : "border-slate-200 bg-white text-slate-700 hover:border-violet-400 hover:bg-violet-50/70 hover:text-violet-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-violet-500"
-                                      }`}
-                                    >
-                                      {isAdding ? "Close" : "+ Add"}
-                                    </button>
-                                  ) : null}
-                                </div>
-                                {!picked && renderInlineTermChooser(rowKey, code)}
-                              </li>
-                            );
-                          })}
+                              placedSet: placed,
+                              accent: "minor",
+                            }),
+                          )}
                         </ul>
                       </div>
                     );
@@ -1152,6 +1306,7 @@ export function RequirementsSidebar({
                   {minorModel.buckets.map((b) =>
                     renderBucket(
                       b,
+                      minorStats.minorBucketAllocations.get(b.key),
                       minorStats.minorFree,
                       onPickMinorBucket,
                       "minor",
