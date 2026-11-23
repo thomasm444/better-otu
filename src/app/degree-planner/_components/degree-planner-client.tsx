@@ -246,6 +246,8 @@ export function DegreePlannerClient({
   const [newPlanCatalogYear, setNewPlanCatalogYear] = useState<string>(() =>
     resolveCatalogYearForStartYear(DEFAULT_START_YEAR, availableCatalogYears),
   );
+  const [newPlanCatalogManuallySet, setNewPlanCatalogManuallySet] =
+    useState(false);
   const [creatingPlan, setCreatingPlan] = useState(false);
 
   const [startYear, setStartYear] = useState<number>(initialStartYear);
@@ -253,6 +255,13 @@ export function DegreePlannerClient({
     initialProgram
       ? initialProgram.catalog_year
       : resolveCatalogYearForStartYear(initialStartYear, availableCatalogYears),
+  );
+  const [catalogManuallySet, setCatalogManuallySet] = useState(() =>
+    Boolean(
+      initialProgram &&
+        initialProgram.catalog_year !==
+          resolveCatalogYearForStartYear(initialStartYear, availableCatalogYears),
+    ),
   );
   const [gapYears, setGapYears] = useState<number[]>([]);
 
@@ -447,6 +456,10 @@ export function DegreePlannerClient({
         saved.gapYears ?? inferGapYearsFromTerms(saved.terms ?? []);
       setStartYear(nextStartYear);
       setCatalogYear(prog.catalog_year);
+      setCatalogManuallySet(
+        prog.catalog_year !==
+          resolveCatalogYearForStartYear(nextStartYear, availableCatalogYears),
+      );
       setGapYears(nextGapYears);
       setGapYearToInsert(null);
 
@@ -476,7 +489,7 @@ export function DegreePlannerClient({
       setPlanName(saved.planName?.trim() || prog.name);
       setEditingPlanName(false);
     },
-    [catalogMap, offeringsMap, offeringContext, startYear],
+    [catalogMap, offeringsMap, offeringContext, startYear, availableCatalogYears],
   );
 
   const loadProgramDetail = useCallback(async (programId: string) => {
@@ -1333,12 +1346,19 @@ export function DegreePlannerClient({
     setPlansMenuOpen(false);
     setMenuOpen(false);
     setCarryPreviewOnAdd(false);
+    const defaultStart = program ? startYear : profileDefaultStartYear;
+    const defaultCatalog = resolveCatalogYearForStartYear(
+      defaultStart,
+      availableCatalogYears,
+    );
     setNewPlanQuery("");
     setNewPlanProgram(null);
     setNewPlanName("");
-    setNewPlanStartYear(program ? startYear : profileDefaultStartYear);
+    setNewPlanStartYear(defaultStart);
+    setNewPlanCatalogYear(defaultCatalog);
+    setNewPlanCatalogManuallySet(false);
     setAddPlanModalOpen(true);
-  }, [program, startYear, profileDefaultStartYear]);
+  }, [program, startYear, profileDefaultStartYear, availableCatalogYears]);
 
   const openSavePreviewAsPlanModal = useCallback(() => {
     if (!program) return;
@@ -1357,13 +1377,19 @@ export function DegreePlannerClient({
         total_credit_hours: program.total_credit_hours,
         honours: program.honours,
       };
+    const nextCatalog = program.catalog_year || catalogYear;
+    const matchedDefault = resolveCatalogYearForStartYear(
+      startYear,
+      availableCatalogYears,
+    );
     setNewPlanQuery(program.name);
     setNewPlanProgram(matchingSummary);
     setNewPlanName(program.name);
     setNewPlanStartYear(startYear);
-    setNewPlanCatalogYear(program.catalog_year || catalogYear);
+    setNewPlanCatalogYear(nextCatalog);
+    setNewPlanCatalogManuallySet(nextCatalog !== matchedDefault);
     setAddPlanModalOpen(true);
-  }, [program, bootstrap.programs, startYear, catalogYear]);
+  }, [program, bootstrap.programs, startYear, catalogYear, availableCatalogYears]);
 
   const filteredNewPlanPrograms = useMemo(() => {
     const q = newPlanQuery.trim().toLowerCase();
@@ -1457,6 +1483,7 @@ export function DegreePlannerClient({
       setEditingPlanName(false);
       setStartYear(newPlanStartYear);
       setCatalogYear(detail.catalog_year);
+      setCatalogManuallySet(newPlanCatalogManuallySet);
       setGapYears(nextGapYears);
       setCustoms(nextCustoms);
       setTerms(nextTerms);
@@ -1525,6 +1552,7 @@ export function DegreePlannerClient({
     offeringsMap,
     newPlanStartYear,
     newPlanCatalogYear,
+    newPlanCatalogManuallySet,
     catalogYear,
     offeringContext,
     user,
@@ -1767,10 +1795,10 @@ export function DegreePlannerClient({
         if (options?.startYearOverride !== undefined) {
           setStartYear(options.startYearOverride);
           showToast(
-            `Degree start year set to ${options.startYearOverride} (${nextCatalogYear} plan)`,
+            `Degree start year set to ${options.startYearOverride} (${nextCatalogYear} course map)`,
           );
         } else {
-          showToast(`Plan year set to ${nextCatalogYear}`);
+          showToast(`Course map set to ${nextCatalogYear}`);
         }
         return;
       }
@@ -1794,12 +1822,12 @@ export function DegreePlannerClient({
         if (options?.reason === "start" && options.startYearOverride !== undefined) {
           commitPlan(terms, customs, options.startYearOverride, gapYears);
           showToast(
-            `Start year set to ${options.startYearOverride} (${currentProg.name} not in ${nextCatalogYear} catalog)`,
+            `Start year set to ${options.startYearOverride} (${currentProg.name} not in ${nextCatalogYear} course map)`,
           );
         } else {
           setCatalogYear(nextCatalogYear);
           showToast(
-            `${currentProg.name} is not in the ${nextCatalogYear} catalog — pick a program`,
+            `${currentProg.name} is not in the ${nextCatalogYear} course map — pick a program`,
           );
         }
         return;
@@ -1937,7 +1965,8 @@ export function DegreePlannerClient({
         nextYear,
         availableCatalogYears,
       );
-      const wasFollowingStartYear = catalogYear === prevDefaultCatalog;
+      const wasFollowingStartYear =
+        !catalogManuallySet && catalogYear === prevDefaultCatalog;
 
       if (wasFollowingStartYear && nextDefaultCatalog !== catalogYear) {
         await switchToCatalogYear(nextDefaultCatalog, {
@@ -1956,6 +1985,7 @@ export function DegreePlannerClient({
     },
     [
       availableCatalogYears,
+      catalogManuallySet,
       catalogYear,
       commitPlan,
       customs,
@@ -1971,6 +2001,7 @@ export function DegreePlannerClient({
   const handleChangeCatalogYear = useCallback(
     async (nextCatalogYear: string) => {
       if (nextCatalogYear === catalogYear) return;
+      setCatalogManuallySet(true);
       await switchToCatalogYear(nextCatalogYear, { reason: "manual" });
     },
     [catalogYear, switchToCatalogYear],
@@ -2429,13 +2460,18 @@ export function DegreePlannerClient({
               </label>
 
               <label className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
-                <span>Catalog:</span>
+                <span
+                  title="Which year's Ontario Tech course map is used to check your degree requirements."
+                  className="cursor-help underline decoration-dotted decoration-slate-300 underline-offset-2 dark:decoration-slate-600"
+                >
+                  Course map:
+                </span>
                 <select
                   value={catalogYear}
                   onChange={(e) =>
                     void handleChangeCatalogYear(e.target.value)
                   }
-                  aria-label="Program map catalog year"
+                  aria-label="University course map year"
                   className="rounded-xl border border-slate-200/90 bg-white/90 px-2.5 py-1 text-xs font-medium text-slate-800 shadow-[0_1px_2px_rgba(15,23,42,0.02)] focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20 focus:outline-none dark:border-slate-700/80 dark:bg-slate-800/80 dark:text-slate-100"
                 >
                   {availableCatalogYears.map((cy) => (
@@ -2824,7 +2860,28 @@ export function DegreePlannerClient({
                   </label>
                   <select
                     value={newPlanStartYear}
-                    onChange={(e) => setNewPlanStartYear(Number(e.target.value))}
+                    onChange={(e) => {
+                      const nextStart = Number(e.target.value);
+                      setNewPlanStartYear(nextStart);
+                      if (!newPlanCatalogManuallySet) {
+                        const nextMapYear = resolveCatalogYearForStartYear(
+                          nextStart,
+                          availableCatalogYears,
+                        );
+                        setNewPlanCatalogYear(nextMapYear);
+                        if (
+                          newPlanProgram &&
+                          newPlanProgram.catalog_year !== nextMapYear
+                        ) {
+                          const matched = findProgramInCatalogYear(
+                            bootstrap.programs,
+                            newPlanProgram,
+                            nextMapYear,
+                          );
+                          if (matched) setNewPlanProgram(matched);
+                        }
+                      }
+                    }}
                     className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-400 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
                   >
                     {startYearOptions.map((y) => (
@@ -2836,12 +2893,36 @@ export function DegreePlannerClient({
                 </div>
 
                 <div>
-                  <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-400">
-                    4. Plan year (calendar)
+                  <label className="mb-1 flex items-center justify-between text-xs font-medium text-slate-600 dark:text-slate-400">
+                    <span>4. Course map year</span>
+                    <span
+                      className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium ${
+                        newPlanCatalogManuallySet
+                          ? "bg-amber-50 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300"
+                          : "bg-sky-50 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300"
+                      }`}
+                    >
+                      {newPlanCatalogManuallySet ? "Custom" : "Auto"}
+                    </span>
                   </label>
                   <select
                     value={newPlanCatalogYear}
-                    onChange={(e) => setNewPlanCatalogYear(e.target.value)}
+                    onChange={(e) => {
+                      const nextMapYear = e.target.value;
+                      setNewPlanCatalogYear(nextMapYear);
+                      setNewPlanCatalogManuallySet(true);
+                      if (
+                        newPlanProgram &&
+                        newPlanProgram.catalog_year !== nextMapYear
+                      ) {
+                        const matched = findProgramInCatalogYear(
+                          bootstrap.programs,
+                          newPlanProgram,
+                          nextMapYear,
+                        );
+                        if (matched) setNewPlanProgram(matched);
+                      }
+                    }}
                     className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:border-sky-400 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
                   >
                     {availableCatalogYears.map((cy) => (
@@ -2851,6 +2932,52 @@ export function DegreePlannerClient({
                     ))}
                   </select>
                 </div>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-1 text-[11.5px] leading-snug text-slate-500 dark:text-slate-400">
+                <span>
+                  {newPlanCatalogManuallySet ? (
+                    <>
+                      Using the <strong>{newPlanCatalogYear}</strong> Ontario Tech
+                      course map. Changing your start year won&apos;t overwrite this
+                      choice.
+                    </>
+                  ) : (
+                    "Course map year sets which year's Ontario Tech degree requirements your plan follows (auto-matched to your start year)."
+                  )}
+                </span>
+                {newPlanCatalogManuallySet &&
+                  newPlanCatalogYear !==
+                    resolveCatalogYearForStartYear(
+                      newPlanStartYear,
+                      availableCatalogYears,
+                    ) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const matchedMapYear = resolveCatalogYearForStartYear(
+                          newPlanStartYear,
+                          availableCatalogYears,
+                        );
+                        setNewPlanCatalogManuallySet(false);
+                        setNewPlanCatalogYear(matchedMapYear);
+                        if (
+                          newPlanProgram &&
+                          newPlanProgram.catalog_year !== matchedMapYear
+                        ) {
+                          const matched = findProgramInCatalogYear(
+                            bootstrap.programs,
+                            newPlanProgram,
+                            matchedMapYear,
+                          );
+                          if (matched) setNewPlanProgram(matched);
+                        }
+                      }}
+                      className="font-medium text-sky-600 hover:underline dark:text-sky-400"
+                    >
+                      Match start year
+                    </button>
+                  )}
               </div>
             </div>
 
