@@ -234,19 +234,13 @@ export default function PrivacyPolicyPage() {
               </p>
             </section>
 
-            <div className="flex items-center justify-between border-t border-slate-200/80 pt-5 dark:border-slate-800">
+            <div className="flex items-center border-t border-slate-200/80 pt-5 dark:border-slate-800">
               <Link
                 href="/"
                 className="inline-flex items-center gap-1.5 rounded-xl bg-sky-600 px-4 py-2 text-xs font-semibold text-white shadow-xs transition-colors hover:bg-sky-700 focus-visible:ring-2 focus-visible:ring-sky-500 focus-visible:outline-none dark:bg-sky-500 dark:hover:bg-sky-600"
               >
                 <span aria-hidden="true">&larr;</span>
                 <span>Back to Home</span>
-              </Link>
-              <Link
-                href="/login"
-                className="text-xs font-medium text-slate-500 underline decoration-slate-300 underline-offset-2 transition-colors hover:text-slate-800 dark:text-slate-400 dark:decoration-slate-700 dark:hover:text-slate-200"
-              >
-                Sign in page
               </Link>
             </div>
           </div>
