@@ -79,6 +79,7 @@ interface CourseLookupPanelProps {
   onRemoveCompletedCourse: (code: string) => void;
   onHoverSection: (section: ScheduleSection | null) => void;
   showRmp?: boolean;
+  defaultYearOfStudy?: number | null;
 }
 
 function FixedWidthSwapLabel({
@@ -216,13 +217,35 @@ export function CourseLookupPanel({
   onRemoveCompletedCourse,
   onHoverSection,
   showRmp = false,
+  defaultYearOfStudy = null,
 }: CourseLookupPanelProps) {
+  const preferredLevel = useMemo(() => {
+    if (
+      defaultYearOfStudy == null ||
+      !Number.isFinite(defaultYearOfStudy) ||
+      defaultYearOfStudy < 1 ||
+      defaultYearOfStudy > 4
+    ) {
+      return null;
+    }
+    return Math.trunc(defaultYearOfStudy) * 1000;
+  }, [defaultYearOfStudy]);
+
   const [panelTab, setPanelTab] = useState<"search" | "planned">("planned");
   const lastAutoTabKeyRef = useRef<string | null>(null);
   const [query, setQuery] = useState("");
   const [electiveId, setElectiveId] = useState<string>("all");
   const [subjectFilter, setSubjectFilter] = useState<string>("all");
-  const [levelFilter, setLevelFilter] = useState<string>("all");
+  const [levelFilter, setLevelFilter] = useState<string>(() =>
+    preferredLevel !== null ? String(preferredLevel) : "all",
+  );
+  const hasUserChangedLevelRef = useRef(false);
+
+  useEffect(() => {
+    if (preferredLevel !== null && !hasUserChangedLevelRef.current) {
+      setLevelFilter(String(preferredLevel));
+    }
+  }, [preferredLevel]);
 
   // Smart filters
   const [filterFits, setFilterFits] = useState(false);
@@ -513,6 +536,19 @@ export function CourseLookupPanel({
       });
     }
 
+    if (preferredLevel !== null) {
+      const preferred: typeof matched = [];
+      const others: typeof matched = [];
+      for (const item of matched) {
+        if (item.course.level === preferredLevel) {
+          preferred.push(item);
+        } else {
+          others.push(item);
+        }
+      }
+      return [...preferred, ...others];
+    }
+
     return matched;
   }, [
     catalog.courses,
@@ -520,6 +556,7 @@ export function CourseLookupPanel({
     activeElectiveMatch,
     subjectFilter,
     levelFilter,
+    preferredLevel,
     filterFits,
     filterPrereq,
     filterOnline,
@@ -1157,6 +1194,7 @@ export function CourseLookupPanel({
                 <select
                   value={levelFilter}
                   onChange={(e) => {
+                    hasUserChangedLevelRef.current = true;
                     setLevelFilter(e.target.value);
                     setVisibleLimit(30);
                   }}
@@ -1265,6 +1303,7 @@ export function CourseLookupPanel({
                       setQuery("");
                       setElectiveId("all");
                       setSubjectFilter("all");
+                      hasUserChangedLevelRef.current = true;
                       setLevelFilter("all");
                       setFilterFits(false);
                       setFilterPrereq(false);
@@ -1964,6 +2003,7 @@ export function CourseLookupPanel({
                                     {course.creditHours} cr
                                   </span>
                                 )}
+                                {showRmp && <RmpStarBadge rmp={selectedRmp} />}
                               </div>
                               <p className="truncate text-xs text-zinc-600 dark:text-zinc-400">
                                 {course?.title ?? "Course not offered this term"}
@@ -2125,9 +2165,12 @@ export function CourseLookupPanel({
                         >
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
-                              <span className="font-clash text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-                                {entry.courseCode}
-                              </span>
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-clash text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                                  {entry.courseCode}
+                                </span>
+                                {showRmp && <RmpStarBadge rmp={selectedRmp} />}
+                              </div>
                               <p className="truncate text-xs text-zinc-600 dark:text-zinc-400">
                                 {course?.title ?? entry.courseCode}
                               </p>

@@ -20,6 +20,7 @@ import {
   syncUserTermScheduleToDb,
   type DegreePlanImportOption,
 } from "@/lib/schedule-storage";
+import { fetchStudentProfileWithPrograms } from "@/lib/student-courses";
 import { createClient } from "@/lib/supabase/client";
 
 import {
@@ -269,6 +270,8 @@ export function ScheduleContainer({
   return () => document.removeEventListener("mousedown", onDown);
   }, [importMenuOpen]);
 
+  const [userYearOfStudy, setUserYearOfStudy] = useState<number | null>(null);
+
   // Auth listener
   useEffect(() => {
     let active = true;
@@ -291,6 +294,27 @@ export function ScheduleContainer({
       subscription.unsubscribe();
     };
   }, [supabase]);
+
+  // Load user's year_of_study from student profile for default course level
+  useEffect(() => {
+    let active = true;
+    if (!user?.id) {
+      setUserYearOfStudy(null);
+      return;
+    }
+    fetchStudentProfileWithPrograms(supabase, user.id)
+      .then((profile) => {
+        if (!active) return;
+        setUserYearOfStudy(profile?.year_of_study ?? null);
+      })
+      .catch(() => {
+        if (!active) return;
+        setUserYearOfStudy(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [supabase, user?.id]);
 
   const courseMap = useMemo(() => {
     const map = new Map<string, ScheduleCourseGroup>();
@@ -2047,6 +2071,7 @@ export function ScheduleContainer({
             onRemoveCompletedCourse={handleRemoveCompletedCourse}
             onHoverSection={setHoverPreviewSection}
             showRmp={showRmp}
+            defaultYearOfStudy={userYearOfStudy}
           />
         </div>
       </div>
