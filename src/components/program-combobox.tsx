@@ -13,6 +13,57 @@ const CREDENTIAL_ORDER: Record<string, number> = {
   "Co-operative Education": 5,
 };
 
+const PROGRAM_SEARCH_ALIASES: Record<string, string> = {
+  cs: "computer science",
+  ai: "artificial intelligence",
+  it: "information technology",
+};
+
+function programIdentityKey(program: ProgramSummary): string {
+  const name = program.name
+    .toLowerCase()
+    .replace(/[\u2013\u2014-]+/g, "-")
+    .replace(/\s+/g, " ")
+    .trim();
+  const credential = (program.credential ?? "").trim().toLowerCase();
+  const degree = (program.degree_abbrev ?? program.degree ?? "")
+    .trim()
+    .toLowerCase();
+  return `${name}::${credential}::${degree}`;
+}
+
+/**
+ * Returns one representative entry per distinct program across all catalog
+ * years, preferring the version in `targetCatalogYear` and falling back to
+ * the newest available catalog year for programs offered only in other years.
+ */
+export function mergeProgramsPreferringCatalogYear(
+  programs: ProgramSummary[],
+  targetCatalogYear: string,
+): ProgramSummary[] {
+  const byIdentity = new Map<string, ProgramSummary>();
+
+  for (const p of programs) {
+    if (p.catalog_year !== targetCatalogYear) continue;
+    const key = programIdentityKey(p);
+    if (!byIdentity.has(key)) {
+      byIdentity.set(key, p);
+    }
+  }
+
+  const byNewestYear = [...programs].sort((a, b) =>
+    b.catalog_year.localeCompare(a.catalog_year),
+  );
+  for (const p of byNewestYear) {
+    const key = programIdentityKey(p);
+    if (!byIdentity.has(key)) {
+      byIdentity.set(key, p);
+    }
+  }
+
+  return [...byIdentity.values()];
+}
+
 export function matchesProgramSearch(
   program: ProgramSummary,
   rawQuery: string,
@@ -29,7 +80,11 @@ export function matchesProgramSearch(
     .filter(Boolean)
     .join(" ")
     .toLowerCase();
-  return tokens.every((token) => haystack.includes(token));
+  return tokens.every((token) => {
+    if (haystack.includes(token)) return true;
+    const alias = PROGRAM_SEARCH_ALIASES[token];
+    return alias ? haystack.includes(alias) : false;
+  });
 }
 
 export function sortDegreePrograms(
@@ -74,6 +129,7 @@ interface ProgramComboboxProps {
   ariaLabel: string;
   emptyMessage?: string;
   showCredential?: boolean;
+  preferredCatalogYear?: string;
   disabled?: boolean;
   inputRef?: React.RefObject<HTMLInputElement | null>;
 }
@@ -87,6 +143,7 @@ export function ProgramCombobox({
   ariaLabel,
   emptyMessage = "No matching programs found.",
   showCredential = true,
+  preferredCatalogYear,
   disabled = false,
   inputRef,
 }: ProgramComboboxProps) {
@@ -371,6 +428,12 @@ export function ProgramCombobox({
                   <span className="min-w-0 truncate">{prog.name}</span>
 
                   <span className="flex shrink-0 items-center gap-2">
+                    {preferredCatalogYear &&
+                      prog.catalog_year !== preferredCatalogYear && (
+                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                          {prog.catalog_year}
+                        </span>
+                      )}
                     {showCredential && prog.credential && (
                       <span
                         className={`text-xs ${

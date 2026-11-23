@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
 import {
+  mergeProgramsPreferringCatalogYear,
   ProgramCombobox,
   sortDegreePrograms,
   sortMinorPrograms,
@@ -105,19 +106,19 @@ export function OnboardingFlow({
   );
 
   const degreeOptions = useMemo(() => {
-    const inCatalog = allDegreePrograms.filter(
-      (p) => p.catalog_year === targetCatalogYear,
+    const merged = mergeProgramsPreferringCatalogYear(
+      allDegreePrograms,
+      targetCatalogYear,
     );
-    const pool = inCatalog.length > 0 ? inCatalog : allDegreePrograms;
-    return sortDegreePrograms(pool, "");
+    return sortDegreePrograms(merged, "");
   }, [allDegreePrograms, targetCatalogYear]);
 
   const minorOptions = useMemo(() => {
-    const inCatalog = allMinorPrograms.filter(
-      (p) => p.catalog_year === targetCatalogYear,
+    const merged = mergeProgramsPreferringCatalogYear(
+      allMinorPrograms,
+      targetCatalogYear,
     );
-    const pool = inCatalog.length > 0 ? inCatalog : allMinorPrograms;
-    return sortMinorPrograms(pool, "");
+    return sortMinorPrograms(merged, "");
   }, [allMinorPrograms, targetCatalogYear]);
 
   useEffect(() => {
@@ -430,6 +431,7 @@ export function OnboardingFlow({
                       ariaLabel="Degree program"
                       emptyMessage="No matching degrees found."
                       showCredential
+                      preferredCatalogYear={targetCatalogYear}
                       disabled={submitting}
                     />
                   </div>
