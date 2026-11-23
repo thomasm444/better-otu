@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import { signInWithOntarioTechGoogle } from "@/lib/auth";
@@ -114,6 +115,14 @@ export function LoginCard() {
           </span>{" "}
           accounts. Your course schedules and degree plans are saved securely to
           your student profile.
+        </p>
+        <p className="mt-2.5">
+          <Link
+            href="/privacy-policy"
+            className="text-[11px] font-medium text-zinc-500 underline decoration-zinc-300 underline-offset-2 transition-colors hover:text-zinc-800 dark:text-zinc-400 dark:decoration-zinc-700 dark:hover:text-zinc-200"
+          >
+            Privacy Policy
+          </Link>
         </p>
       </div>
     </div>
