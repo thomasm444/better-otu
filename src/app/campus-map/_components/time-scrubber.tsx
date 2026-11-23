@@ -191,7 +191,7 @@ export function TimeScrubber({
         <div
           role="dialog"
           aria-label="Select date, time, and duration"
-          className={`absolute left-1/2 w-[320px] max-w-[calc(100vw-1.5rem)] -translate-x-1/2 overflow-y-auto rounded-2xl border border-slate-200/95 bg-white/98 p-3 text-xs shadow-2xl backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/98 dark:text-zinc-100 ${
+          className={`absolute left-1/2 w-[320px] max-w-[calc(100vw-1.5rem)] -translate-x-1/2 overflow-y-auto rounded-2xl border border-line bg-surface/98 p-3 text-xs shadow-[var(--shadow-lg)] backdrop-blur-md ${
             isDrawerOpen
               ? "bottom-[calc(100%+5.75rem)] max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-14.5rem)] lg:bottom-full lg:mb-2 lg:max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-7.5rem)]"
               : "bottom-full mb-2 max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-9.5rem)] lg:max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-7.5rem)]"
@@ -199,18 +199,18 @@ export function TimeScrubber({
         >
           {/* Upward-expanding custom calendar (sits at top of bottom-anchored popover) */}
           {isCalendarOpen && (
-            <div className="mb-2.5 rounded-xl border border-slate-200 bg-slate-50/90 p-2 dark:border-zinc-700 dark:bg-zinc-800/70">
+            <div className="mb-2.5 rounded-xl border border-line-subtle bg-surface-subtle p-2">
               <div className="mb-1.5 flex items-center justify-between gap-1">
                 <button
                   type="button"
                   disabled={!canGoPrevMonth}
                   onClick={() => stepMonth(-1)}
                   aria-label="Previous month"
-                  className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-xs font-bold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                  className="rounded-md border border-line bg-surface px-2 py-0.5 text-xs font-medium text-ink-secondary transition-colors hover:bg-surface-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   &larr;
                 </button>
-                <span className="text-xs font-bold text-slate-900 dark:text-zinc-100">
+                <span className="text-xs font-semibold text-ink">
                   {MONTH_NAMES[viewYearMonth.month - 1]} {viewYearMonth.year}
                 </span>
                 <button
@@ -218,13 +218,13 @@ export function TimeScrubber({
                   disabled={!canGoNextMonth}
                   onClick={() => stepMonth(1)}
                   aria-label="Next month"
-                  className="rounded-md border border-slate-200 bg-white px-2 py-0.5 text-xs font-bold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                  className="rounded-md border border-line bg-surface px-2 py-0.5 text-xs font-medium text-ink-secondary transition-colors hover:bg-surface-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   &rarr;
                 </button>
               </div>
 
-              <div className="grid grid-cols-7 gap-0.5 text-center text-[10px] font-bold text-slate-500 dark:text-zinc-400">
+              <div className="grid grid-cols-7 gap-0.5 text-center text-[10px] font-medium text-ink-muted">
                 {WEEKDAY_HEADERS.map((wd) => (
                   <div key={wd} className="py-0.5">
                     {wd}
@@ -248,10 +248,10 @@ export function TimeScrubber({
                         onSelectDate(cell.iso);
                         setIsCalendarOpen(false);
                       }}
-                      className={`relative flex h-7 items-center justify-center rounded-md text-[11px] font-semibold tabular-nums transition disabled:cursor-not-allowed disabled:opacity-30 ${
+                      className={`relative flex h-7 items-center justify-center rounded-md text-[11px] font-medium tabular-nums transition-colors disabled:cursor-not-allowed disabled:opacity-30 ${
                         isSelected
-                          ? "bg-sky-600 font-bold text-white shadow-2xs"
-                          : "text-slate-800 hover:bg-white dark:text-zinc-100 dark:hover:bg-zinc-700"
+                          ? "bg-brand font-semibold text-brand-fg"
+                          : "text-ink hover:bg-surface"
                       }`}
                     >
                       <span>{cell.day}</span>
@@ -259,7 +259,7 @@ export function TimeScrubber({
                         <span
                           aria-hidden="true"
                           className={`absolute bottom-0.5 h-1 w-1 rounded-full ${
-                            isSelected ? "bg-amber-200" : "bg-amber-500"
+                            isSelected ? "bg-accent" : "bg-warning"
                           }`}
                         />
                       )}
@@ -271,8 +271,8 @@ export function TimeScrubber({
           )}
 
           {/* Window Summary + Now */}
-          <div className="flex items-center justify-between gap-2 border-b border-slate-200/80 pb-2 dark:border-zinc-800">
-            <span className="font-bold tabular-nums text-sky-700 dark:text-sky-300">
+          <div className="flex items-center justify-between gap-2 border-b border-line-subtle pb-2">
+            <span className="font-mono font-medium tabular-nums text-accent-ink">
               {formatMinutesToTime(currentSlotStart)} &ndash;{" "}
               {formatMinutesToTime(currentSlotStart + currentDuration)}
             </span>
@@ -283,14 +283,14 @@ export function TimeScrubber({
                 setViewYearMonth(parseYearMonth(nowDate));
                 onSetNow();
               }}
-              className="rounded-full border border-emerald-400 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-bold text-emerald-800 transition hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-200 dark:hover:bg-emerald-900/70"
+              className="rounded-md border border-positive-line bg-positive-soft px-2.5 py-0.5 text-[11px] font-medium text-positive transition-opacity hover:opacity-90"
             >
               Now
             </button>
           </div>
 
           {selectedDayInfo?.note && (
-            <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-900 dark:border-amber-900/70 dark:bg-amber-950/50 dark:text-amber-200">
+            <div className="mt-2 rounded-lg border border-warning-line bg-warning-soft px-2 py-1 text-[11px] font-medium text-warning">
               {formatShortIsoDate(selectedDayInfo.date)}: {selectedDayInfo.note}
             </div>
           )}
@@ -298,7 +298,7 @@ export function TimeScrubber({
           <div className="mt-2.5 space-y-2.5">
             {/* Date Row (opens calendar upward) */}
             <div>
-              <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">
+              <div className="mb-1 text-[11px] font-medium text-ink-muted">
                 Date
               </div>
               <div className="flex items-center gap-1">
@@ -310,7 +310,7 @@ export function TimeScrubber({
                     setViewYearMonth(parseYearMonth(prevDayIso));
                   }}
                   aria-label="Previous day"
-                  className="rounded-lg border border-slate-300 bg-slate-50 px-2 py-1 text-xs font-bold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                  className="rounded-lg border border-line bg-surface-subtle px-2 py-1 text-xs font-medium text-ink-secondary transition-colors hover:bg-surface-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   &lsaquo;
                 </button>
@@ -324,13 +324,13 @@ export function TimeScrubber({
                     }
                     setIsCalendarOpen((prev) => !prev);
                   }}
-                  className="flex flex-1 items-center justify-between rounded-lg border border-slate-300 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-800 transition hover:border-sky-400 hover:bg-white dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:border-sky-600"
+                  className="flex flex-1 items-center justify-between rounded-lg border border-line bg-surface-subtle px-2.5 py-1 text-xs font-medium text-ink transition-colors hover:border-line-strong hover:bg-surface"
                 >
                   <span>
                     {DAY_SHORT[currentDay]}, {formatShortIsoDate(selectedIsoDate)},{" "}
                     {selectedIsoDate.slice(0, 4)}
                   </span>
-                  <span className="text-[10px] text-slate-500 dark:text-zinc-400">
+                  <span className="text-[10px] text-ink-muted">
                     {isCalendarOpen ? "\u25BE" : "\u25B4"}
                   </span>
                 </button>
@@ -342,7 +342,7 @@ export function TimeScrubber({
                     setViewYearMonth(parseYearMonth(nextDayIso));
                   }}
                   aria-label="Next day"
-                  className="rounded-lg border border-slate-300 bg-slate-50 px-2 py-1 text-xs font-bold text-slate-700 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                  className="rounded-lg border border-line bg-surface-subtle px-2 py-1 text-xs font-medium text-ink-secondary transition-colors hover:bg-surface-hover hover:text-ink disabled:cursor-not-allowed disabled:opacity-40"
                 >
                   &rsaquo;
                 </button>
@@ -352,7 +352,7 @@ export function TimeScrubber({
             {/* Time Section: Exact input + smooth slider */}
             <div>
               <div className="mb-1 flex items-center justify-between gap-2">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">
+                <span className="text-[11px] font-medium text-ink-muted">
                   Time
                 </span>
                 <input
@@ -366,7 +366,7 @@ export function TimeScrubber({
                     const mins = parseTimeInputToMinutes(e.target.value);
                     if (mins !== null) onChangeSlotStart(mins);
                   }}
-                  className="rounded-md border border-slate-300 bg-slate-50 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-slate-800 outline-none focus:border-sky-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
+                  className="rounded-md border border-line bg-surface-subtle px-1.5 py-0.5 font-mono text-[11px] font-medium tabular-nums text-ink outline-none focus:border-accent"
                 />
               </div>
               <input
@@ -377,9 +377,9 @@ export function TimeScrubber({
                 step={15}
                 value={currentSlotStart}
                 onChange={(e) => onChangeSlotStart(Number(e.target.value))}
-                className="h-2 w-full cursor-pointer accent-sky-600"
+                className="h-2 w-full cursor-pointer accent-accent"
               />
-              <div className="mt-0.5 flex items-center justify-between text-[10px] font-medium text-slate-500 dark:text-zinc-400">
+              <div className="mt-0.5 flex items-center justify-between text-[10px] font-medium text-ink-muted">
                 <span>8 AM</span>
                 <span>12 PM</span>
                 <span>4 PM</span>
@@ -390,7 +390,7 @@ export function TimeScrubber({
 
             {/* Duration Choices */}
             <div>
-              <div className="mb-1 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">
+              <div className="mb-1 text-[11px] font-medium text-ink-muted">
                 Duration
               </div>
               <div className="grid grid-cols-4 gap-1">
@@ -399,10 +399,10 @@ export function TimeScrubber({
                     key={dur}
                     type="button"
                     onClick={() => onChangeDuration(dur)}
-                    className={`rounded-lg py-1 text-xs font-semibold transition ${
+                    className={`rounded-lg py-1 text-xs font-medium transition-colors ${
                       currentDuration === dur
-                        ? "bg-sky-600 text-white shadow-xs"
-                        : "bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                        ? "bg-brand text-brand-fg"
+                        : "bg-surface-subtle text-ink-secondary hover:bg-surface-hover hover:text-ink"
                     }`}
                   >
                     {formatDuration(dur)}
@@ -424,23 +424,23 @@ export function TimeScrubber({
         }}
         aria-expanded={isOpen}
         aria-label="Change date, time, and duration"
-        className="flex max-w-[calc(100vw-1.5rem)] items-center gap-1.5 whitespace-nowrap rounded-full border border-slate-200/95 bg-white/95 px-3.5 py-1.5 text-xs font-semibold text-slate-800 shadow-xl backdrop-blur-md transition hover:border-sky-300 hover:bg-white dark:border-zinc-700 dark:bg-zinc-900/95 dark:text-zinc-100 dark:hover:border-sky-600"
+        className="flex max-w-[calc(100vw-1.5rem)] items-center gap-1.5 whitespace-nowrap rounded-full border border-line bg-surface/95 px-3.5 py-1.5 text-xs font-medium text-ink shadow-[var(--shadow-md)] backdrop-blur-md transition-colors hover:border-line-strong hover:bg-surface"
       >
-        <span className="h-2 w-2 shrink-0 rounded-full bg-sky-500" />
+        <span className="h-2 w-2 shrink-0 rounded-full bg-accent" />
         <span>
           {DAY_SHORT[currentDay]}, {formatShortIsoDate(selectedIsoDate)}
         </span>
-        <span className="text-slate-400 dark:text-zinc-500">&middot;</span>
-        <span className="font-bold tabular-nums text-sky-700 dark:text-sky-300">
+        <span className="text-ink-muted">&middot;</span>
+        <span className="font-mono font-medium tabular-nums text-accent-ink">
           {formatMinutesToTime(currentSlotStart)}
         </span>
-        <span className="text-slate-400 dark:text-zinc-500">&middot;</span>
+        <span className="text-ink-muted">&middot;</span>
         <span>{formatDuration(currentDuration)}</span>
-        <span className="text-[10px] text-slate-500 dark:text-zinc-400">
+        <span className="text-[10px] text-ink-muted">
           {isOpen ? "\u25B4" : "\u25BE"}
         </span>
         {weekLoading && (
-          <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-sky-600 border-t-transparent" />
+          <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-accent border-t-transparent" />
         )}
       </button>
     </div>

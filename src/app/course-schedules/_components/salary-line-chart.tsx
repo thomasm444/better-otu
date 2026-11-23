@@ -198,8 +198,8 @@ export function SalaryLineChart({
       >
         <defs>
           <linearGradient id="salaryAreaGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#0284c7" stopOpacity="0.28" />
-            <stop offset="100%" stopColor="#0284c7" stopOpacity="0.02" />
+            <stop offset="0%" stopColor="var(--brand-accent)" stopOpacity="0.24" />
+            <stop offset="100%" stopColor="var(--brand-accent)" stopOpacity="0.02" />
           </linearGradient>
         </defs>
 
@@ -246,7 +246,7 @@ export function SalaryLineChart({
                 <path
                   d={linePath}
                   fill="none"
-                  stroke="#0284c7"
+                  stroke="var(--brand-accent)"
                   strokeWidth={2.25}
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -280,7 +280,7 @@ export function SalaryLineChart({
                       cx={x}
                       cy={yForValue(rec.salaryPaid)}
                       r={6}
-                      fill="#0284c7"
+                      fill="var(--brand-accent)"
                       fillOpacity={0.22}
                     />
                   )}
@@ -288,8 +288,8 @@ export function SalaryLineChart({
                     cx={x}
                     cy={yForValue(rec.salaryPaid)}
                     r={isActive ? 3.75 : 3}
-                    fill="#0284c7"
-                    stroke="#ffffff"
+                    fill="var(--brand-accent)"
+                    stroke="var(--bg-surface)"
                     strokeWidth={1.5}
                   />
                   <circle

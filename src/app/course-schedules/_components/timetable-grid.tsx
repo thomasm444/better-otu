@@ -486,27 +486,27 @@ function DayHeaderStrip({
   const gridColsClass = getGridColsClass(days.length);
   return (
     <div
-      className={`flex bg-slate-50/90 text-slate-700 select-none dark:bg-slate-900/90 dark:text-slate-200 ${
+      className={`flex bg-surface-subtle/60 text-ink-secondary select-none ${
         position === "top"
-          ? "border-b border-slate-200/90 dark:border-slate-800"
-          : "border-t border-slate-200/90 dark:border-slate-800"
+          ? "border-b border-line-subtle"
+          : "border-t border-line-subtle"
       }`}
     >
-      <div className="flex w-12 shrink-0 items-center justify-center border-r border-slate-200/80 py-1.5 font-mono text-[10px] font-semibold text-slate-400 sm:w-14 dark:border-slate-800 dark:text-slate-500">
-        {position === "top" ? "TIME" : "DAY"}
+      <div className="flex w-12 shrink-0 items-center justify-center border-r border-line-subtle py-1.5 font-mono text-[10px] font-medium text-ink-muted sm:w-14">
+        {position === "top" ? "Time" : "Day"}
       </div>
       <div
-        className={`grid flex-1 ${gridColsClass} divide-x divide-slate-200/80 dark:divide-slate-800`}
+        className={`grid flex-1 ${gridColsClass} divide-x divide-line-subtle`}
       >
         {days.map((day) => (
           <div
             key={day.key}
             className="flex flex-col items-center justify-center py-1.5 text-center"
           >
-            <span className="text-[11px] font-semibold uppercase tracking-wide md:hidden">
+            <span className="text-[11px] font-medium md:hidden">
               {day.shortLabel}
             </span>
-            <span className="hidden text-[11px] font-semibold uppercase tracking-wide md:inline">
+            <span className="hidden text-[11px] font-medium md:inline">
               {day.fullLabel}
             </span>
           </div>
@@ -544,7 +544,6 @@ export function WeekScheduleGrid({
   isCustomBlockDragMode = false,
   customBlockDraft,
   onCreateCustomBlocksFromDrag,
-  accentColor = viewMode === "week2" ? "purple" : "blue",
   badgeLabel,
   fitToHeight = true,
 }: WeekScheduleProps) {
@@ -1396,17 +1395,6 @@ export function WeekScheduleGrid({
     window.addEventListener("pointercancel", onUp);
   };
 
-  const accentBadge =
-    accentColor === "blue"
-      ? "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300 border-blue-200 dark:border-blue-800"
-      : accentColor === "purple"
-        ? "bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300 border-purple-200 dark:border-purple-800"
-        : accentColor === "emerald"
-          ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800"
-          : accentColor === "red"
-            ? "bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-300 border-red-200 dark:border-red-800"
-            : "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border-amber-200 dark:border-amber-800"
-
   const resolvedBadge =
     badgeLabel ??
     (viewMode === "combined"
@@ -1428,46 +1416,44 @@ export function WeekScheduleGrid({
   );
 
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white/92 shadow-[0_2px_12px_rgba(15,23,42,0.04)] backdrop-blur-sm dark:border-slate-800/80 dark:bg-slate-900/88">
+    <div className="flex h-full flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-[var(--shadow-sm)]">
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/75 bg-gradient-to-r from-sky-50/85 via-white/95 to-indigo-50/55 px-4 py-2.5 dark:border-slate-800 dark:from-sky-950/35 dark:via-slate-900/95 dark:to-indigo-950/25">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-line-subtle bg-surface-subtle/50 px-4 py-2.5">
         <div className="flex items-center gap-2.5">
-          <span
-            className={`inline-flex items-center rounded-full border px-2.5 py-0.5 text-[11px] font-semibold uppercase tracking-wider ${accentBadge}`}
-          >
+          <span className="inline-flex items-center rounded-md border border-accent-line bg-accent-soft px-2 py-0.5 font-mono text-[11px] font-medium text-accent-ink">
             {resolvedBadge}
           </span>
           <div>
-            <h2 className="text-sm font-semibold tracking-tight text-slate-900 dark:text-slate-100">
+            <h2 className="text-sm font-semibold tracking-tight text-ink">
               {title}
             </h2>
             {subtitle && (
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              <p className="text-[11px] text-ink-muted">
                 {subtitle}
               </p>
             )}
           </div>
         </div>
 
-        <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+        <div className="flex items-center gap-2 text-xs text-ink-muted">
           {isEditMode && isBlockingMode && (
-            <span className="rounded-full bg-rose-100 px-2.5 py-0.5 text-[11px] font-medium text-rose-700 dark:bg-rose-950/60 dark:text-rose-300">
+            <span className="rounded-md bg-danger-soft px-2 py-0.5 text-[11px] font-medium text-danger">
               Drag on grid to block time
             </span>
           )}
           {isEditMode && isCustomBlockDragMode && (
-            <span className="rounded-full bg-teal-100 px-2.5 py-0.5 text-[11px] font-medium text-teal-800 dark:bg-teal-950/60 dark:text-teal-200">
+            <span className="rounded-md bg-accent-soft px-2 py-0.5 text-[11px] font-medium text-accent-ink">
               Drag on grid to add custom block
             </span>
           )}
           {dragCourse && (
-            <span className="rounded-full bg-blue-100 px-2.5 py-0.5 text-[11px] font-medium text-blue-800 dark:bg-blue-950/60 dark:text-blue-200">
+            <span className="rounded-md bg-accent-soft px-2 py-0.5 text-[11px] font-medium text-accent-ink">
               {dragCourse.ghosts.some((g) => !g.isCurrent)
                 ? "Drop onto a highlighted section slot"
                 : "Only 1 scheduled section for this component"}
             </span>
           )}
-          <span className="tabular-nums">
+          <span className="font-mono tabular-nums">
             {visibleCount} {visibleCount === 1 ? "block" : "blocks"}
           </span>
         </div>
@@ -1707,11 +1693,11 @@ export function WeekScheduleGrid({
 
         <div className="relative flex flex-1 select-none">
           {/* Times Column on the Left */}
-          <div className="flex w-12 flex-shrink-0 flex-col border-r border-slate-200/90 bg-slate-50/70 font-mono text-[10px] text-slate-500 sm:w-14 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-400">
+          <div className="flex w-12 flex-shrink-0 flex-col border-r border-line-subtle bg-surface-subtle/40 font-mono text-[10px] text-ink-muted sm:w-14">
             {hours.map((hour) => (
               <div
                 key={hour}
-                className="relative flex flex-1 items-start justify-end border-b border-slate-200/75 pr-1.5 pt-0.5 dark:border-slate-800/80"
+                className="relative flex flex-1 items-start justify-end border-b border-line-subtle pr-1.5 pt-0.5"
               >
                 <span>{formatHourLabel(hour)}</span>
               </div>
@@ -1722,7 +1708,7 @@ export function WeekScheduleGrid({
           <div
             ref={gridBodyRef}
             onPointerDown={startCreateBlockedDrag}
-            className={`grid flex-1 ${getGridColsClass(visibleDays.length)} divide-x divide-slate-200/80 dark:divide-slate-800/80`}
+            className={`grid flex-1 ${getGridColsClass(visibleDays.length)} divide-x divide-line-subtle`}
           >
             {visibleDays.map((day) => {
               const dayBlocks = positionedByDay[day.key];
@@ -1958,7 +1944,7 @@ export function WeekScheduleGrid({
                           <div className="flex h-full flex-col justify-between leading-tight">
                             <div>
                               <div className="flex items-start justify-between gap-0.5">
-                                <span className="font-clash truncate font-semibold tracking-tight">
+                                <span className="font-code truncate font-black tracking-tight">
                                   {block.courseCode}
                                 </span>
                                 <div className="flex shrink-0 items-center gap-0.5">

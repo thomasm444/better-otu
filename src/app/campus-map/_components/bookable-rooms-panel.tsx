@@ -180,27 +180,27 @@ export function BookableRoomsPanel({
       onMouseDown={(e) => e.stopPropagation()}
       onTouchStart={(e) => e.stopPropagation()}
       onWheel={(e) => e.stopPropagation()}
-      className="absolute left-2.5 right-2.5 top-2.5 z-[1040] flex max-h-[min(68dvh,calc(100%-4.5rem))] flex-col overflow-hidden rounded-2xl border border-slate-200/95 bg-white/98 shadow-2xl backdrop-blur-md sm:left-4 sm:right-auto sm:top-4 sm:w-[360px] dark:border-zinc-700 dark:bg-zinc-900/98 dark:text-zinc-100"
+      className="absolute left-2.5 right-2.5 top-2.5 z-[1040] flex max-h-[min(68dvh,calc(100%-4.5rem))] flex-col overflow-hidden rounded-2xl border border-line bg-surface/98 shadow-[var(--shadow-lg)] backdrop-blur-md sm:left-4 sm:right-auto sm:top-4 sm:w-[360px]"
     >
-      <div className="flex items-center justify-between gap-2 border-b border-slate-200 px-3.5 py-2.5 dark:border-zinc-800">
+      <div className="flex items-center justify-between gap-2 border-b border-line-subtle px-3.5 py-2.5">
         <div className="min-w-0">
-          <h2 className="text-xs font-bold text-slate-900 dark:text-zinc-100">
+          <h2 className="text-xs font-semibold text-ink">
             Bookable Rooms
           </h2>
-          <p className="text-[11px] font-medium tabular-nums text-slate-600 dark:text-zinc-400">
+          <p className="text-[11px] font-medium tabular-nums text-ink-muted">
             {freeCount} free now &middot; {totalCount} total
           </p>
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5">
-          <div className="flex rounded-lg border border-slate-200 bg-slate-100 p-0.5 text-[11px] dark:border-zinc-700 dark:bg-zinc-800">
+          <div className="flex rounded-lg border border-line bg-surface-subtle p-0.5 text-[11px]">
             <button
               type="button"
               onClick={() => setOnlyFree(true)}
-              className={`rounded-md px-2 py-0.5 font-semibold transition ${
+              className={`rounded-md px-2 py-0.5 font-medium transition-colors ${
                 onlyFree
-                  ? "bg-emerald-600 text-white shadow-2xs"
-                  : "text-slate-700 hover:text-slate-950 dark:text-zinc-300"
+                  ? "bg-emerald-600 text-white"
+                  : "text-ink-secondary hover:text-ink"
               }`}
             >
               Free now
@@ -208,10 +208,10 @@ export function BookableRoomsPanel({
             <button
               type="button"
               onClick={() => setOnlyFree(false)}
-              className={`rounded-md px-2 py-0.5 font-semibold transition ${
+              className={`rounded-md px-2 py-0.5 font-medium transition-colors ${
                 !onlyFree
-                  ? "bg-sky-600 text-white shadow-2xs"
-                  : "text-slate-700 hover:text-slate-950 dark:text-zinc-300"
+                  ? "bg-brand text-brand-fg"
+                  : "text-ink-secondary hover:text-ink"
               }`}
             >
               All
@@ -222,9 +222,9 @@ export function BookableRoomsPanel({
             type="button"
             onClick={onClose}
             aria-label="Close bookable rooms"
-            className="rounded-lg p-1 text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+            className="rounded-lg p-1 text-ink-muted transition-colors hover:bg-surface-subtle hover:text-ink"
           >
-            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
               <path d="M18 6 6 18M6 6l12 12" />
             </svg>
           </button>
@@ -233,11 +233,11 @@ export function BookableRoomsPanel({
 
       <div className="flex-1 overflow-y-auto">
         {filteredEntries.length === 0 ? (
-          <div className="px-4 py-6 text-center text-xs text-slate-600 dark:text-zinc-400">
+          <div className="px-4 py-6 text-center text-xs text-ink-muted">
             No free bookable rooms for this time window.
           </div>
         ) : (
-          <ul className="divide-y divide-slate-100 dark:divide-zinc-800">
+          <ul className="divide-y divide-line-subtle">
             {filteredEntries.map((item) => {
               const parts = [
                 item.roomCode,
@@ -250,19 +250,19 @@ export function BookableRoomsPanel({
                   <button
                     type="button"
                     onClick={() => onSelectRoom(item.feature, item.subRoomId)}
-                    className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-xs transition hover:bg-sky-50/70 dark:hover:bg-zinc-800"
+                    className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-xs transition-colors hover:bg-surface-subtle"
                   >
                     <span
                       className={`h-2 w-2 shrink-0 rounded-full ${
                         item.isAvailable ? "bg-emerald-500" : "bg-rose-500"
                       }`}
                     />
-                    <span className="min-w-0 flex-1 truncate font-medium text-slate-800 dark:text-zinc-200">
-                      <span className="font-bold text-slate-950 dark:text-zinc-50">
+                    <span className="min-w-0 flex-1 truncate font-medium text-ink-secondary">
+                      <span className="font-semibold text-ink">
                         {parts[0]}
                       </span>
                       {parts.slice(1).map((part, idx) => (
-                        <span key={idx} className="text-slate-600 dark:text-zinc-400">
+                        <span key={idx} className="text-ink-muted">
                           {" \u00B7 "}
                           {part}
                         </span>

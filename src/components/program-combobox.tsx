@@ -325,7 +325,7 @@ export function ProgramCombobox({
             }
           }}
           onKeyDown={handleKeyDown}
-          className="w-full rounded-xl border border-slate-200 bg-white py-3 pr-16 pl-3.5 text-sm text-slate-900 caret-[#003C71] transition-colors selection:bg-[#BFD7F2]/60 placeholder:text-slate-400 focus:border-[#003C71] focus:ring-2 focus:ring-[#003C71]/15 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:caret-sky-400 dark:selection:bg-sky-800/60 dark:placeholder:text-slate-500 dark:focus:border-sky-400 dark:focus:ring-sky-400/20"
+          className="w-full rounded-lg border border-line bg-surface py-2.5 pr-16 pl-3 text-sm text-ink caret-accent transition-colors selection:bg-accent-soft placeholder:text-ink-muted focus:border-accent focus:ring-2 focus:ring-focus focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
         />
 
         <div className="absolute right-2 flex items-center gap-0.5">
@@ -338,14 +338,14 @@ export function ProgramCombobox({
                 e.preventDefault();
                 clearSelection();
               }}
-              className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+              className="flex h-7 w-7 items-center justify-center rounded-md text-ink-muted transition-colors hover:bg-surface-subtle hover:text-ink"
             >
               <svg
                 className="h-3.5 w-3.5"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
-                strokeWidth="2.2"
+                strokeWidth="1.75"
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 aria-hidden="true"
@@ -371,14 +371,14 @@ export function ProgramCombobox({
                 internalInputRef.current?.focus();
               }
             }}
-            className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+            className="flex h-7 w-7 items-center justify-center rounded-md text-ink-muted transition-colors hover:bg-surface-subtle hover:text-ink disabled:opacity-50"
           >
             <svg
               className={`h-4 w-4 transition-transform duration-150 ${isOpen ? "rotate-180" : ""}`}
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
-              strokeWidth="2"
+              strokeWidth="1.75"
               strokeLinecap="round"
               strokeLinejoin="round"
               aria-hidden="true"
@@ -395,10 +395,10 @@ export function ProgramCombobox({
           ref={listRef}
           role="listbox"
           aria-label={ariaLabel}
-          className="absolute inset-x-0 top-full z-30 mt-1.5 max-h-60 overflow-y-auto rounded-xl border border-slate-200/90 bg-white py-1 shadow-lg shadow-slate-900/10 dark:border-slate-700 dark:bg-slate-900 dark:shadow-black/50"
+          className="absolute inset-x-0 top-full z-30 mt-1.5 max-h-60 overflow-y-auto rounded-xl border border-line bg-surface py-1 shadow-[var(--shadow-md)]"
         >
           {filteredOptions.length === 0 ? (
-            <div className="px-3.5 py-5 text-center text-sm text-slate-500 dark:text-slate-400">
+            <div className="px-3.5 py-5 text-center text-sm text-ink-muted">
               {emptyMessage}
             </div>
           ) : (
@@ -417,12 +417,12 @@ export function ProgramCombobox({
                     selectOption(prog);
                   }}
                   onMouseEnter={() => setHighlightedIndex(index)}
-                  className={`flex w-full items-center justify-between gap-3 px-3.5 py-2.5 text-left text-sm transition-colors ${
+                  className={`flex w-full items-center justify-between gap-3 px-3.5 py-2 text-left text-sm transition-colors ${
                     isSelected
-                      ? "bg-[#EBF3FC] font-medium text-[#003C71] dark:bg-sky-950/60 dark:text-sky-200"
+                      ? "bg-accent-soft font-medium text-accent-ink"
                       : isHighlighted
-                        ? "bg-slate-100 text-slate-900 dark:bg-slate-800/80 dark:text-slate-100"
-                        : "text-slate-700 hover:bg-slate-50 dark:text-slate-200 dark:hover:bg-slate-800/50"
+                        ? "bg-surface-subtle text-ink"
+                        : "text-ink-secondary hover:bg-surface-subtle"
                   }`}
                 >
                   <span className="min-w-0 truncate">{prog.name}</span>
@@ -430,7 +430,7 @@ export function ProgramCombobox({
                   <span className="flex shrink-0 items-center gap-2">
                     {preferredCatalogYear &&
                       prog.catalog_year !== preferredCatalogYear && (
-                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                        <span className="rounded bg-surface-subtle px-1.5 py-0.5 font-mono text-[10px] font-medium text-ink-muted">
                           {prog.catalog_year}
                         </span>
                       )}
@@ -438,8 +438,8 @@ export function ProgramCombobox({
                       <span
                         className={`text-xs ${
                           isSelected
-                            ? "text-[#003C71]/75 dark:text-sky-300/80"
-                            : "text-slate-400 dark:text-slate-500"
+                            ? "text-accent-ink/80"
+                            : "text-ink-muted"
                         }`}
                       >
                         {prog.credential}
@@ -447,11 +447,11 @@ export function ProgramCombobox({
                     )}
                     {isSelected && (
                       <svg
-                        className="h-4 w-4 text-[#003C71] dark:text-sky-400"
+                        className="h-4 w-4 text-accent"
                         viewBox="0 0 24 24"
                         fill="none"
                         stroke="currentColor"
-                        strokeWidth="2.4"
+                        strokeWidth="2"
                         strokeLinecap="round"
                         strokeLinejoin="round"
                         aria-hidden="true"

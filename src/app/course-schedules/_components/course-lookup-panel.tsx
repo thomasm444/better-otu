@@ -1205,17 +1205,17 @@ export function CourseLookupPanel({
   const effectiveTab = panelTab;
 
   return (
-    <aside className="flex h-full flex-col overflow-hidden rounded-2xl border border-slate-200/80 bg-white/92 shadow-[0_2px_12px_rgba(15,23,42,0.04)] backdrop-blur-sm lg:max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-6.5rem)] dark:border-slate-800/80 dark:bg-slate-900/88">
+    <aside className="flex h-full flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-[var(--shadow-sm)] lg:max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-6.5rem)]">
       {/* Top Panel Header / Tabs */}
-      <div className="flex shrink-0 items-center justify-between border-b border-slate-200/75 bg-gradient-to-r from-sky-50/85 via-white/95 to-indigo-50/55 px-3 py-2.5 dark:border-slate-800 dark:from-sky-950/35 dark:via-slate-900/95 dark:to-indigo-950/25">
-        <div className="grid w-full grid-cols-2 rounded-xl border border-slate-200/80 bg-slate-100/80 p-0.5 text-xs font-medium dark:border-slate-700/80 dark:bg-slate-800/80">
+      <div className="flex shrink-0 items-center justify-between border-b border-line-subtle bg-surface-subtle/50 px-3 py-2.5">
+        <div className="grid w-full grid-cols-2 rounded-lg border border-line bg-surface-subtle p-0.5 text-xs font-medium">
           <button
             type="button"
             onClick={() => setPanelTab("planned")}
-            className={`rounded-lg px-2.5 py-1.5 transition ${
+            className={`rounded-md px-2.5 py-1.5 transition-colors ${
               effectiveTab === "planned"
-                ? "bg-sky-600 text-white shadow-xs dark:bg-sky-500"
-                : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
+                ? "bg-surface text-ink shadow-[var(--shadow-sm)]"
+                : "text-ink-muted hover:text-ink"
             }`}
           >
             My Courses ({plannedCourses.length})
@@ -1223,10 +1223,10 @@ export function CourseLookupPanel({
           <button
             type="button"
             onClick={() => setPanelTab("search")}
-            className={`rounded-lg px-2.5 py-1.5 transition ${
+            className={`rounded-md px-2.5 py-1.5 transition-colors ${
               effectiveTab === "search"
-                ? "bg-sky-600 text-white shadow-xs dark:bg-sky-500"
-                : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200"
+                ? "bg-surface text-ink shadow-[var(--shadow-sm)]"
+                : "text-ink-muted hover:text-ink"
             }`}
           >
             Course Lookup &amp; Explore
@@ -1237,7 +1237,7 @@ export function CourseLookupPanel({
       {effectiveTab === "search" ? (
         <div className="flex min-h-0 flex-1 flex-col">
           {/* Search & Filters */}
-          <div className="space-y-2.5 border-b border-slate-200/80 p-3 dark:border-slate-800">
+          <div className="space-y-2.5 border-b border-line-subtle p-3">
             <input
               type="search"
               value={query}
@@ -1279,8 +1279,8 @@ export function CourseLookupPanel({
                   setVisibleLimit(30);
                 }
               }}
-              placeholder="Search code, title, description, prof, or CRN..."
-              className="w-full rounded-xl border border-slate-200/90 bg-slate-50/75 px-3 py-1.5 text-xs text-slate-900 shadow-[inset_0_1px_2px_rgba(15,23,42,0.03)] transition-colors placeholder:text-slate-400 focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-400/20 focus:outline-none dark:border-slate-700/80 dark:bg-slate-950/60 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:bg-slate-900"
+              placeholder="Search code, title, prof, or CRN"
+              className="w-full rounded-lg border border-line bg-surface-subtle px-3 py-1.5 text-xs text-ink transition-colors placeholder:text-ink-muted focus:border-accent focus:bg-surface focus:ring-2 focus:ring-focus focus:outline-none"
             />
 
             {/* Elective Category Dropdown */}
@@ -1292,7 +1292,7 @@ export function CourseLookupPanel({
                   setVisibleLimit(30);
                 }}
                 aria-label="Filter by elective category"
-                className="w-full rounded-xl border border-slate-200/90 bg-white px-2.5 py-1.5 text-xs text-slate-800 focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20 focus:outline-none dark:border-slate-700/80 dark:bg-slate-900 dark:text-slate-200"
+                className="w-full rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs text-ink focus:border-accent focus:ring-2 focus:ring-focus focus:outline-none"
               >
                 <option value="all">All Electives / Categories</option>
                 {allElectiveOptions.map((opt) => (
@@ -1310,7 +1310,7 @@ export function CourseLookupPanel({
                     setVisibleLimit(30);
                   }}
                   aria-label="Filter by subject"
-                  className="w-full rounded-xl border border-slate-200/90 bg-white px-2 py-1.5 text-xs text-slate-800 focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20 focus:outline-none dark:border-slate-700/80 dark:bg-slate-900 dark:text-slate-200"
+                  className="w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-xs text-ink focus:border-accent focus:ring-2 focus:ring-focus focus:outline-none"
                 >
                   <option value="all">All Subjects</option>
                   {catalog.subjects.map((s) => (
@@ -1328,7 +1328,7 @@ export function CourseLookupPanel({
                     setVisibleLimit(30);
                   }}
                   aria-label="Filter by course level"
-                  className="w-full rounded-xl border border-slate-200/90 bg-white px-2 py-1.5 text-xs text-slate-800 focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20 focus:outline-none dark:border-slate-700/80 dark:bg-slate-900 dark:text-slate-200"
+                  className="w-full rounded-lg border border-line bg-surface px-2 py-1.5 text-xs text-ink focus:border-accent focus:ring-2 focus:ring-focus focus:outline-none"
                 >
                   <option value="all">All Levels</option>
                   <option value="1000">1000-level</option>
@@ -1395,13 +1395,12 @@ export function CourseLookupPanel({
                     chip.onClick();
                     setVisibleLimit(30);
                   }}
-                  className={`rounded-full border px-2.5 py-1 text-[11px] font-medium transition ${
+                  className={`rounded-md border px-2 py-1 text-[11px] font-medium transition-colors ${
                     chip.active
-                      ? "border-sky-500 bg-sky-50 text-sky-900 dark:border-sky-600 dark:bg-sky-950/70 dark:text-sky-200"
-                      : "border-slate-200/90 bg-slate-50/80 text-slate-600 hover:border-sky-300 hover:text-slate-900 dark:border-slate-700/80 dark:bg-slate-800/80 dark:text-slate-400 dark:hover:border-sky-700"
+                      ? "border-accent-line bg-accent-soft text-accent-ink"
+                      : "border-line bg-surface-subtle text-ink-secondary hover:border-line-strong hover:text-ink"
                   }`}
                 >
-                  {chip.active ? "✓ " : ""}
                   {chip.label}
                 </button>
               ))}
@@ -1621,7 +1620,7 @@ export function CourseLookupPanel({
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-1.5">
-                              <span className="font-clash text-sm font-semibold text-slate-900 dark:text-slate-100">
+                              <span className="font-code text-sm font-semibold text-slate-900 dark:text-slate-100">
                                 {course.courseCode}
                               </span>
                               <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-400">
@@ -1654,13 +1653,13 @@ export function CourseLookupPanel({
 
                           {/* Fit Badge */}
                           <span
-                            className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                            className={`shrink-0 rounded-md px-2 py-0.5 text-[10px] font-medium ${
                               fitCombo
-                                ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300"
-                                : "bg-rose-50 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300"
+                                ? "bg-positive-soft text-positive"
+                                : "bg-danger-soft text-danger"
                             }`}
                           >
-                            {fitCombo ? "✓ Fits" : "⚠ Conflict"}
+                            {fitCombo ? "Fits" : "Conflict"}
                           </span>
                         </div>
 
@@ -1734,7 +1733,7 @@ export function CourseLookupPanel({
                                         "planned",
                                       )
                                     }
-                                    className="rounded-md bg-blue-600 px-2.5 py-1 text-[11px] font-medium text-white transition hover:bg-blue-700"
+                                    className="rounded-md bg-brand px-2.5 py-1 text-[11px] font-medium text-brand-fg transition-colors hover:bg-brand-hover"
                                   >
                                     + Plan
                                   </button>
@@ -2013,8 +2012,8 @@ export function CourseLookupPanel({
                   }`}
                 >
                   {isCustomBlockDragMode
-                    ? "✓ Drag-to-Create Custom Block Active (drag across hours & days)"
-                    : "🖱 Drag on Grid to Add Custom Block"}
+                    ? "Drag-to-create custom block active (drag across hours & days)"
+                    : "Drag on grid to add custom block"}
                 </button>
               )}
 
@@ -2167,7 +2166,7 @@ export function CourseLookupPanel({
                                 <span
                                   className={`h-2.5 w-2.5 rounded-full ${style.accent}`}
                                 />
-                                <span className="font-clash text-sm font-semibold text-slate-900 dark:text-slate-100">
+                                <span className="font-code text-sm font-semibold text-slate-900 dark:text-slate-100">
                                   {entry.courseCode}
                                 </span>
                                 {course && (
@@ -2307,7 +2306,7 @@ export function CourseLookupPanel({
                           <div className="flex items-start justify-between gap-2">
                             <div className="min-w-0">
                               <div className="flex items-center gap-1.5">
-                                <span className="font-clash text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+                                <span className="font-code text-sm font-semibold text-zinc-900 dark:text-zinc-100">
                                   {entry.courseCode}
                                 </span>
                                 {showRmp && <RmpStarBadge rmp={selectedRmp} />}

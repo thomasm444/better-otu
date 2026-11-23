@@ -1,7 +1,6 @@
 "use client";
 
 import type { User } from "@supabase/supabase-js";
-import Link from "next/link";
 import React, {
   useCallback,
   useEffect,
@@ -2224,23 +2223,16 @@ export function DegreePlannerClient({
       style={
         { "--planner-header-h": `${headerHeight}px` } as React.CSSProperties
       }
-      className="min-h-screen bg-[#F7F8FC] bg-[radial-gradient(ellipse_80%_45%_at_50%_-10%,rgba(186,230,253,0.40),transparent_65%),radial-gradient(ellipse_55%_40%_at_92%_6%,rgba(221,214,254,0.32),transparent_60%)] text-slate-800 dark:bg-[#0B0F19] dark:bg-[radial-gradient(ellipse_80%_45%_at_50%_-10%,rgba(56,189,248,0.11),transparent_65%),radial-gradient(ellipse_55%_40%_at_92%_6%,rgba(167,139,250,0.10),transparent_60%)] dark:text-slate-100"
+      className="min-h-screen bg-canvas text-ink"
     >
       {/* Sticky Top Header */}
       <header
         ref={headerRef}
-        className="sticky top-[var(--site-nav-height,2.75rem)] z-40 border-b border-slate-200/80 bg-white/82 px-4 py-3 shadow-[0_1px_12px_rgba(15,23,42,0.04)] backdrop-blur-md dark:border-slate-800/80 dark:bg-slate-900/82"
+        className="sticky top-[var(--site-nav-height,2.75rem)] z-40 border-b border-line-subtle bg-surface/95 px-4 py-3 backdrop-blur-sm"
       >
         <div className="mx-auto flex max-w-[1440px] flex-col gap-3 md:flex-row md:flex-wrap md:items-start md:justify-between lg:flex-nowrap">
-          {/* Left Side: Home on top; Plans + (+) below; Plan name; Start year */}
-          <div className="flex flex-col items-start gap-1.5 md:order-1 md:max-w-[58%] lg:max-w-none">
-            <Link
-              href="/"
-              className="rounded-xl border border-slate-200/90 bg-white/90 px-2.5 py-1 text-xs font-medium text-slate-600 shadow-[0_1px_2px_rgba(15,23,42,0.03)] transition-colors hover:border-sky-300 hover:bg-sky-50/50 hover:text-sky-900 dark:border-slate-700/80 dark:bg-slate-800/80 dark:text-slate-300 dark:hover:border-sky-700 dark:hover:text-sky-200"
-            >
-              &larr; Home
-            </Link>
-
+          {/* Left Side: Plans + (+); Plan name; Start year */}
+          <div className="flex flex-col items-start gap-2 md:order-1 md:max-w-[58%] lg:max-w-none">
             {/* Saved Plans Dropdown + Add Plan (+) */}
             <div
               ref={plansMenuContainerRef}
@@ -2252,10 +2244,10 @@ export function DegreePlannerClient({
                     setMenuOpen(false);
                     setPlansMenuOpen((open) => !open);
                   }}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200/90 bg-white/90 px-2.5 py-1 text-xs font-medium text-slate-700 shadow-[0_1px_2px_rgba(15,23,42,0.03)] transition-colors hover:border-sky-300 hover:bg-sky-50/50 hover:text-sky-900 dark:border-slate-700/80 dark:bg-slate-800/80 dark:text-slate-200 dark:hover:border-sky-700 dark:hover:bg-slate-800"
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-2.5 py-1 text-xs font-medium text-ink-secondary transition-colors hover:border-line-strong hover:bg-surface-subtle hover:text-ink"
                 >
                   <span>Plans</span>
-                  <span className="rounded-full bg-sky-100/85 px-1.5 py-0.5 text-[10.5px] font-semibold tabular-nums text-sky-700 dark:bg-sky-950/70 dark:text-sky-300">
+                  <span className="rounded-md bg-accent-soft px-1.5 py-0.5 font-mono text-[10.5px] font-medium tabular-nums text-accent-ink">
                     {savedPlans.length}
                   </span>
                 </button>
@@ -2265,28 +2257,28 @@ export function DegreePlannerClient({
                   onClick={openAddPlanModal}
                   title="Add another degree plan"
                   aria-label="Add another degree plan"
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-xl border border-sky-200/90 bg-sky-50/85 text-sm font-semibold text-sky-700 shadow-[0_1px_2px_rgba(15,23,42,0.03)] transition-colors hover:border-sky-300 hover:bg-sky-100 hover:text-sky-800 dark:border-sky-800/80 dark:bg-sky-950/60 dark:text-sky-300 dark:hover:border-sky-700 dark:hover:bg-sky-900/60"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-accent-line bg-accent-soft text-sm font-medium text-accent-ink transition-colors hover:bg-accent hover:text-accent-fg"
                 >
                   +
                 </button>
 
                 {plansMenuOpen && (
-                  <div className="absolute top-9 left-0 z-50 max-h-[60vh] w-[min(360px,calc(100vw-2rem))] overflow-auto rounded-2xl border border-slate-200/90 bg-white/98 shadow-xl shadow-slate-900/10 backdrop-blur-md dark:border-slate-700 dark:bg-slate-900">
-                    <div className="flex items-center justify-between border-b border-slate-100 px-3.5 py-2.5 dark:border-slate-800">
-                      <span className="text-[11px] font-semibold tracking-wider text-slate-500 uppercase dark:text-slate-400">
-                        Saved Plans ({savedPlans.length})
+                  <div className="absolute top-9 left-0 z-50 max-h-[60vh] w-[min(360px,calc(100vw-2rem))] overflow-auto rounded-xl border border-line bg-surface shadow-[var(--shadow-lg)]">
+                    <div className="flex items-center justify-between border-b border-line-subtle px-3.5 py-2.5">
+                      <span className="text-xs font-medium text-ink-muted">
+                        Saved plans ({savedPlans.length})
                       </span>
                       <button
                         type="button"
                         onClick={openAddPlanModal}
-                        className="rounded-lg bg-sky-50 px-2.5 py-1 text-[11px] font-semibold text-sky-700 transition-colors hover:bg-sky-100 dark:bg-sky-950/60 dark:text-sky-300 dark:hover:bg-sky-900/60"
+                        className="rounded-md bg-accent-soft px-2.5 py-1 text-xs font-medium text-accent-ink transition-colors hover:bg-accent hover:text-accent-fg"
                       >
-                        + New Plan
+                        + New plan
                       </button>
                     </div>
 
                     {savedPlans.length === 0 ? (
-                      <div className="p-5 text-center text-xs text-slate-500 dark:text-slate-400">
+                      <div className="p-5 text-center text-xs text-ink-muted">
                         No saved plans yet. Click + to add a degree plan.
                       </div>
                     ) : (
@@ -2299,10 +2291,10 @@ export function DegreePlannerClient({
                         return (
                           <div
                             key={saved.program_id}
-                            className={`flex items-center gap-2 border-b border-slate-100 px-3.5 py-2.5 transition-colors last:border-b-0 dark:border-slate-800 ${
+                            className={`flex items-center gap-2 border-b border-line-subtle px-3.5 py-2.5 transition-colors last:border-b-0 ${
                               isActive
-                                ? "bg-sky-50/75 dark:bg-sky-950/35"
-                                : "hover:bg-slate-50/90 dark:hover:bg-slate-800/60"
+                                ? "bg-accent-soft"
+                                : "hover:bg-surface-subtle"
                             }`}
                           >
                             <button
@@ -2311,16 +2303,16 @@ export function DegreePlannerClient({
                               className="min-w-0 flex-1 text-left"
                             >
                               <div className="flex items-center gap-1.5">
-                                <span className="truncate text-sm font-medium text-slate-900 dark:text-slate-100">
+                                <span className="truncate text-sm font-medium text-ink">
                                   {saved.degree_name || saved.program_id}
                                 </span>
                                 {isActive && (
-                                  <span className="shrink-0 rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-700 dark:bg-sky-900/60 dark:text-sky-300">
+                                  <span className="shrink-0 rounded-md bg-accent-soft px-1.5 py-0.5 text-[10px] font-medium text-accent-ink ring-1 ring-inset ring-accent-line">
                                     Active
                                   </span>
                                 )}
                               </div>
-                              <span className="mt-0.5 block text-[11px] text-slate-500 dark:text-slate-400">
+                              <span className="mt-0.5 block text-[11px] text-ink-muted">
                                 {saved.catalog_year
                                   ? `${saved.catalog_year} plan · `
                                   : ""}
@@ -2341,7 +2333,7 @@ export function DegreePlannerClient({
                               }}
                               title="Delete saved plan"
                               aria-label={`Delete ${saved.degree_name || saved.program_id}`}
-                              className="shrink-0 rounded-lg px-1.5 py-1 text-sm leading-none text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/50 dark:hover:text-rose-400"
+                              className="shrink-0 rounded-md px-1.5 py-1 text-sm leading-none text-ink-muted transition-colors hover:bg-danger-soft hover:text-danger"
                             >
                               ×
                             </button>
@@ -2357,7 +2349,7 @@ export function DegreePlannerClient({
             {program &&
               (isCurrentProgramSaved ? (
                 <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="text-[11px] font-semibold tracking-wider text-slate-400 uppercase dark:text-slate-500">
+                  <span className="text-xs font-medium text-ink-muted">
                     Plan:
                   </span>
                   {editingPlanName ? (
@@ -2379,18 +2371,18 @@ export function DegreePlannerClient({
                           }
                         }}
                         placeholder={program.name}
-                        className="w-56 rounded-xl border border-sky-400 bg-white px-2.5 py-1 text-sm font-medium text-slate-900 focus:ring-2 focus:ring-sky-400/25 focus:outline-none sm:w-72 dark:bg-slate-950 dark:text-slate-100"
+                        className="w-56 rounded-lg border border-accent bg-surface px-2.5 py-1 text-sm font-medium text-ink focus:ring-2 focus:ring-focus focus:outline-none sm:w-72"
                       />
                       <button
                         type="submit"
-                        className="rounded-xl bg-sky-600 px-2.5 py-1 text-xs font-medium text-white transition-colors hover:bg-sky-700"
+                        className="rounded-lg bg-brand px-2.5 py-1 text-xs font-medium text-brand-fg transition-colors hover:bg-brand-hover"
                       >
                         Save
                       </button>
                       <button
                         type="button"
                         onClick={() => setEditingPlanName(false)}
-                        className="rounded-xl border border-slate-200 px-2 py-1 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
+                        className="rounded-lg border border-line px-2 py-1 text-xs font-medium text-ink-secondary transition-colors hover:bg-surface-subtle hover:text-ink"
                       >
                         Cancel
                       </button>
@@ -2404,17 +2396,17 @@ export function DegreePlannerClient({
                           setEditingPlanName(true);
                         }}
                         title="Click to rename plan"
-                        className="group inline-flex items-center gap-1.5 rounded-xl px-2 py-0.5 text-left transition-colors hover:bg-sky-50/80 dark:hover:bg-slate-800"
+                        className="group inline-flex items-center gap-1.5 rounded-lg px-2 py-0.5 text-left transition-colors hover:bg-surface-subtle"
                       >
-                        <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                        <span className="text-sm font-semibold text-ink">
                           {planName || program.name}
                         </span>
-                        <span className="text-xs text-slate-400 transition-colors group-hover:text-sky-600 dark:text-slate-500 dark:group-hover:text-sky-400">
+                        <span className="text-xs text-ink-muted transition-colors group-hover:text-accent-ink">
                           ✎
                         </span>
                       </button>
                       {planName && planName !== program.name && (
-                        <span className="text-xs text-slate-400 dark:text-slate-500">
+                        <span className="text-xs text-ink-muted">
                           ({program.name})
                         </span>
                       )}
@@ -2423,16 +2415,16 @@ export function DegreePlannerClient({
                 </div>
               ) : (
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="rounded-full bg-amber-100/90 px-2 py-0.5 text-[10.5px] font-semibold tracking-wider text-amber-800 uppercase dark:bg-amber-950/60 dark:text-amber-300">
+                  <span className="rounded-md border border-warning-line bg-warning-soft px-2 py-0.5 text-[11px] font-medium text-warning">
                     Preview
                   </span>
-                  <span className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                  <span className="text-sm font-semibold text-ink">
                     {program.name}
                   </span>
                   <button
                     type="button"
                     onClick={openSavePreviewAsPlanModal}
-                    className="rounded-full border border-sky-200/90 bg-sky-50 px-2.5 py-0.5 text-[11px] font-semibold text-sky-700 transition-colors hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/50 dark:text-sky-300 dark:hover:bg-sky-900/60"
+                    className="rounded-md border border-accent-line bg-accent-soft px-2.5 py-0.5 text-xs font-medium text-accent-ink transition-colors hover:bg-accent hover:text-accent-fg"
                   >
                     + Add to Plans
                   </button>
@@ -2441,7 +2433,7 @@ export function DegreePlannerClient({
 
             {/* Start Year & Catalog Year directly below Plan name */}
             <div className="flex flex-wrap items-center gap-2">
-              <label className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+              <label className="flex items-center gap-1.5 text-xs text-ink-muted">
                 <span>Start:</span>
                 <select
                   value={startYear}
@@ -2449,7 +2441,7 @@ export function DegreePlannerClient({
                     void handleChangeStartYear(Number(e.target.value))
                   }
                   aria-label="Degree start year"
-                  className="rounded-xl border border-slate-200/90 bg-white/90 px-2.5 py-1 text-xs font-medium text-slate-800 shadow-[0_1px_2px_rgba(15,23,42,0.02)] focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20 focus:outline-none dark:border-slate-700/80 dark:bg-slate-800/80 dark:text-slate-100"
+                  className="rounded-lg border border-line bg-surface px-2.5 py-1 text-xs font-medium text-ink focus:border-accent focus:ring-2 focus:ring-focus focus:outline-none"
                 >
                   {startYearOptions.map((y) => (
                     <option key={y} value={y}>
@@ -2459,10 +2451,10 @@ export function DegreePlannerClient({
                 </select>
               </label>
 
-              <label className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+              <label className="flex items-center gap-1.5 text-xs text-ink-muted">
                 <span
                   title="Which year's Ontario Tech course map is used to check your degree requirements."
-                  className="cursor-help underline decoration-dotted decoration-slate-300 underline-offset-2 dark:decoration-slate-600"
+                  className="cursor-help underline decoration-dotted decoration-line-strong underline-offset-2"
                 >
                   Course map:
                 </span>
@@ -2472,7 +2464,7 @@ export function DegreePlannerClient({
                     void handleChangeCatalogYear(e.target.value)
                   }
                   aria-label="University course map year"
-                  className="rounded-xl border border-slate-200/90 bg-white/90 px-2.5 py-1 text-xs font-medium text-slate-800 shadow-[0_1px_2px_rgba(15,23,42,0.02)] focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20 focus:outline-none dark:border-slate-700/80 dark:bg-slate-800/80 dark:text-slate-100"
+                  className="rounded-lg border border-line bg-surface px-2.5 py-1 text-xs font-medium text-ink focus:border-accent focus:ring-2 focus:ring-focus focus:outline-none"
                 >
                   {availableCatalogYears.map((cy) => (
                     <option key={cy} value={cy}>
@@ -2492,8 +2484,8 @@ export function DegreePlannerClient({
                 viewBox="0 0 20 20"
                 fill="none"
                 stroke="currentColor"
-                strokeWidth="1.8"
-                className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-slate-400 dark:text-slate-500"
+                strokeWidth="1.6"
+                className="pointer-events-none absolute top-1/2 left-2.5 h-3.5 w-3.5 -translate-y-1/2 text-ink-muted"
               >
                 <circle cx="9" cy="9" r="5.75" />
                 <path d="M13.5 13.5L17 17" strokeLinecap="round" />
@@ -2506,16 +2498,16 @@ export function DegreePlannerClient({
                   setProgramQuery(e.target.value);
                   setMenuOpen(true);
                 }}
-                placeholder="Search programs…"
+                placeholder="Search programs"
                 aria-label="Search programs"
                 autoComplete="off"
-                className="w-full rounded-xl border border-slate-200/90 bg-slate-50/75 py-1.5 pr-3 pl-8 text-sm text-slate-900 shadow-[inset_0_1px_2px_rgba(15,23,42,0.03)] transition-colors placeholder:text-slate-400 focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-400/20 focus:outline-none dark:border-slate-700/80 dark:bg-slate-800/70 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:bg-slate-900"
+                className="w-full rounded-lg border border-line bg-surface-subtle py-1.5 pr-3 pl-8 text-sm text-ink transition-colors placeholder:text-ink-muted focus:border-accent focus:bg-surface focus:ring-2 focus:ring-focus focus:outline-none"
               />
               {menuOpen && (
-                <div className="absolute top-10 left-0 z-50 max-h-[60vh] w-[min(430px,calc(100vw-2rem))] overflow-auto rounded-2xl border border-slate-200/90 bg-white/98 shadow-xl shadow-slate-900/10 backdrop-blur-md lg:left-1/2 lg:-translate-x-1/2 dark:border-slate-700 dark:bg-slate-900">
+                <div className="absolute top-10 left-0 z-50 max-h-[60vh] w-[min(430px,calc(100vw-2rem))] overflow-auto rounded-xl border border-line bg-surface shadow-[var(--shadow-lg)] lg:left-1/2 lg:-translate-x-1/2">
                   {filteredPrograms.length === 0 ? (
-                    <div className="p-6 text-center text-sm text-slate-500">
-                      No programs match.
+                    <div className="p-6 text-center text-sm text-ink-muted">
+                      No programs match
                     </div>
                   ) : (
                     filteredPrograms.map((p) => (
@@ -2523,12 +2515,12 @@ export function DegreePlannerClient({
                         key={p.program_id}
                         type="button"
                         onClick={() => selectProgram(p)}
-                        className="block w-full border-b border-slate-100 px-3.5 py-2.5 text-left transition-colors last:border-b-0 hover:bg-sky-50/60 dark:border-slate-800 dark:hover:bg-slate-800/70"
+                        className="block w-full border-b border-line-subtle px-3.5 py-2.5 text-left transition-colors last:border-b-0 hover:bg-surface-subtle"
                       >
-                        <span className="block text-sm font-medium text-slate-900 dark:text-slate-100">
+                        <span className="block text-sm font-medium text-ink">
                           {p.name}
                         </span>
-                        <span className="text-[11.5px] text-slate-500 dark:text-slate-400">
+                        <span className="text-xs text-ink-muted">
                           {[
                             p.credential,
                             p.degree_abbrev,
@@ -2550,29 +2542,29 @@ export function DegreePlannerClient({
           {/* Right Side: Credits on top; Reset controls directly below */}
           <div className="flex flex-col items-start gap-1.5 md:order-2 md:items-end lg:order-3">
             {/* Credit Progress Hero */}
-            <div className="flex flex-col items-start gap-1 rounded-2xl border border-slate-200/75 bg-white/85 px-3 py-1.5 shadow-[0_1px_4px_rgba(15,23,42,0.03)] md:items-end dark:border-slate-800 dark:bg-slate-800/60">
+            <div className="flex flex-col items-start gap-1 rounded-xl border border-line bg-surface-subtle/50 px-3 py-1.5 md:items-end">
               <div className="flex items-center gap-2">
-                <strong className="text-lg leading-none font-semibold tracking-tight tabular-nums text-emerald-600 dark:text-emerald-400">
+                <strong className="font-mono text-lg leading-none font-semibold tracking-tight tabular-nums text-accent-ink">
                   {totalPlacedCredits}
                 </strong>
-                <span className="text-xs text-slate-500 dark:text-slate-400">
+                <span className="font-mono text-xs text-ink-muted tabular-nums">
                   / {totalTarget} cr
                 </span>
                 <div
-                  className="h-2.5 w-28 overflow-hidden rounded-full bg-slate-200/85 ring-1 ring-inset ring-slate-300/40 sm:w-36 dark:bg-slate-900 dark:ring-slate-700/60"
+                  className="h-2 w-28 overflow-hidden rounded-full bg-surface-hover sm:w-36"
                   title={`${totalPlacedCredits} completed · ${Math.max(0, totalTarget - totalPlacedCredits)} remaining`}
                 >
                   <div
-                    className="h-full rounded-full bg-gradient-to-r from-sky-400 via-teal-400 to-emerald-400 transition-all duration-300"
+                    className="h-full rounded-full bg-accent transition-[width] duration-300"
                     style={{ width: `${heroPct}%` }}
                   />
                 </div>
-                <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10.5px] font-semibold tabular-nums text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
+                <span className="rounded-md bg-accent-soft px-1.5 py-0.5 font-mono text-[11px] font-medium tabular-nums text-accent-ink">
                   {Math.round(heroPct)}%
                 </span>
               </div>
               {program && (
-                <div className="text-[11px] text-slate-500 tabular-nums dark:text-slate-400">
+                <div className="text-[11px] text-ink-muted tabular-nums">
                   {creditBreakdown.transfer > 0
                     ? `${creditBreakdown.planned} cr planned + ${creditBreakdown.transfer} cr transfer = ${creditBreakdown.total} cr`
                     : `${creditBreakdown.planned} cr planned`}
@@ -2585,7 +2577,7 @@ export function DegreePlannerClient({
                 <button
                   type="button"
                   onClick={handleRestorePrevious}
-                  className="rounded-xl border border-emerald-200/90 bg-emerald-50/90 px-2.5 py-1 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 dark:hover:bg-emerald-900/60"
+                  className="rounded-lg border border-positive-line bg-positive-soft px-2.5 py-1 text-xs font-medium text-positive transition-colors hover:opacity-90"
                 >
                   Undo reset
                 </button>
@@ -2595,7 +2587,7 @@ export function DegreePlannerClient({
                 type="button"
                 disabled={!program}
                 onClick={() => setResetConfirmOpen(true)}
-                className="rounded-xl border border-slate-200/90 bg-white/90 px-2.5 py-1 text-xs font-medium text-slate-600 shadow-[0_1px_2px_rgba(15,23,42,0.03)] transition-colors hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 disabled:opacity-50 dark:border-slate-700/80 dark:bg-slate-800/80 dark:text-slate-300 dark:hover:text-slate-100"
+                className="rounded-lg border border-line bg-surface px-2.5 py-1 text-xs font-medium text-ink-secondary transition-colors hover:border-line-strong hover:bg-surface-subtle hover:text-ink disabled:opacity-50"
               >
                 Reset to defaults
               </button>
@@ -3896,7 +3888,7 @@ export function DegreePlannerClient({
 
       {/* Toast */}
       {toastMsg && (
-        <div className="fixed bottom-5 left-1/2 z-[1400] -translate-x-1/2 rounded-full border border-slate-700/60 bg-slate-900/95 px-4 py-2 text-xs font-medium text-white shadow-xl backdrop-blur-md dark:border-slate-200/80 dark:bg-white/95 dark:text-slate-900">
+        <div className="fixed bottom-5 left-1/2 z-[1400] -translate-x-1/2 rounded-lg border border-line-strong bg-brand px-4 py-2 text-xs font-medium text-brand-fg shadow-[var(--shadow-lg)]">
           {toastMsg}
         </div>
       )}
@@ -4234,53 +4226,53 @@ function CourseDetailsModal({
   return (
     <div
       onClick={onClose}
-      className="fixed inset-0 z-[1300] flex items-center justify-center bg-slate-950/40 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[1300] flex items-center justify-center bg-[#0b1018]/55 p-4 backdrop-blur-sm"
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg rounded-2xl border border-slate-200/90 bg-white p-5 shadow-2xl dark:border-slate-800 dark:bg-slate-900"
+        className="w-full max-w-lg rounded-2xl border border-line bg-surface p-5 shadow-[var(--shadow-lg)]"
       >
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="flex flex-wrap items-center gap-2">
-              <span className="font-mono text-sm font-semibold text-sky-700 dark:text-sky-400">
+              <span className="font-mono text-sm font-semibold text-accent-ink">
                 {selectedCourse.code}
               </span>
-              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+              <span className="rounded-md bg-surface-subtle px-2 py-0.5 font-mono text-[11px] font-medium text-ink-secondary tabular-nums">
                 {creditsOf(selectedCourse.code, catalogMap, customs)} cr
               </span>
               {term && (
-                <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[11px] font-medium text-sky-700 dark:bg-sky-950/60 dark:text-sky-300">
+                <span className="rounded-md bg-accent-soft px-2 py-0.5 text-[11px] font-medium text-accent-ink">
                   {term.season} {calYear}
                 </span>
               )}
               {isTransfer && (
-                <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300">
+                <span className="rounded-md bg-secondary-soft px-2 py-0.5 text-[11px] font-medium text-ink-secondary">
                   Transfer credit
                 </span>
               )}
               {isCustom && !isTransfer && (
-                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                <span className="rounded-md bg-surface-subtle px-2 py-0.5 text-[11px] font-medium text-ink-muted">
                   Custom course
                 </span>
               )}
             </div>
-            <h3 className="mt-1.5 text-lg font-semibold text-slate-900 dark:text-slate-100">
+            <h3 className="mt-1.5 text-lg font-semibold text-ink">
               {displayCourseTitle(course)}
             </h3>
             {course &&
               !("custom" in course) &&
               (course.subject_name || course.faculty) && (
-                <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                <p className="mt-0.5 text-xs text-ink-muted">
                   {[course.subject_name, course.faculty]
                     .filter(Boolean)
                     .join(" · ")}
                 </p>
               )}
             {equivalentCodes.length > 0 && (
-              <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
+              <p className="mt-1 text-xs text-ink-secondary">
                 Equivalent / Formerly:{" "}
-                <span className="font-mono font-medium text-slate-800 dark:text-slate-200">
+                <span className="font-mono font-medium text-ink">
                   {equivalentCodes.join(", ")}
                 </span>
               </p>
@@ -4289,7 +4281,7 @@ function CourseDetailsModal({
           <button
             type="button"
             onClick={onClose}
-            className="rounded-xl p-1 text-lg leading-none text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+            className="rounded-lg p-1 text-lg leading-none text-ink-muted transition-colors hover:bg-surface-subtle hover:text-ink"
             aria-label="Close course details"
           >
             &times;
@@ -4300,20 +4292,20 @@ function CourseDetailsModal({
           <div
             className={`mt-3 rounded-xl border px-3 py-2 text-xs font-medium ${
               flag.cls === "bad"
-                ? "border-amber-200 bg-amber-50/90 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300"
-                : "border-sky-200 bg-sky-50/90 text-sky-900 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-300"
+                ? "border-warning-line bg-warning-soft text-warning"
+                : "border-accent-line bg-accent-soft text-accent-ink"
             }`}
           >
             {flag.icon === "i" ? "Notice:" : flag.icon} {flag.title}
           </div>
         )}
 
-        <div className="mt-4 space-y-2.5 border-t border-slate-100 pt-3 text-xs dark:border-slate-800">
+        <div className="mt-4 space-y-2.5 border-t border-line-subtle pt-3 text-xs">
           <div className="flex justify-between gap-4">
-            <span className="shrink-0 text-slate-500 dark:text-slate-400">
+            <span className="shrink-0 text-ink-muted">
               Offerings ({academicBaseYear}–{academicBaseYear + 1})
             </span>
-            <span className="text-right font-medium text-slate-800 dark:text-slate-200">
+            <span className="text-right font-medium text-ink">
               {yearOfferings.length > 0
                 ? yearOfferings.join(" · ")
                 : `Not offered in ${academicBaseYear}–${academicBaseYear + 1}`}
@@ -4322,10 +4314,10 @@ function CourseDetailsModal({
 
           {course && !("custom" in course) && (
             <div className="flex justify-between gap-4">
-              <span className="shrink-0 text-slate-500 dark:text-slate-400">
+              <span className="shrink-0 text-ink-muted">
                 Prerequisites
               </span>
-              <span className="text-right text-slate-700 dark:text-slate-300">
+              <span className="text-right text-ink-secondary">
                 {course.prerequisite_text ||
                   (course.prerequisite_codes.length > 0
                     ? course.prerequisite_codes.join(", ")
@@ -4336,21 +4328,21 @@ function CourseDetailsModal({
 
           {countsToward.length > 0 && (
             <div className="flex items-start justify-between gap-4">
-              <span className="shrink-0 pt-0.5 text-slate-500 dark:text-slate-400">
+              <span className="shrink-0 pt-0.5 text-ink-muted">
                 Counts toward
               </span>
               <div className="flex flex-wrap justify-end gap-1.5">
                 {countsToward.map((entry) => {
                   const badgeClass =
                     entry.tier === "major-core"
-                      ? "border-sky-200/90 bg-sky-50/90 font-semibold text-sky-800 dark:border-sky-800/80 dark:bg-sky-950/60 dark:text-sky-200"
+                      ? "border-accent-line bg-accent-soft font-medium text-accent-ink"
                       : entry.tier === "minor-core"
-                        ? "border-violet-200/90 bg-violet-50/90 font-semibold text-violet-800 dark:border-violet-800/80 dark:bg-violet-950/60 dark:text-violet-200"
+                        ? "border-line-strong bg-secondary-soft font-medium text-ink"
                         : entry.tier === "major-elective"
-                          ? "border-emerald-200/80 bg-emerald-50/75 font-medium text-emerald-800 dark:border-emerald-800/70 dark:bg-emerald-950/50 dark:text-emerald-300"
+                          ? "border-positive-line bg-positive-soft font-medium text-positive"
                           : entry.tier === "minor-elective"
-                            ? "border-violet-200/70 bg-violet-50/50 text-violet-700 dark:border-violet-800/60 dark:bg-violet-950/35 dark:text-violet-300"
-                            : "border-slate-200/90 bg-slate-50/90 text-slate-700 dark:border-slate-700/80 dark:bg-slate-800/80 dark:text-slate-300";
+                            ? "border-line bg-secondary-soft text-ink-secondary"
+                            : "border-line bg-surface-subtle text-ink-secondary";
 
                   return (
                     <span
@@ -4360,7 +4352,7 @@ function CourseDetailsModal({
                           ? "Actively satisfies this requirement in your current plan"
                           : "Eligible requirement bucket for this course"
                       }
-                      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] ${badgeClass}`}
+                      className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] ${badgeClass}`}
                     >
                       {entry.label}
                     </span>
@@ -4371,14 +4363,14 @@ function CourseDetailsModal({
           )}
         </div>
 
-        <div className="mt-5 flex items-center justify-between gap-2 border-t border-slate-100 pt-3 dark:border-slate-800">
+        <div className="mt-5 flex items-center justify-between gap-2 border-t border-line-subtle pt-3">
           <div>
             {course && !("custom" in course) && course.calendar_url && (
               <a
                 href={course.calendar_url}
                 target="_blank"
                 rel="noreferrer"
-                className="text-xs font-medium text-sky-600 hover:underline dark:text-sky-400"
+                className="text-xs font-medium text-accent-ink hover:underline"
               >
                 View in Academic Calendar &rarr;
               </a>
@@ -4388,14 +4380,14 @@ function CourseDetailsModal({
             <button
               type="button"
               onClick={onRemove}
-              className="rounded-xl border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-600 transition-colors hover:bg-rose-50 dark:border-rose-900/60 dark:text-rose-400 dark:hover:bg-rose-950/40"
+              className="rounded-lg border border-danger-line px-3 py-1.5 text-xs font-medium text-danger transition-colors hover:bg-danger-soft"
             >
               Remove from term
             </button>
             <button
               type="button"
               onClick={onClose}
-              className="rounded-xl bg-slate-900 px-3.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-slate-200"
+              className="rounded-lg bg-brand px-3.5 py-1.5 text-xs font-medium text-brand-fg transition-colors hover:bg-brand-hover"
             >
               Close
             </button>

@@ -2,7 +2,6 @@
 
 import React, { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
-import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import type * as LeafletType from "leaflet";
 import {
@@ -1348,18 +1347,12 @@ export function CampusMapView() {
   };
 
   return (
-    <div className="relative flex h-[calc(100dvh-var(--site-nav-height,2.75rem))] w-full flex-col overflow-hidden bg-slate-100 font-sans text-slate-900 lg:h-[calc(100vh-var(--site-nav-height,2.75rem))] dark:bg-zinc-950 dark:text-zinc-100">
+    <div className="relative flex h-[calc(100dvh-var(--site-nav-height,2.75rem))] w-full flex-col overflow-hidden bg-canvas font-sans text-ink lg:h-[calc(100vh-var(--site-nav-height,2.75rem))]">
       {/* Compact Top Navigation Bar */}
-      <header className="relative z-30 flex w-full flex-wrap items-center gap-x-2 gap-y-2 border-b border-slate-200 bg-white px-2.5 py-2 shadow-sm sm:px-3 md:flex-nowrap dark:border-zinc-800 dark:bg-zinc-900">
-        {/* Left: Home + Title */}
+      <header className="relative z-30 flex w-full flex-wrap items-center gap-x-3 gap-y-2 border-b border-line-subtle bg-surface px-3 py-2 sm:px-4 md:flex-nowrap">
+        {/* Left: Title */}
         <div className="order-1 flex min-w-0 items-center gap-2">
-          <Link
-            href="/"
-            className="inline-flex shrink-0 items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 hover:text-slate-900 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
-          >
-            &larr; Home
-          </Link>
-          <h1 className="truncate whitespace-nowrap text-sm font-bold tracking-tight text-sky-700 sm:text-base dark:text-sky-400">
+          <h1 className="truncate whitespace-nowrap text-sm font-semibold tracking-tight text-ink sm:text-base">
             Campus Map
           </h1>
         </div>
@@ -1371,7 +1364,7 @@ export function CampusMapView() {
               type="text"
               name="campus-room-search"
               autoComplete="off"
-              placeholder="Search room, building, course..."
+              placeholder="Search room, building, course"
               value={searchQuery}
               onFocus={() => setIsSearchOpen(true)}
               onChange={(e) => {
@@ -1393,7 +1386,7 @@ export function CampusMapView() {
                   setIsSearchOpen(false);
                 }
               }}
-              className="min-w-0 w-full rounded-lg border border-slate-300 bg-slate-50 py-1.5 pl-2.5 pr-7 text-base text-slate-900 placeholder:text-slate-500 outline-none transition focus:border-sky-500 focus:bg-white md:text-xs dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:placeholder:text-zinc-400"
+              className="min-w-0 w-full rounded-lg border border-line bg-surface-subtle py-1.5 pl-2.5 pr-7 text-base text-ink placeholder:text-ink-muted outline-none transition-colors focus:border-accent focus:bg-surface focus:ring-2 focus:ring-focus md:text-xs"
             />
             {searchQuery && (
               <button
@@ -1403,7 +1396,7 @@ export function CampusMapView() {
                   setSearchQuery("");
                   setIsSearchOpen(false);
                 }}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-sm text-slate-500 hover:text-slate-800 dark:text-zinc-400 dark:hover:text-zinc-200"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-sm text-ink-muted hover:text-ink"
               >
                 &times;
               </button>
@@ -1411,13 +1404,13 @@ export function CampusMapView() {
 
             {/* Autocomplete Dropdown */}
             {isSearchOpen && normSearchQuery.length > 0 && (
-              <div className="absolute left-0 top-full z-50 mt-1.5 w-full max-w-[calc(100vw-1.25rem)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl md:w-72 dark:border-zinc-700 dark:bg-zinc-900">
+              <div className="absolute left-0 top-full z-50 mt-1.5 w-full max-w-[calc(100vw-1.25rem)] overflow-hidden rounded-xl border border-line bg-surface shadow-[var(--shadow-lg)] md:w-72">
                 {searchSuggestions.length === 0 ? (
-                  <div className="px-3 py-2.5 text-xs font-medium text-slate-600 dark:text-zinc-400">
+                  <div className="px-3 py-2.5 text-xs font-medium text-ink-muted">
                     No matching rooms
                   </div>
                 ) : (
-                  <ul className="max-h-72 divide-y divide-slate-100 overflow-y-auto dark:divide-zinc-800">
+                  <ul className="max-h-72 divide-y divide-line-subtle overflow-y-auto">
                     {searchSuggestions.map(({ feature: feat, subRoomId }) => {
                       const st = getRoomStatus(feat, currentDay, currentSlotStart);
                       const code = getRoomDisplayCode(feat);
@@ -1439,24 +1432,24 @@ export function CampusMapView() {
                           <button
                             type="button"
                             onClick={() => handleSelectRoom(feat, subRoomId)}
-                            className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left transition hover:bg-sky-50/70 dark:hover:bg-zinc-800"
+                            className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left transition-colors hover:bg-surface-subtle"
                           >
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-1.5">
                                 <span className={`h-2 w-2 shrink-0 rounded-full ${dotClass}`} />
-                                <span className="truncate font-semibold text-slate-900 dark:text-zinc-100">
+                                <span className="truncate font-semibold text-ink">
                                   {code}
                                 </span>
-                                <span className="shrink-0 rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-700 dark:bg-zinc-800 dark:text-zinc-300">
+                                <span className="shrink-0 rounded bg-surface-subtle px-1.5 py-0.5 font-mono text-[10px] font-medium text-ink-secondary">
                                   Fl {formatFloor(feat.properties.floor)}
                                 </span>
                               </div>
-                              <p className="mt-0.5 truncate text-[11px] text-slate-600 dark:text-zinc-400">
+                              <p className="mt-0.5 truncate text-[11px] text-ink-muted">
                                 {feat.properties.building || "Campus"}
                                 {feat.properties.type ? ` \u2022 ${feat.properties.type}` : ""}
                               </p>
                             </div>
-                            <span className="shrink-0 text-[10px] font-bold text-slate-700 dark:text-zinc-300">
+                            <span className="shrink-0 text-[10px] font-medium text-ink-secondary">
                               {statusLabel}
                             </span>
                           </button>
@@ -1470,7 +1463,7 @@ export function CampusMapView() {
 
             {/* Small persistent message when search has no results and dropdown closed */}
             {!isSearchOpen && normSearchQuery.length > 0 && searchSuggestions.length === 0 && (
-              <div className="absolute left-0 top-full z-40 mt-1 rounded-lg border border-slate-200 bg-white/95 px-2.5 py-1 text-[11px] font-medium text-slate-600 shadow-md dark:border-zinc-700 dark:bg-zinc-900/95 dark:text-zinc-300">
+              <div className="absolute left-0 top-full z-40 mt-1 rounded-lg border border-line bg-surface/95 px-2.5 py-1 text-[11px] font-medium text-ink-secondary shadow-[var(--shadow-sm)]">
                 No matching rooms
               </div>
             )}
@@ -1484,10 +1477,10 @@ export function CampusMapView() {
               setIsTimePopoverOpen(false);
             }}
             aria-expanded={isBookableOpen}
-            className={`shrink-0 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${
+            className={`shrink-0 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
               isBookableOpen
-                ? "border-emerald-600 bg-emerald-600 text-white shadow-xs"
-                : "border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-200 dark:hover:bg-emerald-900/60"
+                ? "border-accent bg-accent text-accent-fg"
+                : "border-accent-line bg-accent-soft text-accent-ink hover:bg-accent hover:text-accent-fg"
             }`}
           >
             Book a room
@@ -1506,10 +1499,10 @@ export function CampusMapView() {
               }}
               aria-expanded={isMenuOpen}
               aria-label="Open map menu"
-              className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold transition ${
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
                 isMenuOpen
-                  ? "border-sky-600 bg-sky-600 text-white shadow-xs"
-                  : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                  ? "border-brand bg-brand text-brand-fg"
+                  : "border-line bg-surface-subtle text-ink-secondary hover:bg-surface-hover hover:text-ink"
               }`}
             >
               <svg
@@ -1517,7 +1510,7 @@ export function CampusMapView() {
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"
-                strokeWidth="2.2"
+                strokeWidth="1.75"
               >
                 <line x1="4" y1="6" x2="20" y2="6" />
                 <line x1="4" y1="12" x2="20" y2="12" />
@@ -1530,28 +1523,28 @@ export function CampusMapView() {
               <div
                 role="dialog"
                 aria-label="Campus map menu"
-                className="absolute right-0 top-full z-50 mt-2 max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-4.5rem)] w-80 max-w-[calc(100vw-1.25rem)] overflow-x-hidden overflow-y-auto rounded-2xl border border-slate-200 bg-white p-3 text-xs shadow-2xl sm:w-[352px] dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                className="absolute right-0 top-full z-50 mt-2 max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-4.5rem)] w-80 max-w-[calc(100vw-1.25rem)] overflow-x-hidden overflow-y-auto rounded-2xl border border-line bg-surface p-3 text-xs text-ink shadow-[var(--shadow-lg)] sm:w-[352px]"
               >
                 {/* Buildings */}
                 <div>
                   <div className="mb-1.5 flex items-center justify-between">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">
+                    <span className="text-xs font-medium text-ink-muted">
                       Buildings
                     </span>
                     {focusedBuilding !== "ALL" && (
                       <button
                         type="button"
                         onClick={() => selectBuildingFromMenu("ALL")}
-                        className="text-[11px] font-semibold text-sky-700 hover:underline dark:text-sky-400"
+                        className="text-[11px] font-medium text-accent-ink hover:underline"
                       >
-                        All Buildings
+                        All buildings
                       </button>
                     )}
                   </div>
 
                   <div className="space-y-2">
                     <div>
-                      <div className="mb-1 text-[11px] font-semibold text-slate-600 dark:text-zinc-300">
+                      <div className="mb-1 text-[11px] font-medium text-ink-secondary">
                         North
                       </div>
                       <div className="flex flex-col gap-1">
@@ -1563,10 +1556,10 @@ export function CampusMapView() {
                               key={bldg}
                               type="button"
                               onClick={() => selectBuildingFromMenu(bldg)}
-                              className={`flex w-full items-baseline gap-1.5 rounded-md border px-2.5 py-1 text-left text-[11px] transition ${
+                              className={`flex w-full items-baseline gap-1.5 rounded-md border px-2.5 py-1 text-left text-[11px] transition-colors ${
                                 isSelected
-                                  ? "border-sky-600 bg-sky-600 text-white"
-                                  : "border-slate-200 bg-slate-50 text-slate-800 hover:bg-slate-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700"
+                                  ? "border-brand bg-brand text-brand-fg"
+                                  : "border-line-subtle bg-surface-subtle text-ink hover:bg-surface-hover"
                               }`}
                             >
                               <span className="shrink-0 font-mono font-semibold">{bldg}</span>
@@ -1574,8 +1567,8 @@ export function CampusMapView() {
                                 <span
                                   className={`min-w-0 truncate font-normal ${
                                     isSelected
-                                      ? "text-sky-100"
-                                      : "text-slate-600 dark:text-zinc-300"
+                                      ? "opacity-85"
+                                      : "text-ink-muted"
                                   }`}
                                 >
                                   &mdash; {fullName}
@@ -1588,7 +1581,7 @@ export function CampusMapView() {
                     </div>
 
                     <div>
-                      <div className="mb-1 text-[11px] font-semibold text-slate-600 dark:text-zinc-300">
+                      <div className="mb-1 text-[11px] font-medium text-ink-secondary">
                         Downtown
                       </div>
                       <div className="flex flex-col gap-1">
@@ -1600,10 +1593,10 @@ export function CampusMapView() {
                               key={bldg}
                               type="button"
                               onClick={() => selectBuildingFromMenu(bldg)}
-                              className={`flex w-full items-baseline gap-1.5 rounded-md border px-2.5 py-1 text-left text-[11px] transition ${
+                              className={`flex w-full items-baseline gap-1.5 rounded-md border px-2.5 py-1 text-left text-[11px] transition-colors ${
                                 isSelected
-                                  ? "border-sky-600 bg-sky-600 text-white"
-                                  : "border-slate-200 bg-slate-50 text-slate-800 hover:bg-slate-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700"
+                                  ? "border-brand bg-brand text-brand-fg"
+                                  : "border-line-subtle bg-surface-subtle text-ink hover:bg-surface-hover"
                               }`}
                             >
                               <span className="shrink-0 font-mono font-semibold">{bldg}</span>
@@ -1611,8 +1604,8 @@ export function CampusMapView() {
                                 <span
                                   className={`min-w-0 truncate font-normal ${
                                     isSelected
-                                      ? "text-sky-100"
-                                      : "text-slate-600 dark:text-zinc-300"
+                                      ? "opacity-85"
+                                      : "text-ink-muted"
                                   }`}
                                 >
                                   &mdash; {fullName}
@@ -1629,24 +1622,24 @@ export function CampusMapView() {
                         type="button"
                         onClick={() => setIsMoreBuildingsOpen((prev) => !prev)}
                         aria-expanded={isMoreBuildingsOpen}
-                        className="flex w-full items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-left text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                        className="flex w-full items-center justify-between rounded-lg border border-line-subtle bg-surface-subtle px-2.5 py-1.5 text-left text-[11px] font-medium text-ink-secondary transition-colors hover:bg-surface-hover hover:text-ink"
                       >
                         <span>More buildings&hellip;</span>
                         <span>{isMoreBuildingsOpen ? "\u25B4" : "\u25BE"}</span>
                       </button>
 
                       {isMoreBuildingsOpen && (
-                        <div className="mt-1.5 rounded-lg border border-slate-200 bg-slate-50/70 p-2 dark:border-zinc-700 dark:bg-zinc-800/50">
+                        <div className="mt-1.5 rounded-lg border border-line-subtle bg-surface-subtle/60 p-2">
                           <input
                             type="text"
-                            placeholder="Search buildings..."
+                            placeholder="Search buildings"
                             value={buildingSearchQuery}
                             onChange={(e) => setBuildingSearchQuery(e.target.value)}
-                            className="mb-1.5 w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-base text-slate-900 placeholder:text-slate-500 outline-none focus:border-sky-500 md:text-[11px] dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:placeholder:text-zinc-400"
+                            className="mb-1.5 w-full rounded-md border border-line bg-surface px-2 py-1 text-base text-ink placeholder:text-ink-muted outline-none focus:border-accent md:text-[11px]"
                           />
                           <div className="flex max-h-40 flex-wrap gap-1 overflow-y-auto">
                             {filteredMoreBuildings.length === 0 ? (
-                              <span className="px-1 py-1 text-[11px] text-slate-500 dark:text-zinc-400">
+                              <span className="px-1 py-1 text-[11px] text-ink-muted">
                                 No matching buildings
                               </span>
                             ) : (
@@ -1658,10 +1651,10 @@ export function CampusMapView() {
                                     key={bldg}
                                     type="button"
                                     onClick={() => selectBuildingFromMenu(bldg)}
-                                    className={`inline-flex max-w-full items-baseline gap-1 rounded border px-2 py-0.5 text-left text-[11px] transition ${
+                                    className={`inline-flex max-w-full items-baseline gap-1 rounded border px-2 py-0.5 text-left text-[11px] transition-colors ${
                                       isSelected
-                                        ? "border-sky-600 bg-sky-600 text-white"
-                                        : "border-slate-200 bg-white text-slate-800 hover:bg-slate-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100 dark:hover:bg-zinc-700"
+                                        ? "border-brand bg-brand text-brand-fg"
+                                        : "border-line bg-surface text-ink hover:bg-surface-hover"
                                     }`}
                                   >
                                     <span className="shrink-0 font-mono font-semibold">
@@ -1671,8 +1664,8 @@ export function CampusMapView() {
                                       <span
                                         className={`min-w-0 truncate font-normal ${
                                           isSelected
-                                            ? "text-sky-100"
-                                            : "text-slate-600 dark:text-zinc-300"
+                                            ? "opacity-85"
+                                            : "text-ink-muted"
                                         }`}
                                       >
                                         &mdash; {fullName}
@@ -1690,8 +1683,8 @@ export function CampusMapView() {
                 </div>
 
                 {/* Map Layers */}
-                <div className="mt-3 border-t border-slate-200 pt-2.5 dark:border-zinc-800">
-                  <div className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-zinc-400">
+                <div className="mt-3 border-t border-line-subtle pt-2.5">
+                  <div className="mb-1.5 text-xs font-medium text-ink-muted">
                     Layers
                   </div>
                   <div className="flex flex-wrap gap-1.5">
@@ -1700,10 +1693,10 @@ export function CampusMapView() {
                         key={opt.key}
                         type="button"
                         onClick={() => switchBaseLayer(opt.key)}
-                        className={`whitespace-nowrap rounded-lg border px-3 py-1 text-center text-[11px] font-semibold transition ${
+                        className={`whitespace-nowrap rounded-lg border px-3 py-1 text-center text-[11px] font-medium transition-colors ${
                           activeBaseLayer === opt.key
-                            ? "border-sky-600 bg-sky-600 text-white"
-                            : "border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                            ? "border-brand bg-brand text-brand-fg"
+                            : "border-line-subtle bg-surface-subtle text-ink-secondary hover:bg-surface-hover hover:text-ink"
                         }`}
                       >
                         {opt.label.replace(" (Esri)", "")}
@@ -1721,9 +1714,9 @@ export function CampusMapView() {
       <div className="relative z-0 min-h-0 h-full w-full flex-1 overflow-hidden">
         {/* Loading Overlay */}
         {showInitialOverlay && (
-          <div className="absolute inset-0 z-[1100] flex flex-col items-center justify-center bg-white/80 px-6 text-center backdrop-blur-sm dark:bg-zinc-950/80">
-            <div className="h-10 w-10 animate-spin rounded-full border-4 border-sky-600 border-t-transparent" />
-            <p className="mt-3 text-sm font-semibold text-slate-700 dark:text-zinc-300">
+          <div className="absolute inset-0 z-[1100] flex flex-col items-center justify-center bg-surface/85 px-6 text-center backdrop-blur-sm">
+            <div className="h-9 w-9 animate-spin rounded-full border-3 border-accent border-t-transparent" />
+            <p className="mt-3 text-sm font-medium text-ink-secondary">
               Loading campus rooms &amp; live weekly schedules from Supabase...
             </p>
           </div>
@@ -1786,16 +1779,16 @@ export function CampusMapView() {
             <div
               onMouseDown={(e) => e.stopPropagation()}
               onTouchStart={(e) => e.stopPropagation()}
-              className="mt-1 rounded-xl border border-slate-200/95 bg-white/95 p-1 shadow-lg backdrop-blur-md dark:border-zinc-700 dark:bg-zinc-900/95"
+              className="mt-1 rounded-xl border border-line bg-surface/95 p-1 shadow-[var(--shadow-md)] backdrop-blur-md"
             >
               <select
                 aria-label="Filter by floor"
                 value={currentFloor}
                 onChange={(e) => setCurrentFloor(e.target.value)}
-                className="cursor-pointer rounded-lg bg-transparent px-1.5 py-1 text-xs font-bold text-slate-800 outline-none dark:text-zinc-100"
+                className="cursor-pointer rounded-lg bg-transparent px-1.5 py-1 text-xs font-medium text-ink outline-none"
               >
                 {VERTICAL_FLOOR_KEYS.map((fl) => (
-                  <option key={fl} value={fl} className="dark:bg-zinc-900">
+                  <option key={fl} value={fl} className="bg-surface text-ink">
                     {fl === "ALL"
                       ? "All Floors"
                       : fl === "-10"
@@ -1848,7 +1841,7 @@ export function CampusMapView() {
           onMouseDown={(e) => e.stopPropagation()}
           onTouchStart={(e) => e.stopPropagation()}
           onWheel={(e) => e.stopPropagation()}
-          className={`absolute left-2.5 top-2.5 z-[1000] flex items-center gap-1.5 rounded-full border border-slate-200/95 bg-white/95 px-2.5 py-1 text-xs font-semibold text-slate-800 shadow-lg backdrop-blur-md lg:bottom-4 lg:top-auto dark:border-zinc-700 dark:bg-zinc-900/95 dark:text-zinc-100 ${
+          className={`absolute left-2.5 top-2.5 z-[1000] flex items-center gap-1.5 rounded-full border border-line bg-surface/95 px-2.5 py-1 text-xs font-medium text-ink shadow-[var(--shadow-md)] backdrop-blur-md lg:bottom-4 lg:top-auto ${
             selectedFeature ? "lg:left-[376px]" : "lg:left-4"
           }`}
         >
@@ -1974,32 +1967,32 @@ export function CampusMapView() {
       {/* Google Calendar-Style Weekly Schedule Modal (independent local week state) */}
       {activeModalFeature && (
         <ModalBackdrop onClose={() => setActiveModalFeature(null)}>
-          <div className="flex h-[94dvh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl lg:h-[90vh] dark:border-zinc-700 dark:bg-zinc-900">
+          <div className="flex h-[94dvh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-[var(--shadow-lg)] lg:h-[90vh]">
             {/* Modal Header */}
-            <div className="flex flex-col gap-2 border-b border-slate-200 px-3 py-2.5 lg:flex-row lg:flex-wrap lg:items-center lg:justify-between lg:gap-3 lg:px-6 lg:py-4 dark:border-zinc-800">
+            <div className="flex flex-col gap-2 border-b border-line-subtle px-3 py-2.5 lg:flex-row lg:flex-wrap lg:items-center lg:justify-between lg:gap-3 lg:px-6 lg:py-4">
               <div className="flex items-start justify-between gap-2 lg:block lg:min-w-0 lg:flex-1">
                 <div className="min-w-0 flex-1">
-                  <h2 className="truncate text-sm font-bold text-slate-900 lg:text-lg dark:text-zinc-100">
+                  <h2 className="truncate text-sm font-semibold text-ink lg:text-lg">
                     {activeModalSubRoom ? `${activeModalSubRoom} \u2022 ` : ""}
                     {activeModalFeature.properties.name}
-                    <span className="ml-2 hidden text-xs font-semibold text-sky-700 lg:inline dark:text-sky-400">
+                    <span className="ml-2 hidden font-mono text-xs font-medium text-accent-ink lg:inline">
                       ({modalWeekRangeText})
                     </span>
                   </h2>
-                  <p className="mt-0.5 truncate text-[11px] text-slate-600 lg:text-xs dark:text-zinc-300">
+                  <p className="mt-0.5 truncate text-[11px] text-ink-muted lg:text-xs">
                     <span className="hidden lg:inline">Building: </span>
-                    <strong>{activeModalFeature.properties.building || "—"}</strong>{" "}
+                    <strong className="font-medium text-ink">{activeModalFeature.properties.building || "—"}</strong>{" "}
                     &bull; Fl{" "}
-                    <strong>{formatFloor(activeModalFeature.properties.floor)}</strong> &bull;
+                    <strong className="font-medium text-ink">{formatFloor(activeModalFeature.properties.floor)}</strong> &bull;
                     Cap{" "}
-                    <strong>
+                    <strong className="font-medium text-ink">
                       {activeModalFeature.properties.isLibraryRoom &&
                       activeModalFeature.properties.minCapacity
                         ? `${activeModalFeature.properties.minCapacity}–${activeModalFeature.properties.capacity}`
                         : activeModalFeature.properties.capacity || "—"}
                     </strong>{" "}
                     &bull;{" "}
-                    <span className="font-semibold text-slate-800 dark:text-zinc-200">
+                    <span className="font-medium text-ink-secondary">
                       {modalWeekContextLabel}
                     </span>
                   </p>
@@ -2010,7 +2003,7 @@ export function CampusMapView() {
                   type="button"
                   onClick={() => setActiveModalFeature(null)}
                   aria-label="Close weekly schedule"
-                  className="shrink-0 rounded-full p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-800 lg:hidden dark:text-zinc-400 dark:hover:bg-zinc-800"
+                  className="shrink-0 rounded-lg p-1 text-ink-muted hover:bg-surface-subtle hover:text-ink lg:hidden"
                 >
                   ✕
                 </button>
@@ -2020,16 +2013,16 @@ export function CampusMapView() {
                 {/* Multi-Room Switcher for UP / U5 */}
                 {activeModalFeature.properties.isBuildingContainer &&
                   activeModalFeature.properties.rooms && (
-                    <div className="flex flex-wrap gap-1 rounded-lg border border-slate-200 bg-slate-100 p-0.5 dark:border-zinc-700 dark:bg-zinc-800">
+                    <div className="flex flex-wrap gap-1 rounded-lg border border-line bg-surface-subtle p-0.5">
                       {activeModalFeature.properties.rooms.map((rm) => (
                         <button
                           key={rm}
                           type="button"
                           onClick={() => setActiveModalSubRoom(rm)}
-                          className={`rounded px-2 py-0.5 text-[11px] font-bold transition lg:px-2.5 lg:py-1 lg:text-xs ${
+                          className={`rounded px-2 py-0.5 text-[11px] font-medium transition-colors lg:px-2.5 lg:py-1 lg:text-xs ${
                             activeModalSubRoom === rm
-                              ? "bg-sky-600 text-white shadow"
-                              : "text-slate-700 hover:text-slate-950 dark:text-zinc-300"
+                              ? "bg-brand text-brand-fg"
+                              : "text-ink-secondary hover:text-ink"
                           }`}
                         >
                           {rm}
@@ -2039,19 +2032,19 @@ export function CampusMapView() {
                   )}
 
                 {/* Independent Modal Week Switcher */}
-                <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-100 p-0.5 dark:border-zinc-700 dark:bg-zinc-800">
+                <div className="flex items-center gap-1 rounded-lg border border-line bg-surface-subtle p-0.5">
                   <button
                     type="button"
                     disabled={!modalCanGoPrevWeek}
                     onClick={() =>
                       setModalWeekStart(clampWeekStart(addDaysIso(modalEffectiveWeekStart, -7)))
                     }
-                    className="rounded px-2 py-0.5 text-[11px] font-semibold text-slate-700 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-40 lg:py-1 lg:text-xs dark:text-zinc-200 dark:hover:bg-zinc-700"
+                    className="rounded px-2 py-0.5 text-[11px] font-medium text-ink-secondary transition-colors hover:bg-surface hover:text-ink disabled:cursor-not-allowed disabled:opacity-40 lg:py-1 lg:text-xs"
                   >
                     &larr; <span className="hidden lg:inline">Prev Week</span>
                     <span className="lg:hidden">Prev</span>
                   </button>
-                  <span className="px-1 text-[11px] font-bold text-slate-800 lg:px-2 lg:text-xs dark:text-zinc-100">
+                  <span className="px-1 font-mono text-[11px] font-medium text-ink lg:px-2 lg:text-xs">
                     {modalWeekLoading ? "Loading…" : modalWeekRangeText}
                   </span>
                   <button
@@ -2060,7 +2053,7 @@ export function CampusMapView() {
                     onClick={() =>
                       setModalWeekStart(clampWeekStart(addDaysIso(modalEffectiveWeekStart, 7)))
                     }
-                    className="rounded px-2 py-0.5 text-[11px] font-semibold text-slate-700 transition hover:bg-white disabled:cursor-not-allowed disabled:opacity-40 lg:py-1 lg:text-xs dark:text-zinc-200 dark:hover:bg-zinc-700"
+                    className="rounded px-2 py-0.5 text-[11px] font-medium text-ink-secondary transition-colors hover:bg-surface hover:text-ink disabled:cursor-not-allowed disabled:opacity-40 lg:py-1 lg:text-xs"
                   >
                     <span className="hidden lg:inline">Next Week</span>
                     <span className="lg:hidden">Next</span> &rarr;
@@ -2072,7 +2065,7 @@ export function CampusMapView() {
                   type="button"
                   onClick={() => setModalWeekStart(getLiveTorontoMapState().weekStart)}
                   title="Jump modal back to current week"
-                  className="rounded-lg border border-emerald-400 bg-emerald-50 px-2 py-1 text-[11px] font-bold text-emerald-800 transition hover:bg-emerald-100 lg:px-2.5 lg:text-xs dark:border-emerald-700 dark:bg-emerald-950/70 dark:text-emerald-200 dark:hover:bg-emerald-900/70"
+                  className="rounded-lg border border-positive-line bg-positive-soft px-2 py-1 text-[11px] font-medium text-positive transition-opacity hover:opacity-90 lg:px-2.5 lg:text-xs"
                 >
                   This Week
                 </button>
@@ -2082,7 +2075,7 @@ export function CampusMapView() {
                   type="button"
                   onClick={() => setActiveModalFeature(null)}
                   aria-label="Close weekly schedule"
-                  className="hidden rounded-full p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800 lg:inline-flex dark:text-zinc-400 dark:hover:bg-zinc-800"
+                  className="hidden rounded-lg p-1.5 text-ink-muted hover:bg-surface-subtle hover:text-ink lg:inline-flex"
                 >
                   ✕
                 </button>

@@ -290,14 +290,14 @@ export function ProfileView({
         <>
           <Link
             href="/"
-            className="inline-flex w-fit items-center gap-1.5 text-xs font-medium text-slate-500 transition-colors hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
+            className="inline-flex w-fit items-center gap-1.5 text-xs font-medium text-ink-muted transition-colors hover:text-ink"
           >
             <svg
               className="h-3.5 w-3.5"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
-              strokeWidth="2.2"
+              strokeWidth="1.75"
               strokeLinecap="round"
               strokeLinejoin="round"
               aria-hidden="true"
@@ -309,10 +309,10 @@ export function ProfileView({
           </Link>
 
           <header className="mt-6">
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white">
+            <h1 className="text-2xl font-semibold tracking-tight text-ink">
               {displayName}
             </h1>
-            <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
+            <p className="mt-1 text-sm text-ink-muted">
               {email}
             </p>
           </header>
@@ -326,13 +326,13 @@ export function ProfileView({
       {errorMessage && (
         <div
           role="alert"
-          className={`${embedded ? "mb-4" : "mt-5"} flex items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-800 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200`}
+          className={`${embedded ? "mb-4" : "mt-5"} flex items-center justify-between gap-3 rounded-xl border border-danger-line bg-danger-soft px-4 py-3 text-xs text-danger`}
         >
           <span>{errorMessage}</span>
           <button
             type="button"
             onClick={() => setErrorMessage(null)}
-            className="shrink-0 font-semibold hover:underline"
+            className="shrink-0 font-medium hover:underline"
           >
             Dismiss
           </button>
@@ -340,21 +340,21 @@ export function ProfileView({
       )}
 
       <section
-        className={`${embedded ? "" : "mt-6 "}divide-y divide-slate-100 overflow-visible rounded-2xl border border-[#BFD7F2]/80 bg-white shadow-[0_10px_30px_-18px_rgba(0,60,113,0.16)] dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-900 dark:shadow-black/45`}
+        className={`${embedded ? "" : "mt-6 "}divide-y divide-line-subtle overflow-visible rounded-xl border border-line bg-surface shadow-[var(--shadow-sm)]`}
       >
         {/* Row 1: Year */}
-        <div className="px-5 py-5 sm:px-6">
+        <div className="px-5 py-4">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+              <p className="text-xs text-ink-muted">
                 Year
               </p>
               {editingField !== "year" && (
                 <p
-                  className={`mt-1 text-sm font-semibold ${
+                  className={`mt-0.5 text-sm font-medium ${
                     yearLabel
-                      ? "text-slate-900 dark:text-white"
-                      : "text-slate-400 dark:text-slate-500"
+                      ? "text-ink"
+                      : "text-ink-muted"
                   }`}
                 >
                   {yearLabel ?? "Not set"}
@@ -365,13 +365,13 @@ export function ProfileView({
             {editingField !== "year" && (
               <div className="flex shrink-0 items-center gap-2.5">
                 {savedField === "year" && (
-                  <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                  <span className="inline-flex items-center gap-1 text-xs font-medium text-positive">
                     <svg
                       className="h-3.5 w-3.5"
                       viewBox="0 0 24 24"
                       fill="none"
                       stroke="currentColor"
-                      strokeWidth="2.4"
+                      strokeWidth="2"
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       aria-hidden="true"
@@ -385,7 +385,7 @@ export function ProfileView({
                   type="button"
                   onClick={() => startEdit("year")}
                   disabled={saving}
-                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-[#003C71]/35 focus-visible:outline-none disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                  className="rounded-lg border border-line bg-surface px-3 py-1.5 text-xs font-medium text-ink-secondary transition-colors hover:bg-surface-subtle hover:text-ink focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none disabled:opacity-50"
                 >
                   Change
                 </button>
@@ -394,7 +394,7 @@ export function ProfileView({
           </div>
 
           {editingField === "year" && (
-            <div className="mt-3.5">
+            <div className="mt-3">
               <div
                 role="radiogroup"
                 aria-label="Year of study"
@@ -411,22 +411,22 @@ export function ProfileView({
                       onClick={() =>
                         setDraftYear(selected ? null : option.value)
                       }
-                      className={`flex w-full items-center gap-3 rounded-xl border px-3.5 py-2.5 text-left text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:ring-[#003C71]/35 focus-visible:outline-none ${
+                      className={`flex w-full items-center gap-3 rounded-lg border px-3 py-2 text-left text-sm font-medium transition-colors focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none ${
                         selected
-                          ? "border-[#003C71] bg-[#EBF3FC]/90 text-[#003C71] dark:border-sky-400 dark:bg-sky-950/50 dark:text-sky-200"
-                          : "border-slate-200 bg-white text-slate-700 hover:border-[#9AC0EB] hover:bg-slate-50/70 dark:border-slate-700/80 dark:bg-slate-950/40 dark:text-slate-200 dark:hover:border-sky-700 dark:hover:bg-slate-800/70"
+                          ? "border-accent-line bg-accent-soft text-ink"
+                          : "border-line bg-surface text-ink-secondary hover:border-line-strong hover:bg-surface-subtle"
                       }`}
                     >
                       <span
                         aria-hidden="true"
                         className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2 transition-colors ${
                           selected
-                            ? "border-[#003C71] bg-[#003C71] dark:border-sky-400 dark:bg-sky-400"
-                            : "border-slate-300 bg-white dark:border-slate-600 dark:bg-slate-900"
+                            ? "border-accent bg-accent"
+                            : "border-line-strong bg-surface"
                         }`}
                       >
                         {selected && (
-                          <span className="h-1.5 w-1.5 rounded-full bg-white dark:bg-slate-950" />
+                          <span className="h-1.5 w-1.5 rounded-full bg-accent-fg" />
                         )}
                       </span>
                       <span>{option.title}</span>
@@ -435,12 +435,12 @@ export function ProfileView({
                 })}
               </div>
 
-              <div className="mt-3.5 flex items-center justify-end gap-2">
+              <div className="mt-3 flex items-center justify-end gap-2">
                 <button
                   type="button"
                   onClick={cancelEdit}
                   disabled={saving}
-                  className="rounded-lg px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+                  className="rounded-lg px-3 py-1.5 text-xs font-medium text-ink-secondary transition-colors hover:bg-surface-subtle hover:text-ink disabled:opacity-50"
                 >
                   Cancel
                 </button>
@@ -448,7 +448,7 @@ export function ProfileView({
                   type="button"
                   onClick={handleSaveYear}
                   disabled={saving}
-                  className="rounded-lg bg-[#003C71] px-3.5 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-[#002D56] disabled:opacity-50 dark:bg-sky-500 dark:text-slate-950 dark:hover:bg-sky-400"
+                  className="rounded-lg bg-brand px-3.5 py-1.5 text-xs font-medium text-brand-fg transition-colors hover:bg-brand-hover disabled:opacity-50"
                 >
                   {saving ? "Saving..." : "Save"}
                 </button>
@@ -458,18 +458,18 @@ export function ProfileView({
         </div>
 
         {/* Row 2: Degree */}
-        <div className="px-5 py-5 sm:px-6">
+        <div className="px-5 py-4">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+              <p className="text-xs text-ink-muted">
                 Degree
               </p>
               {editingField !== "degree" && (
                 <p
-                  className={`mt-1 text-sm font-semibold ${
+                  className={`mt-0.5 text-sm font-medium ${
                     selectedDegree
-                      ? "text-slate-900 dark:text-white"
-                      : "text-slate-400 dark:text-slate-500"
+                      ? "text-ink"
+                      : "text-ink-muted"
                   }`}
                 >
                   {selectedDegree?.name ?? "Not set"}
@@ -480,13 +480,13 @@ export function ProfileView({
             {editingField !== "degree" && (
               <div className="flex shrink-0 items-center gap-2.5">
                 {savedField === "degree" && (
-                  <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                  <span className="inline-flex items-center gap-1 text-xs font-medium text-positive">
                     <svg
                       className="h-3.5 w-3.5"
                       viewBox="0 0 24 24"
                       fill="none"
                       stroke="currentColor"
-                      strokeWidth="2.4"
+                      strokeWidth="2"
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       aria-hidden="true"
@@ -500,7 +500,7 @@ export function ProfileView({
                   type="button"
                   onClick={() => startEdit("degree")}
                   disabled={saving}
-                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-[#003C71]/35 focus-visible:outline-none disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                  className="rounded-lg border border-line bg-surface px-3 py-1.5 text-xs font-medium text-ink-secondary transition-colors hover:bg-surface-subtle hover:text-ink focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none disabled:opacity-50"
                 >
                   Change
                 </button>
@@ -509,25 +509,25 @@ export function ProfileView({
           </div>
 
           {editingField === "degree" && (
-            <div className="mt-3.5">
+            <div className="mt-3">
               <ProgramCombobox
                 options={degreeOptions}
                 value={draftDegreeId}
                 selectedProgram={draftSelectedDegree}
                 onChange={setDraftDegreeId}
-                placeholder="Select or type your degree..."
+                placeholder="Select or type your degree"
                 ariaLabel="Degree program"
-                emptyMessage="No matching degrees found."
+                emptyMessage="No matching degrees found"
                 showCredential
                 disabled={saving}
               />
 
-              <div className="mt-3.5 flex items-center justify-end gap-2">
+              <div className="mt-3 flex items-center justify-end gap-2">
                 <button
                   type="button"
                   onClick={cancelEdit}
                   disabled={saving}
-                  className="rounded-lg px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+                  className="rounded-lg px-3 py-1.5 text-xs font-medium text-ink-secondary transition-colors hover:bg-surface-subtle hover:text-ink disabled:opacity-50"
                 >
                   Cancel
                 </button>
@@ -535,7 +535,7 @@ export function ProfileView({
                   type="button"
                   onClick={handleSaveDegree}
                   disabled={saving}
-                  className="rounded-lg bg-[#003C71] px-3.5 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-[#002D56] disabled:opacity-50 dark:bg-sky-500 dark:text-slate-950 dark:hover:bg-sky-400"
+                  className="rounded-lg bg-brand px-3.5 py-1.5 text-xs font-medium text-brand-fg transition-colors hover:bg-brand-hover disabled:opacity-50"
                 >
                   {saving ? "Saving..." : "Save"}
                 </button>
@@ -545,18 +545,18 @@ export function ProfileView({
         </div>
 
         {/* Row 3: Minor */}
-        <div className="px-5 py-5 sm:px-6">
+        <div className="px-5 py-4">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+              <p className="text-xs text-ink-muted">
                 Minor
               </p>
               {editingField !== "minor" && (
                 <p
-                  className={`mt-1 text-sm font-semibold ${
+                  className={`mt-0.5 text-sm font-medium ${
                     selectedMinor
-                      ? "text-slate-900 dark:text-white"
-                      : "text-slate-400 dark:text-slate-500"
+                      ? "text-ink"
+                      : "text-ink-muted"
                   }`}
                 >
                   {selectedMinor?.name ?? "None"}
@@ -567,13 +567,13 @@ export function ProfileView({
             {editingField !== "minor" && (
               <div className="flex shrink-0 items-center gap-2.5">
                 {savedField === "minor" && (
-                  <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
+                  <span className="inline-flex items-center gap-1 text-xs font-medium text-positive">
                     <svg
                       className="h-3.5 w-3.5"
                       viewBox="0 0 24 24"
                       fill="none"
                       stroke="currentColor"
-                      strokeWidth="2.4"
+                      strokeWidth="2"
                       strokeLinecap="round"
                       strokeLinejoin="round"
                       aria-hidden="true"
@@ -587,7 +587,7 @@ export function ProfileView({
                   type="button"
                   onClick={() => startEdit("minor")}
                   disabled={saving}
-                  className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-[#003C71]/35 focus-visible:outline-none disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
+                  className="rounded-lg border border-line bg-surface px-3 py-1.5 text-xs font-medium text-ink-secondary transition-colors hover:bg-surface-subtle hover:text-ink focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none disabled:opacity-50"
                 >
                   Change
                 </button>
@@ -596,7 +596,7 @@ export function ProfileView({
           </div>
 
           {editingField === "minor" && (
-            <div className="mt-3.5">
+            <div className="mt-3">
               <ProgramCombobox
                 options={minorOptions}
                 value={draftMinorId}
@@ -604,17 +604,17 @@ export function ProfileView({
                 onChange={setDraftMinorId}
                 placeholder="None (optional)"
                 ariaLabel="Minor program"
-                emptyMessage="No matching minors found."
+                emptyMessage="No matching minors found"
                 showCredential={false}
                 disabled={saving}
               />
 
-              <div className="mt-3.5 flex items-center justify-end gap-2">
+              <div className="mt-3 flex items-center justify-end gap-2">
                 <button
                   type="button"
                   onClick={cancelEdit}
                   disabled={saving}
-                  className="rounded-lg px-3 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+                  className="rounded-lg px-3 py-1.5 text-xs font-medium text-ink-secondary transition-colors hover:bg-surface-subtle hover:text-ink disabled:opacity-50"
                 >
                   Cancel
                 </button>
@@ -622,7 +622,7 @@ export function ProfileView({
                   type="button"
                   onClick={handleSaveMinor}
                   disabled={saving}
-                  className="rounded-lg bg-[#003C71] px-3.5 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-[#002D56] disabled:opacity-50 dark:bg-sky-500 dark:text-slate-950 dark:hover:bg-sky-400"
+                  className="rounded-lg bg-brand px-3.5 py-1.5 text-xs font-medium text-brand-fg transition-colors hover:bg-brand-hover disabled:opacity-50"
                 >
                   {saving ? "Saving..." : "Save"}
                 </button>

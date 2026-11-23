@@ -38,14 +38,14 @@ async function LastUpdatedNotice() {
           href={info.actionsUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="underline decoration-slate-300/70 underline-offset-2 transition-colors hover:text-slate-600 dark:decoration-slate-700 dark:hover:text-slate-300"
+          className="underline decoration-line-strong underline-offset-2 transition-colors hover:text-ink"
         >
           <time dateTime={info.timestamp}>
             {formatLastUpdated(info.timestamp)}
           </time>
         </a>
       </span>
-      <span aria-hidden="true" className="text-slate-300 dark:text-slate-700">
+      <span aria-hidden="true" className="text-line-strong">
         &bull;
       </span>
     </>
@@ -55,13 +55,13 @@ async function LastUpdatedNotice() {
 function HomeFooter() {
   return (
     <footer className="relative z-10 mx-auto w-full max-w-5xl px-4 pb-6 text-center sm:px-6 lg:px-8">
-      <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] text-slate-400/90 dark:text-slate-500">
+      <div className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-ink-muted">
         <Suspense fallback={null}>
           <LastUpdatedNotice />
         </Suspense>
         <Link
           href="/privacy-policy"
-          className="underline decoration-slate-300/70 underline-offset-2 transition-colors hover:text-slate-600 dark:decoration-slate-700 dark:hover:text-slate-300"
+          className="underline decoration-line-strong underline-offset-2 transition-colors hover:text-ink"
         >
           Privacy Policy
         </Link>

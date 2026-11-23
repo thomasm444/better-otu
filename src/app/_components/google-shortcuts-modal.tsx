@@ -301,21 +301,21 @@ export function GoogleShortcutsModal({
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[#0b1018]/55 p-4 backdrop-blur-sm"
     >
       <form
         onSubmit={handleSave}
-        className="flex max-h-[90vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900"
+        className="flex max-h-[90vh] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-[var(--shadow-lg)]"
       >
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+        <div className="flex items-center justify-between border-b border-line-subtle px-5 py-4">
           <div className="flex items-center gap-2.5">
-            <span className="flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800">
-              <GoogleLogoIcon className="h-4.5 w-4.5" />
+            <span className="flex h-8 w-8 items-center justify-center rounded-full border border-line bg-surface-subtle">
+              <GoogleLogoIcon className="h-4 w-4" />
             </span>
             <div>
-              <h2 className="text-base font-bold text-slate-900 dark:text-white">
-                Google Workspace Shortcuts
+              <h2 className="text-base font-semibold text-ink">
+                Google Workspace shortcuts
               </h2>
             </div>
           </div>
@@ -323,7 +323,7 @@ export function GoogleShortcutsModal({
             type="button"
             onClick={onClose}
             aria-label="Close modal"
-            className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800"
+            className="rounded-lg p-1.5 text-ink-muted transition-colors hover:bg-surface-subtle hover:text-ink"
           >
             &times;
           </button>
@@ -332,36 +332,36 @@ export function GoogleShortcutsModal({
         {/* Scrollable Body */}
         <div className="flex-1 space-y-5 overflow-y-auto px-5 py-4 text-xs">
           {/* Account Number Tutorial */}
-          <div className="rounded-xl border border-amber-200/80 bg-amber-50/70 p-3.5 dark:border-amber-900/60 dark:bg-amber-950/25">
+          <div className="rounded-xl border border-warning-line bg-warning-soft p-3.5">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
-                <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-amber-800 dark:text-amber-300">
-                  Tutorial
+                <span className="rounded-md bg-surface px-2 py-0.5 text-[11px] font-medium text-warning">
+                  Guide
                 </span>
-                <span className="font-bold text-slate-900 dark:text-slate-100">
+                <span className="font-medium text-ink">
                   How to find your Google account number
                 </span>
               </div>
               <button
                 type="button"
                 onClick={() => setShowTutorial((prev) => !prev)}
-                className="text-[11px] font-semibold text-[#003C71] hover:underline dark:text-sky-300"
+                className="text-xs font-medium text-accent-ink hover:underline"
               >
                 {showTutorial ? "Hide" : "Show"}
               </button>
             </div>
 
-            <p className="mt-1.5 text-[11px] leading-relaxed text-slate-700 dark:text-slate-300">
-              <strong className="font-bold text-amber-900 dark:text-amber-200">
+            <p className="mt-1.5 text-xs leading-relaxed text-ink-secondary">
+              <strong className="font-medium text-ink">
                 Only needed if you have multiple Google accounts
               </strong>{" "}
-              (otherwise leave as <code className="rounded bg-white/80 px-1 py-0.5 font-mono text-[10px] dark:bg-slate-800">0</code>). Open Gmail in your school account and copy the number after <code className="rounded bg-white/80 px-1 py-0.5 font-mono text-[10px] dark:bg-slate-800">/u/</code> in the URL:
+              (otherwise leave as <code className="rounded bg-surface px-1 py-0.5 font-mono text-[11px]">0</code>). Open Gmail in your school account and copy the number after <code className="rounded bg-surface px-1 py-0.5 font-mono text-[11px]">/u/</code> in the URL:
             </p>
 
             {showTutorial && (
               <div className="mt-2.5">
                 {/* Annotated Screenshot with Red Arrow pointing to 6 */}
-                <div className="relative overflow-hidden rounded-xl border border-slate-300/80 bg-[#1f2022] shadow-sm dark:border-slate-700">
+                <div className="relative overflow-hidden rounded-xl border border-line bg-[#1f2022]">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src="/images/google-authuser-example.png"
@@ -428,32 +428,32 @@ export function GoogleShortcutsModal({
           {/* Configured Google Accounts (School, Personal, or multiple numbers) */}
           <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600 dark:text-slate-300">
-                Google Accounts ({accounts.length})
+              <h3 className="text-xs font-medium text-ink-secondary">
+                Google accounts ({accounts.length})
               </h3>
               <button
                 type="button"
                 onClick={() => handleAddAccount(`Account ${accounts.length + 1}`)}
-                className="rounded-lg border border-[#BFD7F2] bg-[#DCEBFA]/60 px-2.5 py-1 text-[11px] font-semibold text-[#003C71] transition hover:bg-[#DCEBFA] dark:border-slate-700 dark:bg-slate-800 dark:text-sky-300"
+                className="rounded-lg border border-accent-line bg-accent-soft px-2.5 py-1 text-xs font-medium text-accent-ink transition-colors hover:bg-accent hover:text-accent-fg"
               >
-                + Add Another Number
+                + Add another number
               </button>
             </div>
 
             {accounts.length === 0 ? (
-              <p className="rounded-xl border border-dashed border-slate-300 p-4 text-center text-slate-500 dark:border-slate-700 dark:text-slate-400">
-                No Google accounts added. Click &ldquo;+ Add Another Number&rdquo; above.
+              <p className="rounded-xl border border-dashed border-line p-4 text-center text-ink-muted">
+                No Google accounts added. Click &ldquo;+ Add another number&rdquo; above.
               </p>
             ) : (
               accounts.map((acct) => (
                 <div
                   key={acct.id}
-                  className="rounded-xl border border-slate-200 bg-slate-50/60 p-3.5 dark:border-slate-800 dark:bg-slate-800/40"
+                  className="rounded-xl border border-line bg-surface-subtle/60 p-3.5"
                 >
                   <div className="flex flex-wrap items-center gap-2.5">
                     <div className="min-w-[130px] flex-1">
-                      <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                        Account Label
+                      <label className="block text-[11px] font-medium text-ink-muted">
+                        Account label
                       </label>
                       <input
                         type="text"
@@ -465,12 +465,12 @@ export function GoogleShortcutsModal({
                           }))
                         }
                         placeholder="School or Personal"
-                        className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-900 outline-none focus:border-[#003C71] dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                        className="mt-1 w-full rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs font-medium text-ink focus:border-accent focus:ring-2 focus:ring-focus focus:outline-none"
                       />
                     </div>
 
                     <div className="w-28">
-                      <label className="block text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                      <label className="block text-[11px] font-medium text-ink-muted">
                         Account # (/u/x)
                       </label>
                       <input
@@ -485,7 +485,7 @@ export function GoogleShortcutsModal({
                             authIndex: Number.isNaN(parsed) ? 0 : Math.max(0, parsed),
                           }));
                         }}
-                        className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 font-mono text-xs font-bold text-slate-900 outline-none focus:border-[#003C71] dark:border-slate-700 dark:bg-slate-900 dark:text-white"
+                        className="mt-1 w-full rounded-lg border border-line bg-surface px-2.5 py-1.5 font-mono text-xs font-medium text-ink focus:border-accent focus:ring-2 focus:ring-focus focus:outline-none"
                       />
                     </div>
 
@@ -493,7 +493,7 @@ export function GoogleShortcutsModal({
                       type="button"
                       onClick={() => handleRemoveAccount(acct.id)}
                       title="Remove this Google account"
-                      className="mt-4 rounded-lg border border-rose-200 px-2.5 py-1.5 text-[11px] font-semibold text-rose-600 transition hover:bg-rose-50 dark:border-rose-900/60 dark:text-rose-400 dark:hover:bg-rose-950/40"
+                      className="mt-4 rounded-lg border border-danger-line px-2.5 py-1.5 text-xs font-medium text-danger transition-colors hover:bg-danger-soft"
                     >
                       Remove
                     </button>
@@ -501,8 +501,8 @@ export function GoogleShortcutsModal({
 
                   {/* Show / Hide Google Services */}
                   <div className="mt-3">
-                    <span className="mb-1.5 block text-[10px] font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-                      Show / Hide Links
+                    <span className="mb-1.5 block text-[11px] font-medium text-ink-muted">
+                      Show / hide links
                     </span>
 
                     <div className="flex flex-wrap gap-1.5">
@@ -514,10 +514,10 @@ export function GoogleShortcutsModal({
                             type="button"
                             aria-pressed={enabled}
                             onClick={() => toggleService(acct.id, svc.id)}
-                            className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition ${
+                            className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-medium transition-colors ${
                               enabled
-                                ? "border-[#003C71]/35 bg-white text-slate-900 shadow-2xs dark:border-sky-500/40 dark:bg-slate-900 dark:text-white"
-                                : "border-slate-200 bg-slate-100/60 text-slate-400 line-through dark:border-slate-700 dark:bg-slate-800/50 dark:text-slate-500"
+                                ? "border-accent-line bg-surface text-ink"
+                                : "border-line-subtle bg-surface-subtle text-ink-muted line-through"
                             }`}
                           >
                             <GoogleServiceIcon
@@ -537,15 +537,15 @@ export function GoogleShortcutsModal({
 
           {/* Multiple Google Meet Links (?authuser=x) */}
           {accounts.length > 0 && (
-            <div className="space-y-2.5 rounded-xl border border-slate-200 p-3.5 dark:border-slate-800">
+            <div className="space-y-2.5 rounded-xl border border-line p-3.5">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5">
                   <GoogleMeetIcon className="h-4 w-4" />
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">
-                    Google Meet Links
+                  <h3 className="text-xs font-medium text-ink">
+                    Google Meet links
                   </h3>
                 </div>
-                <span className="font-mono text-[10px] text-slate-500 dark:text-slate-400">
+                <span className="font-mono text-[11px] text-ink-muted">
                   Auto-adds ?authuser=x
                 </span>
               </div>
@@ -553,24 +553,24 @@ export function GoogleShortcutsModal({
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-12">
                 <input
                   type="text"
-                  placeholder="Label (e.g. CSCI 1030U)"
+                  placeholder="Label (CSCI 1030U)"
                   value={meetLabel}
                   onChange={(e) => setMeetLabel(e.target.value)}
-                  className="rounded-lg border border-slate-300 bg-transparent px-2.5 py-1.5 text-xs text-slate-900 outline-none focus:border-[#003C71] sm:col-span-4 dark:border-slate-700 dark:text-white"
+                  className="rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs text-ink placeholder:text-ink-muted focus:border-accent focus:ring-2 focus:ring-focus focus:outline-none sm:col-span-4"
                 />
                 <input
                   type="text"
                   placeholder="meet.google.com/abc-defg-hij"
                   value={meetUrlInput}
                   onChange={(e) => setMeetUrlInput(e.target.value)}
-                  className="rounded-lg border border-slate-300 bg-transparent px-2.5 py-1.5 text-xs text-slate-900 outline-none focus:border-[#003C71] sm:col-span-5 dark:border-slate-700 dark:text-white"
+                  className="rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs text-ink placeholder:text-ink-muted focus:border-accent focus:ring-2 focus:ring-focus focus:outline-none sm:col-span-5"
                 />
                 {accounts.length > 1 && (
                   <select
                     value={effectiveMeetAccountId}
                     onChange={(e) => setMeetAccountId(e.target.value)}
                     aria-label="Account for Meet link"
-                    className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs font-semibold text-slate-800 outline-none focus:border-[#003C71] sm:col-span-3 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    className="rounded-lg border border-line bg-surface px-2 py-1.5 text-xs font-medium text-ink focus:border-accent focus:ring-2 focus:ring-focus focus:outline-none sm:col-span-3"
                   >
                     {accounts.map((a) => (
                       <option key={a.id} value={a.id}>
@@ -583,11 +583,11 @@ export function GoogleShortcutsModal({
                   type="button"
                   onClick={handleAddMeetLink}
                   disabled={!meetUrlInput.trim()}
-                  className={`rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-45 ${
+                  className={`rounded-lg bg-accent px-3 py-1.5 text-xs font-medium text-accent-fg transition-colors hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-45 ${
                     accounts.length > 1 ? "sm:col-span-12" : "sm:col-span-3"
                   }`}
                 >
-                  + Add Meet Link
+                  + Add Meet link
                 </button>
               </div>
 
@@ -602,20 +602,20 @@ export function GoogleShortcutsModal({
                     return (
                       <li
                         key={m.id}
-                        className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1.5 dark:border-slate-800 dark:bg-slate-800/50"
+                        className="flex items-center justify-between gap-2 rounded-lg border border-line-subtle bg-surface-subtle px-2.5 py-1.5"
                       >
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5">
-                            <span className="truncate font-semibold text-slate-900 dark:text-white">
+                            <span className="truncate font-medium text-ink">
                               {m.label}
                             </span>
                             {acct && (
-                              <span className="rounded bg-slate-200/80 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-slate-700 dark:bg-slate-700 dark:text-slate-200">
+                              <span className="rounded bg-surface-hover px-1.5 py-0.5 font-mono text-[10px] font-medium text-ink-secondary">
                                 {acct.label} #{acct.authIndex}
                               </span>
                             )}
                           </div>
-                          <p className="truncate font-mono text-[10px] text-slate-500 dark:text-slate-400">
+                          <p className="truncate font-mono text-[11px] text-ink-muted">
                             {previewUrl}
                           </p>
                         </div>
@@ -623,7 +623,7 @@ export function GoogleShortcutsModal({
                           type="button"
                           onClick={() => handleRemoveMeetLink(m.id)}
                           aria-label={`Remove ${m.label}`}
-                          className="rounded px-1.5 py-0.5 text-xs font-bold text-slate-400 hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/40"
+                          className="rounded px-1.5 py-0.5 text-xs text-ink-muted transition-colors hover:bg-danger-soft hover:text-danger"
                         >
                           &times;
                         </button>
@@ -637,19 +637,19 @@ export function GoogleShortcutsModal({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-2 border-t border-slate-100 px-5 py-3.5 dark:border-slate-800">
+        <div className="flex items-center justify-end gap-2 border-t border-line-subtle px-5 py-3.5">
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800"
+            className="rounded-lg px-3 py-1.5 text-xs font-medium text-ink-secondary transition-colors hover:bg-surface-subtle hover:text-ink"
           >
             Cancel
           </button>
           <button
             type="submit"
-            className="rounded-lg bg-[#003C71] px-4 py-1.5 text-xs font-semibold text-white transition hover:bg-[#002D56]"
+            className="rounded-lg bg-brand px-4 py-1.5 text-xs font-medium text-brand-fg transition-colors hover:bg-brand-hover"
           >
-            Save Google Links
+            Save Google links
           </button>
         </div>
       </form>

@@ -53,21 +53,21 @@ export function ProfilePreferencesCard() {
   }, []);
 
   return (
-    <section className="divide-y divide-slate-100 rounded-2xl border border-[#BFD7F2]/80 bg-white shadow-[0_10px_30px_-18px_rgba(0,60,113,0.16)] dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-900 dark:shadow-black/45">
+    <section className="divide-y divide-line-subtle rounded-xl border border-line bg-surface shadow-[var(--shadow-sm)]">
       {/* Appearance: Light / Dark */}
-      <div className="flex items-center justify-between gap-4 px-5 py-4 sm:px-6">
+      <div className="flex items-center justify-between gap-4 px-5 py-4">
         <div className="min-w-0">
-          <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+          <p className="text-xs text-ink-muted">
             Appearance
           </p>
-          <p className="mt-0.5 text-sm font-semibold text-slate-900 dark:text-white">
+          <p className="mt-0.5 text-sm font-medium text-ink">
             {theme === "dark" ? "Dark mode" : "Light mode"}
           </p>
         </div>
         <div
           role="radiogroup"
           aria-label="Color theme"
-          className="inline-flex shrink-0 items-center rounded-xl border border-slate-200/90 bg-slate-100/80 p-0.5 text-xs font-medium dark:border-slate-700/80 dark:bg-slate-800/80"
+          className="inline-flex shrink-0 items-center rounded-lg border border-line bg-surface-subtle p-0.5 text-xs font-medium"
         >
           {(
             [
@@ -86,10 +86,10 @@ export function ProfilePreferencesCard() {
                   setTheme(opt.id);
                   setThemePreference(opt.id);
                 }}
-                className={`rounded-lg px-2.5 py-1 transition ${
+                className={`rounded-md px-2.5 py-1 transition-colors focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none ${
                   active
-                    ? "bg-white text-slate-900 shadow-xs dark:bg-slate-950 dark:text-white"
-                    : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
+                    ? "bg-surface text-ink shadow-[var(--shadow-sm)]"
+                    : "text-ink-secondary hover:text-ink"
                 }`}
               >
                 {opt.label}
@@ -100,19 +100,19 @@ export function ProfilePreferencesCard() {
       </div>
 
       {/* Home Layout: Classic / Stacked */}
-      <div className="flex items-center justify-between gap-4 px-5 py-4 sm:px-6">
+      <div className="flex items-center justify-between gap-4 px-5 py-4">
         <div className="min-w-0">
-          <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+          <p className="text-xs text-ink-muted">
             Home layout
           </p>
-          <p className="mt-0.5 text-sm font-semibold text-slate-900 dark:text-white">
+          <p className="mt-0.5 text-sm font-medium text-ink">
             {homeView === "stacked" ? "Stacked" : "Classic"}
           </p>
         </div>
         <div
           role="radiogroup"
           aria-label="Home layout"
-          className="inline-flex shrink-0 items-center rounded-xl border border-slate-200/90 bg-slate-100/80 p-0.5 text-xs font-medium dark:border-slate-700/80 dark:bg-slate-800/80"
+          className="inline-flex shrink-0 items-center rounded-lg border border-line bg-surface-subtle p-0.5 text-xs font-medium"
         >
           {(
             [
@@ -131,10 +131,10 @@ export function ProfilePreferencesCard() {
                   setHomeView(opt.id);
                   setHomeViewPreference(opt.id);
                 }}
-                className={`rounded-lg px-2.5 py-1 transition ${
+                className={`rounded-md px-2.5 py-1 transition-colors focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none ${
                   active
-                    ? "bg-white text-slate-900 shadow-xs dark:bg-slate-950 dark:text-white"
-                    : "text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
+                    ? "bg-surface text-ink shadow-[var(--shadow-sm)]"
+                    : "text-ink-secondary hover:text-ink"
                 }`}
               >
                 {opt.label}
