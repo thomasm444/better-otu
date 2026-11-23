@@ -267,7 +267,6 @@ export function DegreePlannerClient({
   const [minorProgram, setMinorProgram] =
     useState<DegreeProgramDetail | null>(null);
   const [loadingMinor, setLoadingMinor] = useState(false);
-  const drawerDragStartXRef = useRef<number | null>(null);
 
   const [picker, setPicker] = useState<PickerState | null>(null);
   const [pickerTransferMode, setPickerTransferMode] = useState(false);
@@ -1752,20 +1751,6 @@ export function DegreePlannerClient({
     ? Math.min(100, (totalPlacedCredits / totalTarget) * 100)
     : 0;
 
-  const { planStartCalYear, planEndCalYear } = useMemo(() => {
-    if (terms.length === 0) {
-      return { planStartCalYear: startYear, planEndCalYear: startYear + 1 };
-    }
-    let minYear = startYear;
-    let maxYear = startYear;
-    for (const t of terms) {
-      const calYear = termCalendarYear(startYear, t.year, t.season);
-      if (calYear < minYear) minYear = calYear;
-      if (calYear > maxYear) maxYear = calYear;
-    }
-    return { planStartCalYear: minYear, planEndCalYear: maxYear };
-  }, [terms, startYear]);
-
   return (
     <div className="min-h-screen bg-[#F7F8FC] bg-[radial-gradient(ellipse_80%_45%_at_50%_-10%,rgba(186,230,253,0.40),transparent_65%),radial-gradient(ellipse_55%_40%_at_92%_6%,rgba(221,214,254,0.32),transparent_60%)] text-slate-800 dark:bg-[#0B0F19] dark:bg-[radial-gradient(ellipse_80%_45%_at_50%_-10%,rgba(56,189,248,0.11),transparent_65%),radial-gradient(ellipse_55%_40%_at_92%_6%,rgba(167,139,250,0.10),transparent_60%)] dark:text-slate-100">
       {/* Sticky Top Header */}
@@ -2018,16 +2003,9 @@ export function DegreePlannerClient({
             </div>
           </div>
 
-          {/* Middle: Degree Planner Title above Search */}
-          <div className="flex w-full flex-col items-start gap-1.5 lg:flex-1 lg:items-center lg:px-4">
-            <div className="flex flex-wrap items-center gap-2 font-semibold tracking-tight whitespace-nowrap text-slate-900 dark:text-white">
-              <span>Degree Planner</span>
-              <small className="rounded-full bg-slate-100/90 px-2 py-0.5 text-[11px] font-medium text-slate-500 dark:bg-slate-800/90 dark:text-slate-400">
-                Ontario Tech · {planStartCalYear}–{planEndCalYear}
-              </small>
-            </div>
-
-            <div ref={menuContainerRef} className="relative w-full max-w-[300px]">
+          {/* Middle: Centered Program Search */}
+          <div className="flex w-full flex-col items-start lg:flex-1 lg:items-center lg:px-4">
+            <div ref={menuContainerRef} className="relative w-full max-w-[300px] lg:-translate-x-8">
               <svg
                 aria-hidden="true"
                 viewBox="0 0 20 20"
@@ -2426,33 +2404,17 @@ export function DegreePlannerClient({
       )}
 
       {/* Main Layout */}
-      <main
-        className={`mx-auto max-w-[1440px] p-4 ${
-          program && model
-            ? sidebarOpen
-              ? "grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_395px]"
-              : "pr-12"
-            : ""
-        }`}
-      >
-        {/* Planner Grid */}
-        <section>
-          {loadingProgram ? (
-            <div className="rounded-2xl border border-slate-200/80 bg-white/85 p-10 text-center text-sm text-slate-500 shadow-xs backdrop-blur-xs dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400">
-              Loading program requirements…
-            </div>
-          ) : !program ? (
-            <div className="rounded-2xl border border-slate-200/80 bg-white/85 p-10 text-center text-sm text-slate-500 shadow-xs backdrop-blur-xs dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400">
-              Pick a program above to start building a term-by-term plan.
-            </div>
-          ) : academicYears.length === 0 ? (
-            <div className="rounded-2xl border border-slate-200/80 bg-white/85 p-10 text-center text-sm text-slate-500 shadow-xs backdrop-blur-xs dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400">
-              No terms.
-            </div>
-          ) : (
-            <div className="space-y-5">
-              {/* Soft Pastel Legend Bar */}
-              <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1.5 rounded-2xl border border-slate-200/75 bg-white/75 px-3.5 py-2 text-[11.5px] text-slate-500 shadow-[0_1px_6px_rgba(15,23,42,0.03)] backdrop-blur-xs dark:border-slate-800/80 dark:bg-slate-900/55 dark:text-slate-400">
+      <main className="mx-auto max-w-[1440px] p-4">
+        {program && model && (
+          <div
+            className={`mb-3 ${
+              sidebarOpen
+                ? "grid grid-cols-1 items-center gap-3 lg:grid-cols-[minmax(0,1fr)_395px] lg:gap-5"
+                : "flex flex-wrap items-center gap-3"
+            }`}
+          >
+            {!loadingProgram && academicYears.length > 0 ? (
+              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3.5 gap-y-1.5 rounded-2xl border border-slate-200/75 bg-white/75 px-3.5 py-2 text-[11.5px] text-slate-500 shadow-[0_1px_6px_rgba(15,23,42,0.03)] backdrop-blur-xs dark:border-slate-800/80 dark:bg-slate-900/55 dark:text-slate-400">
                 <span className="inline-flex items-center gap-1.5">
                   <span className="h-2.5 w-1 rounded-full bg-sky-400" />
                   <span>Major core</span>
@@ -2479,6 +2441,46 @@ export function DegreePlannerClient({
                   Drag to move · Click any course for details
                 </span>
               </div>
+            ) : (
+              <div className="flex-1" />
+            )}
+
+            <div className="flex justify-end">
+              <button
+                type="button"
+                aria-expanded={sidebarOpen}
+                onClick={() => setSidebarOpen((open) => !open)}
+                className="inline-flex min-w-[138px] shrink-0 items-center justify-center rounded-xl border border-slate-200/90 bg-white/95 px-3 py-1.5 text-xs font-medium text-slate-700 shadow-[0_1px_4px_rgba(15,23,42,0.04)] transition-colors hover:border-sky-300 hover:bg-sky-50/60 hover:text-sky-800 dark:border-slate-700/80 dark:bg-slate-900/95 dark:text-slate-200 dark:hover:border-sky-700 dark:hover:text-sky-200"
+              >
+                {sidebarOpen ? "Push to side ▶" : "◀ What you need"}
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div
+          className={
+            program && model && sidebarOpen
+              ? "grid grid-cols-1 items-start gap-5 lg:grid-cols-[minmax(0,1fr)_395px]"
+              : ""
+          }
+        >
+        {/* Planner Grid */}
+        <section>
+          {loadingProgram ? (
+            <div className="rounded-2xl border border-slate-200/80 bg-white/85 p-10 text-center text-sm text-slate-500 shadow-xs backdrop-blur-xs dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400">
+              Loading program requirements…
+            </div>
+          ) : !program ? (
+            <div className="rounded-2xl border border-slate-200/80 bg-white/85 p-10 text-center text-sm text-slate-500 shadow-xs backdrop-blur-xs dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400">
+              Pick a program above to start building a term-by-term plan.
+            </div>
+          ) : academicYears.length === 0 ? (
+            <div className="rounded-2xl border border-slate-200/80 bg-white/85 p-10 text-center text-sm text-slate-500 shadow-xs backdrop-blur-xs dark:border-slate-800 dark:bg-slate-900/80 dark:text-slate-400">
+              No terms.
+            </div>
+          ) : (
+            <div className="space-y-5">
 
               {academicYears.map(
                 ({
@@ -2958,30 +2960,10 @@ export function DegreePlannerClient({
           )}
         </section>
 
-        {/* Right Column ("What you need") — Side-by-side when open, pull-tab when closed */}
+        {/* Right Column ("What you need") — toggled from the fixed button above */}
         {program && model ? (
           sidebarOpen ? (
-            <div className="relative lg:sticky lg:top-[126px]">
-              <div className="mb-2 flex justify-end">
-                <button
-                  type="button"
-                  onPointerDown={(e) => {
-                    drawerDragStartXRef.current = e.clientX;
-                  }}
-                  onPointerUp={(e) => {
-                    if (drawerDragStartXRef.current === null) return;
-                    const deltaX = e.clientX - drawerDragStartXRef.current;
-                    drawerDragStartXRef.current = null;
-                    if (deltaX > 25 || Math.abs(deltaX) <= 25) {
-                      setSidebarOpen(false);
-                    }
-                  }}
-                  title="Drag right or click to push to the side"
-                  className="cursor-grab rounded-xl border border-slate-200/90 bg-white/90 px-2.5 py-1 text-xs font-medium text-slate-600 shadow-[0_1px_4px_rgba(15,23,42,0.04)] transition-colors select-none hover:border-sky-300 hover:bg-sky-50/60 hover:text-sky-800 active:cursor-grabbing dark:border-slate-700/80 dark:bg-slate-900/90 dark:text-slate-300 dark:hover:border-sky-700 dark:hover:text-sky-200"
-                >
-                  Push to side ▶
-                </button>
-              </div>
+            <div className="relative lg:sticky lg:top-[122px]">
               <RequirementsSidebar
                 program={program}
                 model={model}
@@ -3055,28 +3037,7 @@ export function DegreePlannerClient({
                 }}
               />
             </div>
-          ) : (
-            <button
-              type="button"
-              onPointerDown={(e) => {
-                drawerDragStartXRef.current = e.clientX;
-              }}
-              onPointerUp={(e) => {
-                if (drawerDragStartXRef.current === null) return;
-                const deltaX = e.clientX - drawerDragStartXRef.current;
-                drawerDragStartXRef.current = null;
-                if (deltaX < -25 || Math.abs(deltaX) <= 25) {
-                  setSidebarOpen(true);
-                }
-              }}
-              title="Drag left or click to open What you need"
-              className="fixed top-[62%] right-0 z-40 flex h-36 w-9 -translate-y-1/2 cursor-grab items-center justify-center rounded-l-2xl border border-r-0 border-sky-200/90 bg-gradient-to-b from-sky-50/95 via-white/95 to-violet-50/95 text-xs font-semibold tracking-wide text-slate-700 shadow-lg shadow-slate-900/10 backdrop-blur-md transition-colors select-none hover:border-sky-300 hover:text-sky-800 active:cursor-grabbing dark:border-sky-800/70 dark:from-slate-900/95 dark:via-slate-900/95 dark:to-violet-950/80 dark:text-slate-200"
-            >
-              <span className="[writing-mode:vertical-rl] rotate-180">
-                ◀ What you need
-              </span>
-            </button>
-          )
+          ) : null
         ) : (
           <aside className="rounded-2xl border border-slate-200/80 bg-white/85 shadow-xs backdrop-blur-xs dark:border-slate-800 dark:bg-slate-900/80">
             <div className="border-b border-slate-200/75 px-4 py-3 dark:border-slate-800">
@@ -3087,6 +3048,7 @@ export function DegreePlannerClient({
             </div>
           </aside>
         )}
+        </div>
       </main>
 
       {/* Course Picker Modal */}
