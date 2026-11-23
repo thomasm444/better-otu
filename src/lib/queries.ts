@@ -429,6 +429,8 @@ export type SubRoomMeta = {
   capacity: number | null;
   capacitySource: string | null;
   type: string;
+  isBookable?: boolean;
+  bookingUuid?: string | null;
 };
 
 export type CampusMapFeature = {
@@ -453,6 +455,8 @@ export type CampusMapFeature = {
     isBuildingContainer: boolean;
     hasSchedule: boolean;
     isLibraryRoom: boolean;
+    isBookable?: boolean;
+    bookingUuid?: string | null;
     rooms?: string[];
     roomsData?: Record<string, SubRoomMeta>;
   };
@@ -509,6 +513,7 @@ type RoomBookingDetailRow = {
   building: string | null;
   room_type: string | null;
   capacity: number | null;
+  raw_data: Record<string, unknown> | null;
 };
 
 type CampusUnmappedRow = {
@@ -775,6 +780,16 @@ async function getCampusMapRoomLookup(): Promise<RoomLookupData> {
   };
 }
 
+const ROOM_UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function extractBookingUuid(rawData: unknown): string | null {
+  if (!rawData || typeof rawData !== "object") return null;
+  const candidate = (rawData as Record<string, unknown>).rowId;
+  return typeof candidate === "string" && ROOM_UUID_RE.test(candidate.trim())
+    ? candidate.trim()
+    : null;
+}
+
 /**
  * Returns the live GeoJSON FeatureCollection of all campus spaces & rooms directly
  * from `campus_spaces` + `room_booking_details` + `library_study_rooms` + `campus_unmapped_spaces`,
@@ -790,7 +805,7 @@ export async function getCampusMapData(
 
   const supabase = getPublicClient();
 
-  const [spacesRaw, rbdRes, unmappedRes, libRes] = await Promise.all([
+  const [spacesRaw, rbdRowsRaw, unmappedRes, libRes] = await Promise.all([
     collectPagesById<string>((lastId, limit) => {
       let query = supabase
         .from("campus_spaces")
@@ -804,7 +819,13 @@ export async function getCampusMapData(
       if (building) query = query.eq("building", building);
       return query;
     }),
-    supabase.from("room_booking_details").select("room, building, room_type, capacity"),
+    collectPages((from, to) =>
+      supabase
+        .from("room_booking_details")
+        .select("room, building, room_type, capacity, raw_data")
+        .order("room", { ascending: true })
+        .range(from, to),
+    ),
     supabase
       .from("campus_unmapped_spaces")
       .select("room_id, building, room_type, capacity, description")
@@ -812,9 +833,6 @@ export async function getCampusMapData(
     supabase.from("library_study_rooms").select("room_id, min_capacity, max_capacity"),
   ]);
 
-  if (rbdRes.error) {
-    throw new Error(`getCampusMapData rbd failed: ${rbdRes.error.message}`);
-  }
   if (unmappedRes.error) {
     throw new Error(`getCampusMapData unmapped failed: ${unmappedRes.error.message}`);
   }
@@ -825,7 +843,7 @@ export async function getCampusMapData(
   const spaceRows = spacesRaw as CampusSpaceRow[];
   const rbdMap = new Map<string, RoomBookingDetailRow>();
   const rbdBuildingMap: Record<string, string> = {};
-  for (const r of (rbdRes.data ?? []) as RoomBookingDetailRow[]) {
+  for (const r of rbdRowsRaw as RoomBookingDetailRow[]) {
     rbdMap.set(r.room, r);
     const aliased = ROOM_CODE_ALIASES[r.room.toUpperCase()];
     if (aliased && !rbdMap.has(aliased)) {
@@ -903,6 +921,8 @@ export async function getCampusMapData(
           capacity: subRbd?.capacity ?? null,
           capacitySource: subRbd?.capacity != null ? "Room Booking System" : null,
           type: subRbd?.room_type || row.room_type || "Classroom",
+          isBookable: Boolean(subRbd),
+          bookingUuid: extractBookingUuid(subRbd?.raw_data),
         };
       }
     }
@@ -926,6 +946,8 @@ export async function getCampusMapData(
         isBuildingContainer: row.is_building_container,
         hasSchedule,
         isLibraryRoom,
+        isBookable: Boolean(rbdInfo),
+        bookingUuid: extractBookingUuid(rbdInfo?.raw_data),
         ...(rooms ? { rooms } : {}),
         ...(roomsData ? { roomsData } : {}),
       },
