@@ -83,10 +83,10 @@ export function StackedPortalView({
     <div className="mx-auto my-auto flex w-full max-w-3xl flex-col items-center py-8 sm:py-12">
       <div className="w-full space-y-5">
         {/* CARD 1: Course Schedule | Schedule & Timetable Preview + Term Pills */}
-        <div className="group relative flex flex-col overflow-hidden rounded-[26px] border border-[#BFD7F2] bg-[#DCEBFA]/75 shadow-[0_6px_24px_-12px_rgba(0,60,113,0.18)] transition-all duration-200 hover:-translate-y-0.5 hover:border-[#003C71]/40 hover:bg-[#D4E6F9]/90 hover:shadow-[0_14px_32px_-14px_rgba(0,60,113,0.26)] sm:min-h-[126px] sm:flex-row dark:border-slate-700/80 dark:bg-slate-900/85 dark:hover:border-sky-400/50 dark:hover:bg-slate-900">
+        <div className="group relative flex flex-col overflow-hidden rounded-[26px] border border-[#BFD7F2] bg-[#DCEBFA]/75 shadow-[0_6px_24px_-12px_rgba(0,60,113,0.18)] transition-all duration-300 ease-out will-change-transform hover:-translate-y-1.5 hover:scale-[1.015] hover:border-[#003C71]/55 hover:bg-[#D4E6F9]/95 hover:ring-2 hover:ring-[#003C71]/15 hover:shadow-[0_22px_44px_-14px_rgba(0,60,113,0.32)] sm:min-h-[126px] sm:flex-row dark:border-slate-700/80 dark:bg-slate-900/85 dark:hover:border-sky-400/65 dark:hover:bg-slate-900 dark:hover:ring-sky-400/20 dark:hover:shadow-[0_22px_44px_-14px_rgba(56,189,248,0.26)]">
           {/* Left Section: Title */}
           <div className="flex shrink-0 flex-col items-center justify-center border-b border-[#B7D1EE] px-6 py-5 text-center sm:w-[32%] sm:rounded-r-[26px] sm:border-b-0 sm:border-r dark:border-slate-700/80">
-            <div className="mb-1.5 flex h-9 w-9 items-center justify-center rounded-xl bg-white/80 text-[#003C71] shadow-2xs ring-1 ring-[#003C71]/10 transition-transform duration-200 group-hover:scale-105 dark:bg-sky-500/15 dark:text-sky-300 dark:ring-sky-400/20">
+            <div className="mb-1.5 flex h-9 w-9 items-center justify-center rounded-xl bg-white/80 text-[#003C71] shadow-2xs ring-1 ring-[#003C71]/10 transition-all duration-300 ease-out group-hover:scale-110 group-hover:-rotate-3 group-hover:shadow-md dark:bg-sky-500/15 dark:text-sky-300 dark:ring-sky-400/20">
               <svg
                 className="h-4.5 w-4.5"
                 viewBox="0 0 24 24"
@@ -132,7 +132,7 @@ export function StackedPortalView({
                     key={term.code}
                     href={`/course-schedules?term=${term.code}`}
                     title={term.label}
-                    className={`whitespace-nowrap rounded-md border px-2 py-0.5 text-[11px] font-semibold shadow-2xs transition-colors ${
+                    className={`whitespace-nowrap rounded-md border px-2 py-0.5 text-[11px] font-semibold shadow-2xs transition-all duration-200 hover:-translate-y-0.5 hover:scale-105 hover:shadow-sm ${
                       isActive
                         ? "border-[#003C71]/30 bg-white/95 text-[#003C71] hover:border-[#003C71] hover:bg-[#003C71] hover:text-white dark:border-sky-400/35 dark:bg-sky-500/15 dark:text-sky-200 dark:hover:bg-sky-500 dark:hover:text-slate-950"
                         : "border-white/80 bg-white/80 text-slate-700 hover:border-[#003C71]/45 hover:bg-white hover:text-[#003C71] dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-sky-400/45 dark:hover:text-sky-300"
@@ -149,11 +149,11 @@ export function StackedPortalView({
         {/* CARD 2: Degree Planner | Progress Bar & Roadmap */}
         <Link
           href="/degree-planner"
-          className="group flex flex-col overflow-hidden rounded-[26px] border border-[#BFD7F2] bg-[#DCEBFA]/75 shadow-[0_6px_24px_-12px_rgba(0,60,113,0.18)] transition-all duration-200 hover:-translate-y-0.5 hover:border-[#003C71]/40 hover:bg-[#D4E6F9]/90 hover:shadow-[0_14px_32px_-14px_rgba(0,60,113,0.26)] sm:min-h-[126px] sm:flex-row dark:border-slate-700/80 dark:bg-slate-900/85 dark:hover:border-sky-400/50 dark:hover:bg-slate-900"
+          className="group flex flex-col overflow-hidden rounded-[26px] border border-[#BFD7F2] bg-[#DCEBFA]/75 shadow-[0_6px_24px_-12px_rgba(0,60,113,0.18)] transition-all duration-300 ease-out will-change-transform hover:-translate-y-1.5 hover:scale-[1.015] hover:border-[#E75D2A]/55 hover:bg-[#D4E6F9]/95 hover:ring-2 hover:ring-[#E75D2A]/15 hover:shadow-[0_22px_44px_-14px_rgba(231,93,42,0.28)] sm:min-h-[126px] sm:flex-row dark:border-slate-700/80 dark:bg-slate-900/85 dark:hover:border-[#FF8B5E]/65 dark:hover:bg-slate-900 dark:hover:ring-[#FF8B5E]/20 dark:hover:shadow-[0_22px_44px_-14px_rgba(255,139,94,0.26)]"
         >
           {/* Left Section: Title */}
           <div className="flex shrink-0 flex-col items-center justify-center border-b border-[#B7D1EE] px-6 py-5 text-center sm:w-[32%] sm:rounded-r-[26px] sm:border-b-0 sm:border-r dark:border-slate-700/80">
-            <div className="mb-1.5 flex h-9 w-9 items-center justify-center rounded-xl bg-white/80 text-[#E75D2A] shadow-2xs ring-1 ring-[#E75D2A]/15 transition-transform duration-200 group-hover:scale-105 dark:bg-[#E75D2A]/20 dark:text-[#FF8A5C] dark:ring-[#E75D2A]/30">
+            <div className="mb-1.5 flex h-9 w-9 items-center justify-center rounded-xl bg-white/80 text-[#E75D2A] shadow-2xs ring-1 ring-[#E75D2A]/15 transition-all duration-300 ease-out group-hover:scale-110 group-hover:-rotate-3 group-hover:shadow-md dark:bg-[#E75D2A]/20 dark:text-[#FF8A5C] dark:ring-[#E75D2A]/30">
               <svg
                 className="h-4.5 w-4.5"
                 viewBox="0 0 24 24"
@@ -248,10 +248,10 @@ export function StackedPortalView({
         </Link>
 
         {/* CARD 3: 3-Part Map Card (Map + Venue Pills | Find Library Room + All Open | Building Free Rooms) */}
-        <div className="flex flex-col overflow-hidden rounded-[26px] border border-[#BFD7F2] bg-[#DCEBFA]/75 shadow-[0_6px_24px_-12px_rgba(0,60,113,0.18)] transition-all duration-200 hover:border-[#003C71]/40 hover:shadow-[0_14px_32px_-14px_rgba(0,60,113,0.26)] sm:min-h-[134px] sm:flex-row dark:border-slate-700/80 dark:bg-slate-900/85 dark:hover:border-sky-400/50">
+        <div className="flex flex-col overflow-hidden rounded-[26px] border border-[#BFD7F2] bg-[#DCEBFA]/75 shadow-[0_6px_24px_-12px_rgba(0,60,113,0.18)] transition-all duration-300 ease-out will-change-transform hover:-translate-y-1.5 hover:scale-[1.015] hover:border-emerald-500/60 hover:ring-2 hover:ring-emerald-500/15 hover:shadow-[0_22px_44px_-14px_rgba(16,185,129,0.28)] sm:min-h-[134px] sm:flex-row dark:border-slate-700/80 dark:bg-slate-900/85 dark:hover:border-emerald-400/60 dark:hover:ring-emerald-400/20 dark:hover:shadow-[0_22px_44px_-14px_rgba(52,211,153,0.24)]">
           {/* Part 1 (Left): Map + North/Downtown/Whitby pills */}
           <div className="group relative flex shrink-0 flex-col items-center justify-center border-b border-[#B7D1EE] px-4 py-5 text-center transition-colors hover:bg-white/40 sm:w-[32%] sm:rounded-r-[26px] sm:border-b-0 sm:border-r dark:border-slate-700/80 dark:hover:bg-slate-800/60">
-            <div className="mb-1.5 flex h-9 w-9 items-center justify-center rounded-xl bg-white/80 text-emerald-700 shadow-2xs ring-1 ring-emerald-500/15 transition-transform duration-200 group-hover:scale-105 dark:bg-emerald-500/15 dark:text-emerald-300 dark:ring-emerald-400/20">
+            <div className="mb-1.5 flex h-9 w-9 items-center justify-center rounded-xl bg-white/80 text-emerald-700 shadow-2xs ring-1 ring-emerald-500/15 transition-all duration-300 ease-out group-hover:scale-110 group-hover:-rotate-3 group-hover:shadow-md dark:bg-emerald-500/15 dark:text-emerald-300 dark:ring-emerald-400/20">
               <svg
                 className="h-4.5 w-4.5"
                 viewBox="0 0 24 24"
@@ -279,7 +279,7 @@ export function StackedPortalView({
                 <Link
                   key={venue.key}
                   href={`/campus-map?venue=${venue.key}`}
-                  className="rounded-md border border-white/80 bg-white/85 px-1.5 py-0.5 text-[10.5px] font-semibold text-slate-700 shadow-2xs transition-colors hover:border-emerald-500/50 hover:bg-emerald-50 hover:text-emerald-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-emerald-400/50 dark:hover:bg-emerald-950/50 dark:hover:text-emerald-300"
+                  className="rounded-md border border-white/80 bg-white/85 px-1.5 py-0.5 text-[10.5px] font-semibold text-slate-700 shadow-2xs transition-all duration-200 hover:-translate-y-0.5 hover:scale-105 hover:border-emerald-500/50 hover:bg-emerald-50 hover:text-emerald-800 hover:shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-emerald-400/50 dark:hover:bg-emerald-950/50 dark:hover:text-emerald-300"
                 >
                   {venue.label}
                 </Link>
@@ -311,7 +311,7 @@ export function StackedPortalView({
             )}
             <Link
               href="/campus-map?filter=available&now=1"
-              className="relative z-10 mt-2 inline-flex items-center rounded-md border border-white/80 bg-white/85 px-2.5 py-0.5 text-[11px] font-semibold text-slate-700 shadow-2xs transition-colors hover:border-[#003C71]/40 hover:bg-white hover:text-[#003C71] dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-sky-400/50 dark:hover:text-sky-300"
+              className="relative z-10 mt-2 inline-flex items-center rounded-md border border-white/80 bg-white/85 px-2.5 py-0.5 text-[11px] font-semibold text-slate-700 shadow-2xs transition-all duration-200 hover:-translate-y-0.5 hover:scale-105 hover:border-[#003C71]/40 hover:bg-white hover:text-[#003C71] hover:shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-sky-400/50 dark:hover:text-sky-300"
             >
               All Open Rooms
             </Link>
@@ -333,7 +333,7 @@ export function StackedPortalView({
                 <Link
                   key={bldg}
                   href={`/campus-map?building=${bldg}&filter=available&now=1`}
-                  className="rounded-full border border-emerald-200 bg-white px-2.5 py-0.5 font-mono text-[11px] font-semibold text-slate-800 shadow-2xs transition hover:border-emerald-500 hover:bg-emerald-50 hover:text-emerald-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-emerald-500 dark:hover:text-emerald-300"
+                  className="rounded-full border border-emerald-200 bg-white px-2.5 py-0.5 font-mono text-[11px] font-semibold text-slate-800 shadow-2xs transition-all duration-200 hover:-translate-y-0.5 hover:scale-105 hover:border-emerald-500 hover:bg-emerald-50 hover:text-emerald-900 hover:shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-emerald-500 dark:hover:text-emerald-300"
                 >
                   {bldg}
                 </Link>
@@ -357,7 +357,7 @@ export function StackedPortalView({
             title={item.title}
             className="group flex flex-col items-center gap-2"
           >
-            <span className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border border-[#BFD7F2] bg-white shadow-xs transition-all duration-200 group-hover:-translate-y-1 group-hover:border-[#003C71]/45 group-hover:shadow-md dark:border-slate-700 dark:bg-slate-900 dark:group-hover:border-sky-400/60">
+            <span className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border border-[#BFD7F2] bg-white shadow-xs transition-all duration-200 ease-out will-change-transform group-hover:-translate-y-1.5 group-hover:scale-110 group-hover:border-[#003C71]/55 group-hover:shadow-[0_14px_26px_-10px_rgba(0,60,113,0.34)] dark:border-slate-700 dark:bg-slate-900 dark:group-hover:border-sky-400/70 dark:group-hover:shadow-[0_14px_26px_-10px_rgba(56,189,248,0.28)]">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={item.imageUrl}
@@ -387,7 +387,7 @@ export function StackedPortalView({
                 title={`${svc.label} — ${acct.label} (u/${acct.authIndex})`}
                 className="group relative flex flex-col items-center gap-2"
               >
-                <span className="flex h-16 w-16 items-center justify-center rounded-full border border-[#BFD7F2] bg-white shadow-xs transition-all duration-200 group-hover:-translate-y-1 group-hover:border-[#003C71]/45 group-hover:shadow-md dark:border-slate-700 dark:bg-slate-900 dark:group-hover:border-sky-400/60">
+                <span className="flex h-16 w-16 items-center justify-center rounded-full border border-[#BFD7F2] bg-white shadow-xs transition-all duration-200 ease-out will-change-transform group-hover:-translate-y-1.5 group-hover:scale-110 group-hover:border-[#003C71]/55 group-hover:shadow-[0_14px_26px_-10px_rgba(0,60,113,0.34)] dark:border-slate-700 dark:bg-slate-900 dark:group-hover:border-sky-400/70 dark:group-hover:shadow-[0_14px_26px_-10px_rgba(56,189,248,0.28)]">
                   <GoogleServiceIcon serviceId={svc.id} className="h-7 w-7" />
                 </span>
                 {showAccountTag && (
@@ -419,7 +419,7 @@ export function StackedPortalView({
                 target="_blank"
                 rel="noopener noreferrer"
                 title={`${meet.label} (${href})`}
-                className="flex h-16 w-16 items-center justify-center rounded-full border border-emerald-200 bg-white shadow-xs transition-all duration-200 hover:-translate-y-1 hover:border-emerald-500/60 hover:shadow-md dark:border-slate-700 dark:bg-slate-900 dark:hover:border-emerald-400/60"
+                className="flex h-16 w-16 items-center justify-center rounded-full border border-emerald-200 bg-white shadow-xs transition-all duration-200 ease-out will-change-transform hover:-translate-y-1.5 hover:scale-110 hover:border-emerald-500/70 hover:shadow-[0_14px_26px_-10px_rgba(16,185,129,0.34)] dark:border-slate-700 dark:bg-slate-900 dark:hover:border-emerald-400/70 dark:hover:shadow-[0_14px_26px_-10px_rgba(52,211,153,0.28)]"
               >
                 <GoogleMeetIcon className="h-7 w-7" />
               </a>
@@ -450,7 +450,7 @@ export function StackedPortalView({
               target="_blank"
               rel="noopener noreferrer"
               title={`${item.label} (${item.url})`}
-              className="flex h-16 w-16 items-center justify-center rounded-full border border-[#BFD7F2] bg-[#DCEBFA]/85 text-xs font-bold text-[#003C71] shadow-xs transition-all duration-200 hover:-translate-y-1 hover:border-[#003C71]/45 hover:bg-[#CFE3F8] hover:shadow-md dark:border-slate-700 dark:bg-slate-900 dark:text-sky-200 dark:hover:border-sky-400/60 dark:hover:bg-slate-800"
+              className="flex h-16 w-16 items-center justify-center rounded-full border border-[#BFD7F2] bg-[#DCEBFA]/85 text-xs font-bold text-[#003C71] shadow-xs transition-all duration-200 ease-out will-change-transform hover:-translate-y-1.5 hover:scale-110 hover:border-[#003C71]/55 hover:bg-[#CFE3F8] hover:shadow-[0_14px_26px_-10px_rgba(0,60,113,0.34)] dark:border-slate-700 dark:bg-slate-900 dark:text-sky-200 dark:hover:border-sky-400/70 dark:hover:bg-slate-800 dark:hover:shadow-[0_14px_26px_-10px_rgba(56,189,248,0.28)]"
             >
               {getInitials(item.label)}
             </a>
@@ -478,9 +478,9 @@ export function StackedPortalView({
               ? "Manage Google accounts, services & Meet links"
               : "Add Google school & personal shortcuts"
           }
-          className="group flex flex-col items-center gap-2"
+          className="group flex cursor-pointer flex-col items-center gap-2"
         >
-          <span className="flex h-16 w-16 items-center justify-center rounded-full border border-dashed border-[#9AC0EB] bg-white/85 shadow-xs transition-all duration-200 group-hover:-translate-y-1 group-hover:border-[#003C71]/50 group-hover:bg-white group-hover:shadow-md dark:border-slate-700 dark:bg-slate-900/80 dark:group-hover:border-sky-400/60 dark:group-hover:bg-slate-800">
+          <span className="flex h-16 w-16 items-center justify-center rounded-full border border-dashed border-[#9AC0EB] bg-white/85 shadow-xs transition-all duration-200 ease-out will-change-transform group-hover:-translate-y-1.5 group-hover:scale-110 group-hover:border-[#003C71]/60 group-hover:bg-white group-hover:shadow-[0_14px_26px_-10px_rgba(0,60,113,0.3)] dark:border-slate-700 dark:bg-slate-900/80 dark:group-hover:border-sky-400/70 dark:group-hover:bg-slate-800 dark:group-hover:shadow-[0_14px_26px_-10px_rgba(56,189,248,0.26)]">
             <GoogleLogoIcon className="h-6.5 w-6.5" />
           </span>
           <span className="text-xs font-semibold text-slate-600 transition-colors group-hover:text-[#003C71] dark:text-slate-400 dark:group-hover:text-sky-300">
@@ -493,9 +493,9 @@ export function StackedPortalView({
           type="button"
           onClick={onOpenAddShortcut}
           title="Add custom shortcut"
-          className="group flex flex-col items-center gap-2"
+          className="group flex cursor-pointer flex-col items-center gap-2"
         >
-          <span className="flex h-16 w-16 items-center justify-center rounded-full border border-dashed border-[#9AC0EB] bg-[#DCEBFA]/55 text-2xl font-light text-[#003C71] transition-all duration-200 group-hover:-translate-y-1 group-hover:border-[#003C71]/50 group-hover:bg-[#DCEBFA] group-hover:shadow-md dark:border-slate-700 dark:bg-slate-900/70 dark:text-sky-300 dark:group-hover:border-sky-400/60 dark:group-hover:bg-slate-800">
+          <span className="flex h-16 w-16 items-center justify-center rounded-full border border-dashed border-[#9AC0EB] bg-[#DCEBFA]/55 text-2xl font-light text-[#003C71] transition-all duration-200 ease-out will-change-transform group-hover:-translate-y-1.5 group-hover:scale-110 group-hover:border-[#003C71]/60 group-hover:bg-[#DCEBFA] group-hover:shadow-[0_14px_26px_-10px_rgba(0,60,113,0.3)] dark:border-slate-700 dark:bg-slate-900/70 dark:text-sky-300 dark:group-hover:border-sky-400/70 dark:group-hover:bg-slate-800 dark:group-hover:shadow-[0_14px_26px_-10px_rgba(56,189,248,0.26)]">
             +
           </span>
           <span className="text-xs font-semibold text-slate-500 transition-colors group-hover:text-slate-800 dark:text-slate-400 dark:group-hover:text-slate-200">

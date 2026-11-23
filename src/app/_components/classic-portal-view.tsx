@@ -222,10 +222,14 @@ export function ClassicPortalView({
         className="grid grid-cols-1 gap-5 md:grid-cols-3"
       >
         {/* 1. Course Schedules Card */}
-        <div className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-slate-200/90 bg-white/95 p-6 shadow-xs backdrop-blur-xs transition-all duration-200 hover:-translate-y-1 hover:border-[#003C71]/40 hover:shadow-[0_18px_38px_-14px_rgba(0,60,113,0.22)] dark:border-slate-800 dark:bg-slate-900/90 dark:hover:border-sky-400/45 dark:hover:shadow-[0_18px_38px_-14px_rgba(56,189,248,0.2)]">
-          <div>
+        <div className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-slate-200/90 bg-white/95 p-6 shadow-xs backdrop-blur-xs transition-all duration-300 ease-out will-change-transform hover:-translate-y-2 hover:scale-[1.02] hover:border-[#003C71]/60 hover:ring-2 hover:ring-[#003C71]/15 hover:shadow-[0_24px_48px_-14px_rgba(0,60,113,0.32)] dark:border-slate-800 dark:bg-slate-900/90 dark:hover:border-sky-400/65 dark:hover:ring-sky-400/20 dark:hover:shadow-[0_24px_48px_-14px_rgba(56,189,248,0.28)]">
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 bg-gradient-to-br from-[#003C71]/[0.06] via-transparent to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100 dark:from-sky-400/[0.1]"
+          />
+          <div className="relative">
             <div className="flex items-start justify-between gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#003C71]/10 text-[#003C71] ring-1 ring-[#003C71]/15 transition-transform duration-200 group-hover:scale-105 dark:bg-sky-500/15 dark:text-sky-300 dark:ring-sky-400/20">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#003C71]/10 text-[#003C71] ring-1 ring-[#003C71]/15 transition-all duration-300 ease-out group-hover:scale-110 group-hover:-rotate-3 group-hover:shadow-md dark:bg-sky-500/15 dark:text-sky-300 dark:ring-sky-400/20">
                 <svg
                   className="h-5.5 w-5.5"
                   viewBox="0 0 24 24"
@@ -263,11 +267,11 @@ export function ClassicPortalView({
                   Course Schedules
                 </h2>
               </Link>
-              <ArrowRightIcon className="h-4 w-4 text-slate-400 transition-all duration-200 group-hover:translate-x-1 group-hover:text-[#003C71] dark:group-hover:text-sky-300" />
+              <ArrowRightIcon className="h-4 w-4 text-slate-400 transition-all duration-300 group-hover:translate-x-1.5 group-hover:text-[#003C71] dark:group-hover:text-sky-300" />
             </div>
           </div>
 
-          <div className="mt-5 rounded-xl border border-slate-100 bg-slate-50/90 p-3 dark:border-slate-800 dark:bg-slate-950/60">
+          <div className="relative mt-5 rounded-xl border border-slate-100 bg-slate-50/90 p-3 transition-colors duration-300 group-hover:border-[#003C71]/15 dark:border-slate-800 dark:bg-slate-950/60 dark:group-hover:border-sky-400/20">
             <div className="flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
               <span>Schedules</span>
             </div>
@@ -279,7 +283,7 @@ export function ClassicPortalView({
                     key={term.code}
                     href={`/course-schedules?term=${term.code}`}
                     title={term.label}
-                    className={`whitespace-nowrap rounded-md border px-2 py-0.5 text-[11px] font-semibold shadow-2xs transition-colors ${
+                    className={`whitespace-nowrap rounded-md border px-2 py-0.5 text-[11px] font-semibold shadow-2xs transition-all duration-200 hover:-translate-y-0.5 hover:scale-105 hover:shadow-sm ${
                       isActive
                         ? "border-[#003C71]/30 bg-[#003C71]/8 text-[#003C71] hover:border-[#003C71] hover:bg-[#003C71] hover:text-white dark:border-sky-400/35 dark:bg-sky-500/15 dark:text-sky-200 dark:hover:bg-sky-500 dark:hover:text-slate-950"
                         : "border-slate-200/90 bg-white text-slate-700 hover:border-[#003C71]/45 hover:bg-[#EBF3FC] hover:text-[#003C71] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-sky-400/45 dark:hover:text-sky-300"
@@ -294,10 +298,14 @@ export function ClassicPortalView({
         </div>
 
         {/* 2. Campus Map Card */}
-        <div className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-slate-200/90 bg-white/95 p-6 shadow-xs backdrop-blur-xs transition-all duration-200 hover:-translate-y-1 hover:border-emerald-500/45 hover:shadow-[0_18px_38px_-14px_rgba(16,185,129,0.22)] dark:border-slate-800 dark:bg-slate-900/90 dark:hover:border-emerald-400/45">
-          <div>
+        <div className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-slate-200/90 bg-white/95 p-6 shadow-xs backdrop-blur-xs transition-all duration-300 ease-out will-change-transform hover:-translate-y-2 hover:scale-[1.02] hover:border-emerald-500/65 hover:ring-2 hover:ring-emerald-500/15 hover:shadow-[0_24px_48px_-14px_rgba(16,185,129,0.32)] dark:border-slate-800 dark:bg-slate-900/90 dark:hover:border-emerald-400/65 dark:hover:ring-emerald-400/20 dark:hover:shadow-[0_24px_48px_-14px_rgba(52,211,153,0.26)]">
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 bg-gradient-to-br from-emerald-500/[0.06] via-transparent to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100 dark:from-emerald-400/[0.1]"
+          />
+          <div className="relative">
             <div className="flex items-start justify-between gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-500/12 text-emerald-700 ring-1 ring-emerald-500/20 transition-transform duration-200 group-hover:scale-105 dark:bg-emerald-500/15 dark:text-emerald-300 dark:ring-emerald-400/20">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-emerald-500/12 text-emerald-700 ring-1 ring-emerald-500/20 transition-all duration-300 ease-out group-hover:scale-110 group-hover:-rotate-3 group-hover:shadow-md dark:bg-emerald-500/15 dark:text-emerald-300 dark:ring-emerald-400/20">
                 <svg
                   className="h-5.5 w-5.5"
                   viewBox="0 0 24 24"
@@ -335,11 +343,11 @@ export function ClassicPortalView({
                   Campus Map
                 </h2>
               </Link>
-              <ArrowRightIcon className="h-4 w-4 text-slate-400 transition-all duration-200 group-hover:translate-x-1 group-hover:text-emerald-600 dark:group-hover:text-emerald-300" />
+              <ArrowRightIcon className="h-4 w-4 text-slate-400 transition-all duration-300 group-hover:translate-x-1.5 group-hover:text-emerald-600 dark:group-hover:text-emerald-300" />
             </div>
           </div>
 
-          <div className="mt-5 rounded-xl border border-slate-100 bg-slate-50/90 p-3 dark:border-slate-800 dark:bg-slate-950/60">
+          <div className="relative mt-5 rounded-xl border border-slate-100 bg-slate-50/90 p-3 transition-colors duration-300 group-hover:border-emerald-500/20 dark:border-slate-800 dark:bg-slate-950/60 dark:group-hover:border-emerald-400/20">
             <div className="flex items-center justify-between gap-2 text-[11px] font-semibold text-slate-600 dark:text-slate-300">
               <span>Campuses</span>
               <span className="font-mono text-[10.5px] tabular-nums text-emerald-700 dark:text-emerald-300">
@@ -351,7 +359,7 @@ export function ClassicPortalView({
                 <Link
                   key={venue.key}
                   href={`/campus-map?venue=${venue.key}`}
-                  className="rounded-md border border-slate-200/90 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 shadow-2xs transition-colors hover:border-emerald-500/50 hover:bg-emerald-50 hover:text-emerald-800 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-emerald-400/50 dark:hover:bg-emerald-950/50 dark:hover:text-emerald-300"
+                  className="rounded-md border border-slate-200/90 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-700 shadow-2xs transition-all duration-200 hover:-translate-y-0.5 hover:scale-105 hover:border-emerald-500/50 hover:bg-emerald-50 hover:text-emerald-800 hover:shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-emerald-400/50 dark:hover:bg-emerald-950/50 dark:hover:text-emerald-300"
                 >
                   {venue.label}
                 </Link>
@@ -363,11 +371,15 @@ export function ClassicPortalView({
         {/* 3. Degree Planner Card */}
         <Link
           href="/degree-planner"
-          className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-slate-200/90 bg-white/95 p-6 shadow-xs backdrop-blur-xs transition-all duration-200 hover:-translate-y-1 hover:border-[#E75D2A]/45 hover:shadow-[0_18px_38px_-14px_rgba(231,93,42,0.22)] dark:border-slate-800 dark:bg-slate-900/90 dark:hover:border-[#FF8B5E]/45"
+          className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-slate-200/90 bg-white/95 p-6 shadow-xs backdrop-blur-xs transition-all duration-300 ease-out will-change-transform hover:-translate-y-2 hover:scale-[1.02] hover:border-[#E75D2A]/65 hover:ring-2 hover:ring-[#E75D2A]/15 hover:shadow-[0_24px_48px_-14px_rgba(231,93,42,0.32)] dark:border-slate-800 dark:bg-slate-900/90 dark:hover:border-[#FF8B5E]/65 dark:hover:ring-[#FF8B5E]/20 dark:hover:shadow-[0_24px_48px_-14px_rgba(255,139,94,0.28)]"
         >
-          <div>
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 bg-gradient-to-br from-[#E75D2A]/[0.06] via-transparent to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100 dark:from-[#FF8B5E]/[0.1]"
+          />
+          <div className="relative">
             <div className="flex items-start justify-between gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#E75D2A]/12 text-[#C84A1B] ring-1 ring-[#E75D2A]/20 transition-transform duration-200 group-hover:scale-105 dark:bg-[#E75D2A]/20 dark:text-[#FF8A5C] dark:ring-[#E75D2A]/30">
+              <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-[#E75D2A]/12 text-[#C84A1B] ring-1 ring-[#E75D2A]/20 transition-all duration-300 ease-out group-hover:scale-110 group-hover:-rotate-3 group-hover:shadow-md dark:bg-[#E75D2A]/20 dark:text-[#FF8A5C] dark:ring-[#E75D2A]/30">
                 <svg
                   className="h-5.5 w-5.5"
                   viewBox="0 0 24 24"
@@ -395,11 +407,11 @@ export function ClassicPortalView({
               <h2 className="text-lg font-bold tracking-tight text-slate-900 transition-colors group-hover:text-[#C84A1B] dark:text-white dark:group-hover:text-[#FF8A5C]">
                 Degree Planner
               </h2>
-              <ArrowRightIcon className="h-4 w-4 text-slate-400 transition-all duration-200 group-hover:translate-x-1 group-hover:text-[#E75D2A] dark:group-hover:text-[#FF8A5C]" />
+              <ArrowRightIcon className="h-4 w-4 text-slate-400 transition-all duration-300 group-hover:translate-x-1.5 group-hover:text-[#E75D2A] dark:group-hover:text-[#FF8A5C]" />
             </div>
           </div>
 
-          <div className="mt-5 rounded-xl border border-slate-100 bg-slate-50/90 p-3 dark:border-slate-800 dark:bg-slate-950/60">
+          <div className="relative mt-5 rounded-xl border border-slate-100 bg-slate-50/90 p-3 transition-colors duration-300 group-hover:border-[#E75D2A]/20 dark:border-slate-800 dark:bg-slate-950/60 dark:group-hover:border-[#FF8B5E]/25">
             {degreeProgress && degreeProgress.plannedCourses > 0 ? (
               <>
                 <div className="flex items-center justify-between gap-2 text-[11px] font-semibold">
@@ -484,14 +496,14 @@ export function ClassicPortalView({
         className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-12"
       >
         {/* Left: Campus Pulse & Live Room Finder */}
-        <div className="relative flex flex-col justify-between overflow-hidden rounded-2xl bg-gradient-to-br from-[#003C71] via-[#00305C] to-[#002244] p-6 text-white shadow-[0_18px_40px_-16px_rgba(0,60,113,0.45)] lg:col-span-7">
+        <div className="group/pulse relative flex flex-col justify-between overflow-hidden rounded-2xl bg-gradient-to-br from-[#003C71] via-[#00305C] to-[#002244] p-6 text-white shadow-[0_18px_40px_-16px_rgba(0,60,113,0.45)] transition-all duration-300 ease-out will-change-transform hover:-translate-y-1.5 hover:scale-[1.015] hover:ring-2 hover:ring-sky-300/30 hover:shadow-[0_28px_56px_-14px_rgba(0,60,113,0.6)] lg:col-span-7 dark:hover:ring-sky-400/35 dark:hover:shadow-[0_28px_56px_-14px_rgba(56,189,248,0.28)]">
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute -right-12 -top-12 h-48 w-48 rounded-full bg-[#E75D2A]/30 blur-3xl"
+            className="pointer-events-none absolute -right-12 -top-12 h-48 w-48 rounded-full bg-[#E75D2A]/30 blur-3xl transition-transform duration-500 ease-out group-hover/pulse:scale-125"
           />
           <div
             aria-hidden="true"
-            className="pointer-events-none absolute -bottom-16 left-10 h-40 w-40 rounded-full bg-sky-400/15 blur-3xl"
+            className="pointer-events-none absolute -bottom-16 left-10 h-40 w-40 rounded-full bg-sky-400/15 blur-3xl transition-transform duration-500 ease-out group-hover/pulse:scale-125"
           />
 
           <div className="relative space-y-4">
@@ -524,14 +536,14 @@ export function ClassicPortalView({
               <div className="flex shrink-0 flex-wrap items-center gap-2">
                 <Link
                   href="/campus-map?building=LIB&filter=available&now=1"
-                  className="group inline-flex items-center gap-2 rounded-xl bg-[#E75D2A] px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-black/20 transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#F06835] hover:shadow-xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+                  className="group inline-flex items-center gap-2 rounded-xl bg-[#E75D2A] px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-black/20 transition-all duration-200 ease-out hover:-translate-y-1 hover:scale-[1.03] hover:bg-[#F06835] hover:shadow-[0_14px_28px_-8px_rgba(231,93,42,0.58)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
                 >
                   <span>Find a Library Room</span>
                   <ArrowRightIcon className="h-4 w-4 transition-transform duration-200 group-hover:translate-x-1" />
                 </Link>
                 <Link
                   href="/campus-map?filter=available&now=1"
-                  className="inline-flex items-center rounded-xl border border-white/20 bg-white/10 px-3.5 py-2.5 text-xs font-semibold text-white transition-colors hover:bg-white/20 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+                  className="inline-flex items-center rounded-xl border border-white/20 bg-white/10 px-3.5 py-2.5 text-xs font-semibold text-white transition-all duration-200 ease-out hover:-translate-y-0.5 hover:scale-[1.03] hover:border-white/40 hover:bg-white/20 hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
                 >
                   All Open Rooms
                 </Link>
@@ -549,7 +561,7 @@ export function ClassicPortalView({
                   <Link
                     key={bldg}
                     href={`/campus-map?building=${bldg}&filter=available&now=1`}
-                    className="rounded-full border border-white/20 bg-white/10 px-2.5 py-0.5 font-mono text-[11px] font-semibold text-white transition-colors hover:border-emerald-300/60 hover:bg-emerald-400/20"
+                    className="rounded-full border border-white/20 bg-white/10 px-2.5 py-0.5 font-mono text-[11px] font-semibold text-white transition-all duration-200 ease-out hover:-translate-y-0.5 hover:scale-105 hover:border-emerald-300/75 hover:bg-emerald-400/25 hover:shadow-sm"
                   >
                     {bldg}
                   </Link>
@@ -560,7 +572,7 @@ export function ClassicPortalView({
         </div>
 
         {/* Right: Single-Click Essential OTU Shortcuts Grid */}
-        <div className="flex flex-col gap-4 rounded-2xl border border-slate-200/90 bg-white/95 p-5 shadow-xs backdrop-blur-xs lg:col-span-5 dark:border-slate-800 dark:bg-slate-900/90">
+        <div className="flex flex-col gap-4 rounded-2xl border border-slate-200/90 bg-white/95 p-5 shadow-xs backdrop-blur-xs transition-all duration-300 ease-out will-change-transform hover:-translate-y-1.5 hover:scale-[1.015] hover:border-[#003C71]/45 hover:ring-2 hover:ring-[#003C71]/12 hover:shadow-[0_24px_48px_-14px_rgba(0,60,113,0.24)] lg:col-span-5 dark:border-slate-800 dark:bg-slate-900/90 dark:hover:border-sky-400/50 dark:hover:ring-sky-400/18 dark:hover:shadow-[0_24px_48px_-14px_rgba(56,189,248,0.22)]">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <h2 className="text-xs font-bold tracking-wider text-slate-700 uppercase dark:text-slate-200">
@@ -581,7 +593,7 @@ export function ClassicPortalView({
                     ? "Edit Google accounts, services & Meet links"
                     : "Add Google school & personal shortcuts"
                 }
-                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200/90 bg-slate-50 px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 transition-colors hover:border-[#003C71]/35 hover:bg-white hover:text-[#003C71] dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-200 dark:hover:border-sky-400/40 dark:hover:bg-slate-800 dark:hover:text-sky-300"
+                className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200/90 bg-slate-50 px-2.5 py-1.5 text-[11px] font-semibold text-slate-700 transition-all duration-200 hover:-translate-y-0.5 hover:scale-[1.03] hover:border-[#003C71]/45 hover:bg-white hover:text-[#003C71] hover:shadow-xs dark:border-slate-700 dark:bg-slate-800/80 dark:text-slate-200 dark:hover:border-sky-400/50 dark:hover:bg-slate-800 dark:hover:text-sky-300"
               >
                 <GoogleLogoIcon className="h-3.5 w-3.5 shrink-0" />
                 <span>
@@ -595,7 +607,7 @@ export function ClassicPortalView({
                 type="button"
                 onClick={onOpenAddShortcut}
                 title="Add custom shortcut"
-                className="inline-flex items-center gap-1 rounded-lg border border-dashed border-slate-300 bg-white/80 px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 transition-colors hover:border-[#003C71]/40 hover:bg-[#EBF3FC]/60 hover:text-[#003C71] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-sky-400/40 dark:hover:text-sky-300"
+                className="inline-flex cursor-pointer items-center gap-1 rounded-lg border border-dashed border-slate-300 bg-white/80 px-2.5 py-1.5 text-[11px] font-semibold text-slate-600 transition-all duration-200 hover:-translate-y-0.5 hover:scale-[1.03] hover:border-[#003C71]/50 hover:bg-[#EBF3FC]/70 hover:text-[#003C71] hover:shadow-xs dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:border-sky-400/50 dark:hover:text-sky-300"
               >
                 <span aria-hidden="true">+</span>
                 <span>Add</span>
@@ -605,7 +617,7 @@ export function ClassicPortalView({
 
           <div
             aria-label="Quick shortcuts"
-            className="grid max-h-[250px] grid-cols-3 gap-2.5 overflow-y-auto py-0.5 pr-0.5 sm:grid-cols-4 lg:grid-cols-3"
+            className="-m-1 grid max-h-[258px] grid-cols-3 gap-2.5 overflow-y-auto p-1.5 sm:grid-cols-4 lg:grid-cols-3"
           >
             {shortcutEntries.map((entry) => {
               const ringClass = SHORTCUT_RING_CLASSES[entry.tone];
@@ -616,10 +628,10 @@ export function ClassicPortalView({
                     target="_blank"
                     rel="noopener noreferrer"
                     title={entry.title}
-                    className="flex h-full flex-col items-center justify-center gap-1.5 rounded-xl border border-slate-200/85 bg-slate-50/75 px-2 py-3 text-center transition-all duration-150 hover:-translate-y-0.5 hover:border-[#003C71]/35 hover:bg-white hover:shadow-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#003C71] dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-sky-400/40 dark:hover:bg-slate-800/80"
+                    className="flex h-full flex-col items-center justify-center gap-1.5 rounded-xl border border-slate-200/85 bg-slate-50/75 px-2 py-3 text-center transition-all duration-200 ease-out will-change-transform hover:-translate-y-1 hover:scale-[1.05] hover:border-[#003C71]/50 hover:bg-white hover:shadow-[0_12px_24px_-8px_rgba(0,60,113,0.26)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#003C71] dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-sky-400/55 dark:hover:bg-slate-800/90 dark:hover:shadow-[0_12px_24px_-8px_rgba(56,189,248,0.24)]"
                   >
                     <span
-                      className={`flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border ${ringClass} bg-white shadow-2xs dark:bg-slate-900`}
+                      className={`flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full border ${ringClass} bg-white shadow-2xs transition-transform duration-200 ease-out group-hover:scale-110 dark:bg-slate-900`}
                     >
                       {entry.imageUrl ? (
                         // eslint-disable-next-line @next/next/no-img-element
