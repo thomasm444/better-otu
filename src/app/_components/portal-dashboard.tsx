@@ -1,6 +1,7 @@
 "use client";
 
 import type { User } from "@supabase/supabase-js";
+import Image from "next/image";
 import Link from "next/link";
 import React, { useEffect, useState } from "react";
 
@@ -447,8 +448,25 @@ export function PortalDashboard({
 
       <div className="relative z-10 flex flex-1 flex-col">
         <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-5 py-7 sm:px-8 sm:py-10">
-          {/* Top Header: Greeting & Academic Summary */}
-          <header>
+          {/* Top Header: Brand Logo, Greeting & Academic Summary */}
+          <header className="flex items-center gap-4">
+            <Image
+              src="/images/better-otu-logo-light.svg"
+              alt="Better OTU logo"
+              width={80}
+              height={80}
+              priority
+              className="block h-16 w-16 shrink-0 object-contain sm:h-20 sm:w-20 dark:hidden"
+            />
+            <Image
+              src="/images/better-otu-logo-dark.svg"
+              alt="Better OTU logo"
+              width={80}
+              height={80}
+              priority
+              className="hidden h-16 w-16 shrink-0 object-contain sm:h-20 sm:w-20 dark:block"
+            />
+
             <div className="min-w-0">
               <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl dark:text-white">
                 {firstName ? `Welcome back, ${firstName}` : "Welcome to Better OTU"}

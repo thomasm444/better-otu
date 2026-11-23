@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="none">
+  <defs>
+    <clipPath id="u-cavity-dark">
+      <path d="M 61 64 H 173 V 162 A 56 56 0 0 1 61 162 Z" />
+    </clipPath>
+    <clipPath id="top-bar-dark">
+      <rect x="39" y="42" width="92" height="22" />
+    </clipPath>
+    <clipPath id="right-stem-top-dark">
+      <rect x="173" y="107" width="22" height="37" />
+    </clipPath>
+  </defs>
+
+  <!-- Inner icy light-blue arch -->
+  <g clip-path="url(#u-cavity-dark)">
+    <path
+      d="M 55 107 A 102 102 0 0 1 157 209 L 157 232"
+      stroke="#BFD5E2"
+      stroke-width="22"
+      stroke-linecap="butt"
+      fill="none"
+    />
+  </g>
+
+  <!-- Vibrant cyan bevel under the curved right tip of the top bar -->
+  <g clip-path="url(#top-bar-dark)">
+    <rect x="94" y="42" width="37" height="22" fill="#11C8D8" />
+    <path
+      d="M 39 42 H 131 Q 112 64 88 64 H 39 Z"
+      fill="#789AB0"
+    />
+  </g>
+
+  <!-- Vibrant cyan bevel at the top-left tip of the right stem -->
+  <g clip-path="url(#right-stem-top-dark)">
+    <rect x="173" y="107" width="22" height="37" fill="#11C8D8" />
+    <path
+      d="M 195 107 V 144 H 173 V 134 Q 173 116 195 107 Z"
+      fill="#789AB0"
+    />
+  </g>
+
+  <!-- Main steel-blue U body -->
+  <path
+    d="M 39 42 H 61 V 162 A 56 56 0 0 0 173 162 V 133 H 195 V 162 A 78 78 0 0 1 39 162 Z"
+    fill="#789AB0"
+  />
+
+  <!-- Vibrant cyan "+" mark -->
+  <rect x="173" y="17" width="22" height="72" fill="#11C8D8" />
+  <rect x="148" y="42" width="72" height="22" fill="#11C8D8" />
+</svg>

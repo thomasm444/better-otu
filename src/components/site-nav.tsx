@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AuthButton } from "./auth-button";
@@ -29,9 +30,25 @@ function NavChrome({
         <div className="flex min-w-0 flex-1 items-center gap-1.5 sm:gap-5">
           <Link
             href="/"
-            className="shrink-0 text-xs font-semibold tracking-tight text-zinc-900 transition-colors hover:text-[#0077CA] sm:text-sm dark:text-zinc-100"
+            className="inline-flex shrink-0 items-center gap-2 text-xs font-semibold tracking-tight text-zinc-900 transition-colors hover:text-[#0077CA] sm:text-sm dark:text-zinc-100"
           >
-            Better OTU
+            <Image
+              src="/images/better-otu-logo-light.svg"
+              alt=""
+              width={28}
+              height={28}
+              priority
+              className="block h-7 w-7 shrink-0 object-contain dark:hidden"
+            />
+            <Image
+              src="/images/better-otu-logo-dark.svg"
+              alt=""
+              width={28}
+              height={28}
+              priority
+              className="hidden h-7 w-7 shrink-0 object-contain dark:block"
+            />
+            <span>Better OTU</span>
           </Link>
 
           <nav
