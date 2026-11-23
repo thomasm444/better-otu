@@ -8,8 +8,8 @@ import { AuthButton } from "./auth-button";
 const NAV_ITEMS = [
   { href: "/", label: "Home" },
   { href: "/course-schedules", label: "Schedule" },
-  { href: "/degree-planner", label: "Planner" },
   { href: "/campus-map", label: "Map" },
+  { href: "/degree-planner", label: "Planner" },
 ] as const;
 
 function isActivePath(pathname: string, href: string): boolean {
