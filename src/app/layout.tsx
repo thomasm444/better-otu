@@ -28,13 +28,19 @@ export const metadata: Metadata = {
     "Browse Ontario Tech course sections, instructors and meeting times.",
 };
 
+const THEME_INIT_SCRIPT = `(function(){try{var k="better-otu:theme:v1";var v=localStorage.getItem(k);var d=v==="dark"||(v!=="light"&&window.matchMedia("(prefers-color-scheme: dark)").matches);document.documentElement.classList.toggle("dark",d);}catch(e){}})();`;
+
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
+      suppressHydrationWarning
       style={{ "--site-nav-height": "2.75rem" } as CSSProperties}
       className={`${geistSans.variable} ${geistMono.variable} ${clashRegular.variable} h-full antialiased`}
     >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
       <body className="min-h-full flex flex-col">
         <Suspense fallback={<SiteNavFallback />}>
           <SiteNav />
