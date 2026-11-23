@@ -19,6 +19,7 @@ import {
 import type {
   CatalogCourse,
   CustomCourse,
+  DegreeSubject,
   OfferingContext,
   OfferingEntry,
   PickerState,
@@ -53,6 +54,7 @@ type CoursePickerModalProps = {
   startYear: number;
   customs: Map<string, CustomCourse>;
   subjects: string[];
+  degreeSubjects?: DegreeSubject[];
   subjectFaculty: Map<string, string | null>;
   onClose: () => void;
   onPlaceCourse: (termIndex: number, slotIndex: number, code: string) => void;
@@ -77,6 +79,7 @@ export function CoursePickerModal({
   startYear,
   customs,
   subjects,
+  degreeSubjects,
   subjectFaculty,
   onClose,
   onPlaceCourse,
@@ -84,11 +87,20 @@ export function CoursePickerModal({
   onSaveCustom,
   onToast,
 }: CoursePickerModalProps) {
-  const [query, setQuery] = useState(() => picker.initialQuery ?? "");
+  const initialSubjectCode = (() => {
+    const raw = picker.initialQuery?.trim().toUpperCase();
+    if (raw && subjects.includes(raw)) return raw;
+    return "";
+  })();
+
+  const [query, setQuery] = useState(() =>
+    initialSubjectCode ? "" : (picker.initialQuery ?? ""),
+  );
+  const [subjectFilter, setSubjectFilter] = useState(initialSubjectCode);
   const [selectedTermIndex, setSelectedTermIndex] = useState(
     () => picker.termIndex,
   );
-  const [filterTerm, setFilterTerm] = useState(true);
+  const [filterTerm, setFilterTerm] = useState(() => !picker.bucketKey);
   const [filterOffered, setFilterOffered] = useState(true);
   const [filterPrereq, setFilterPrereq] = useState(true);
   const [filterBucket, setFilterBucket] = useState(() =>
@@ -167,7 +179,7 @@ export function CoursePickerModal({
     const cleanPrefill = /[a-z]/i.test(prefill)
       ? prefill.toUpperCase().trim()
       : "";
-    setCxSubject("");
+    setCxSubject(subjectFilter || "");
     setCxLevel("1000");
     setCxCode(cleanPrefill);
     setCxTitle("");
@@ -324,13 +336,26 @@ export function CoursePickerModal({
     };
   }, [customDraft, catalogMap, offeringsMap, model]);
 
+  const subjectNameMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const s of degreeSubjects ?? []) {
+      if (s.code && s.name) map.set(s.code, s.name);
+    }
+    for (const c of catalogCourses) {
+      if (c.subject && c.subject_name && !map.has(c.subject)) {
+        map.set(c.subject, c.subject_name);
+      }
+    }
+    return map;
+  }, [degreeSubjects, catalogCourses]);
+
   const placed = useMemo(() => earnedCodes(terms, customs), [terms, customs]);
   const completed = useMemo(
     () => completedBefore(terms, selectedTermIndex, equivMap, customs),
     [terms, selectedTermIndex, equivMap, customs],
   );
 
-  const filteredRows = useMemo(() => {
+  const baseRows = useMemo(() => {
     if (!term) return [];
 
     const inThisTerm = new Set(term.slots.filter((s): s is string => Boolean(s)));
@@ -345,8 +370,7 @@ export function CoursePickerModal({
       );
     }
 
-    const seasonal = filterTerm && !(filterBucket && bucket);
-    if (seasonal) {
+    if (filterTerm) {
       rows = rows.filter((c) =>
         offeredIn(c.code, term.season, offeringsMap, customs, {
           calendarYear: calYear,
@@ -367,33 +391,7 @@ export function CoursePickerModal({
           false,
       );
     }
-
-    const targetLevel = term.year * 1000;
-    return rows
-      .slice()
-      .sort((a, b) => {
-        const usedA = placed.has(a.code) ? 1 : 0;
-        const usedB = placed.has(b.code) ? 1 : 0;
-        if (usedA !== usedB) return usedA - usedB;
-        const seasonA = offeredIn(a.code, term.season, offeringsMap, customs, {
-          calendarYear: calYear,
-          context: offeringContext,
-        })
-          ? 0
-          : 1;
-        const seasonB = offeredIn(b.code, term.season, offeringsMap, customs, {
-          calendarYear: calYear,
-          context: offeringContext,
-        })
-          ? 0
-          : 1;
-        if (seasonA !== seasonB) return seasonA - seasonB;
-        const gapA = Math.abs((a.level || 0) - targetLevel);
-        const gapB = Math.abs((b.level || 0) - targetLevel);
-        if (gapA !== gapB) return gapA - gapB;
-        return a.code.localeCompare(b.code);
-      })
-      .slice(0, 80);
+    return rows;
   }, [
     term,
     catalogCourses,
@@ -409,6 +407,78 @@ export function CoursePickerModal({
     academicBaseYear,
     customs,
     completed,
+  ]);
+
+  const subjectOptions = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const c of baseRows) {
+      if (!c.subject) continue;
+      counts.set(c.subject, (counts.get(c.subject) ?? 0) + 1);
+    }
+    const allCodes = new Set<string>([
+      ...subjects,
+      ...counts.keys(),
+      ...(subjectFilter ? [subjectFilter] : []),
+    ]);
+    return [...allCodes]
+      .map((code) => ({
+        code,
+        name: subjectNameMap.get(code) ?? code,
+        count: counts.get(code) ?? 0,
+      }))
+      .sort((a, b) => {
+        if ((a.count > 0) !== (b.count > 0)) return a.count > 0 ? -1 : 1;
+        return a.name.localeCompare(b.name) || a.code.localeCompare(b.code);
+      });
+  }, [baseRows, subjects, subjectFilter, subjectNameMap]);
+
+  const { filteredRows, totalMatchingCount } = useMemo(() => {
+    if (!term) return { filteredRows: [] as CatalogCourse[], totalMatchingCount: 0 };
+
+    const matching = subjectFilter
+      ? baseRows.filter((c) => c.subject === subjectFilter)
+      : baseRows;
+
+    const targetLevel = term.year * 1000;
+    const sorted = matching.slice().sort((a, b) => {
+      const usedA = placed.has(a.code) ? 1 : 0;
+      const usedB = placed.has(b.code) ? 1 : 0;
+      if (usedA !== usedB) return usedA - usedB;
+      const seasonA = offeredIn(a.code, term.season, offeringsMap, customs, {
+        calendarYear: calYear,
+        context: offeringContext,
+      })
+        ? 0
+        : 1;
+      const seasonB = offeredIn(b.code, term.season, offeringsMap, customs, {
+        calendarYear: calYear,
+        context: offeringContext,
+      })
+        ? 0
+        : 1;
+      if (seasonA !== seasonB) return seasonA - seasonB;
+      const gapA = Math.abs((a.level || 0) - targetLevel);
+      const gapB = Math.abs((b.level || 0) - targetLevel);
+      if (gapA !== gapB) return gapA - gapB;
+      return a.code.localeCompare(b.code);
+    });
+
+    const visible =
+      subjectFilter || query.trim() ? sorted : sorted.slice(0, 80);
+
+    return {
+      filteredRows: visible,
+      totalMatchingCount: matching.length,
+    };
+  }, [
+    term,
+    baseRows,
+    subjectFilter,
+    query,
+    offeringsMap,
+    offeringContext,
+    calYear,
+    customs,
     placed,
   ]);
 
@@ -467,31 +537,31 @@ export function CoursePickerModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center bg-black/45 px-4 py-[6vh]"
+      className="fixed inset-0 z-50 flex items-start justify-center bg-slate-950/40 px-4 py-[6vh] backdrop-blur-xs"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="flex max-h-[84vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900">
+      <div className="flex max-h-[84vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900">
         {/* Header */}
-        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-zinc-200 px-5 py-3.5 dark:border-zinc-800">
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-200/80 bg-gradient-to-r from-sky-50/70 via-white to-violet-50/60 px-5 py-3.5 dark:border-slate-800 dark:from-sky-950/30 dark:via-slate-900 dark:to-violet-950/30">
           <div className="min-w-0 flex-1">
-            <h3 className="text-[15px] font-semibold text-zinc-900 dark:text-zinc-100">
+            <h3 className="text-[15px] font-semibold text-slate-900 dark:text-slate-100">
               {titleText}
             </h3>
-            <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
               {subText}
             </p>
           </div>
           <div className="flex items-center gap-2">
             {!initialTransferMode && terms.length > 0 && (
-              <label className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-400">
+              <label className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400">
                 <span>Add to:</span>
                 <select
                   value={selectedTermIndex}
                   onChange={(e) => setSelectedTermIndex(Number(e.target.value))}
                   aria-label="Target year and term"
-                  className="rounded-lg border border-zinc-200 bg-white px-2 py-1 text-xs font-medium text-zinc-900 focus:border-blue-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+                  className="rounded-xl border border-slate-200/90 bg-white px-2.5 py-1 text-xs font-medium text-slate-900 focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
                 >
                   {terms.map((t, idx) => {
                     const usedCount = t.slots.filter(Boolean).length;
@@ -518,88 +588,134 @@ export function CoursePickerModal({
               type="button"
               onClick={onClose}
               aria-label="Close"
-              className="rounded-lg px-2 py-1 text-base text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+              className="rounded-xl px-2 py-1 text-base text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
             >
               ×
             </button>
           </div>
         </div>
 
-        {/* Search & filter chips */}
+        {/* Search, Subject Box & Filter Chips */}
         {!initialTransferMode && (
-          <div className="flex flex-wrap items-center gap-2 border-b border-zinc-200 px-5 py-2.5 dark:border-zinc-800">
-            <input
-              ref={searchInputRef}
-              type="search"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (
-                  e.key === "Enter" &&
-                  !customOpen &&
-                  filteredRows.length > 0
-                ) {
-                  e.preventDefault();
-                  handleAddCourse(filteredRows[0].code);
-                }
-              }}
-              placeholder="Search code or title…"
-              autoComplete="off"
-              className="min-w-[200px] flex-1 rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-sm text-zinc-900 focus:border-blue-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
-            />
-            {[
-              {
-                label: "Offered this term",
-                active: filterTerm,
-                onClick: () => setFilterTerm((v) => !v),
-              },
-              {
-                label: `Offered ${String(academicBaseYear).slice(-2)}–${String(academicBaseYear + 1).slice(-2)}`,
-                active: filterOffered,
-                onClick: () => setFilterOffered((v) => !v),
-              },
-              {
-                label: "Prereqs met",
-                active: filterPrereq,
-                onClick: () => setFilterPrereq((v) => !v),
-              },
-            ].map((chip) => (
+          <div className="space-y-2.5 border-b border-slate-200/80 px-5 py-3 dark:border-slate-800">
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                ref={searchInputRef}
+                type="search"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (
+                    e.key === "Enter" &&
+                    !customOpen &&
+                    filteredRows.length > 0
+                  ) {
+                    e.preventDefault();
+                    handleAddCourse(filteredRows[0].code);
+                  }
+                }}
+                placeholder="Search code or title…"
+                autoComplete="off"
+                className="min-w-[200px] flex-1 rounded-xl border border-slate-200/90 bg-slate-50/70 px-3 py-1.5 text-sm text-slate-900 focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-400/20 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+              />
+              {[
+                {
+                  label: `Offered ${term.season} ${calYear}`,
+                  active: filterTerm,
+                  onClick: () => setFilterTerm((v) => !v),
+                },
+                {
+                  label: `Offered ${String(academicBaseYear).slice(-2)}–${String(academicBaseYear + 1).slice(-2)}`,
+                  active: filterOffered,
+                  onClick: () => setFilterOffered((v) => !v),
+                },
+                {
+                  label: "Prereqs met",
+                  active: filterPrereq,
+                  onClick: () => setFilterPrereq((v) => !v),
+                },
+              ].map((chip) => (
+                <button
+                  key={chip.label}
+                  type="button"
+                  aria-pressed={chip.active}
+                  onClick={chip.onClick}
+                  className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                    chip.active
+                      ? "border-sky-200 bg-sky-50 font-medium text-sky-800 dark:border-sky-800 dark:bg-sky-950/60 dark:text-sky-300"
+                      : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400"
+                  }`}
+                >
+                  {chip.label}
+                </button>
+              ))}
+              {bucket && (
+                <button
+                  type="button"
+                  aria-pressed={filterBucket}
+                  onClick={() => setFilterBucket((v) => !v)}
+                  className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                    filterBucket
+                      ? "border-sky-200 bg-sky-50 font-medium text-sky-800 dark:border-sky-800 dark:bg-sky-950/60 dark:text-sky-300"
+                      : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-400"
+                  }`}
+                >
+                  Fits requirement
+                </button>
+              )}
               <button
-                key={chip.label}
                 type="button"
-                aria-pressed={chip.active}
-                onClick={chip.onClick}
-                className={`rounded-full border px-3 py-1 text-xs transition-colors ${
-                  chip.active
-                    ? "border-blue-200 bg-blue-50 font-medium text-blue-800 dark:border-blue-800 dark:bg-blue-950/60 dark:text-blue-300"
-                    : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400"
-                }`}
+                onClick={() => openCustomForm(query)}
+                title="A course not listed in the timetable"
+                className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs text-slate-600 transition-colors hover:border-sky-400 hover:text-sky-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
               >
-                {chip.label}
+                ＋ Custom course
               </button>
-            ))}
-            {bucket && (
-              <button
-                type="button"
-                aria-pressed={filterBucket}
-                onClick={() => setFilterBucket((v) => !v)}
-                className={`rounded-full border px-3 py-1 text-xs transition-colors ${
-                  filterBucket
-                    ? "border-blue-200 bg-blue-50 font-medium text-blue-800 dark:border-blue-800 dark:bg-blue-950/60 dark:text-blue-300"
-                    : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400"
-                }`}
-              >
-                Fits requirement
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => openCustomForm(query)}
-              title="A course not listed in the timetable"
-              className="rounded-full border border-zinc-200 bg-white px-3 py-1 text-xs text-zinc-600 hover:border-blue-400 hover:text-blue-700 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
-            >
-              ＋ Custom course
-            </button>
+            </div>
+
+            {/* Dedicated Subject / Department Filter Box */}
+            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200/80 bg-slate-50/75 px-3 py-2 dark:border-slate-800 dark:bg-slate-950/60">
+              <label className="flex min-w-0 flex-1 flex-wrap items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-300">
+                <span className="shrink-0">Only show subject:</span>
+                <select
+                  value={subjectFilter}
+                  onChange={(e) => setSubjectFilter(e.target.value)}
+                  aria-label="Only show courses from subject"
+                  className={`min-w-[220px] flex-1 rounded-xl border px-2.5 py-1 text-xs font-medium focus:outline-none sm:max-w-xs ${
+                    subjectFilter
+                      ? "border-sky-300 bg-sky-50/80 text-sky-900 focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20 dark:border-sky-700 dark:bg-sky-950/50 dark:text-sky-100"
+                      : "border-slate-200 bg-white text-slate-800 focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                  }`}
+                >
+                  <option value="">
+                    All subjects ({baseRows.length} courses)
+                  </option>
+                  {subjectOptions.map((opt) => (
+                    <option key={opt.code} value={opt.code}>
+                      {opt.name === opt.code
+                        ? `${opt.code} (${opt.count})`
+                        : `${opt.name} (${opt.code}) · ${opt.count}`}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {subjectFilter && (
+                <button
+                  type="button"
+                  onClick={() => setSubjectFilter("")}
+                  className="rounded-lg border border-sky-200 bg-white px-2.5 py-1 text-[11.5px] font-medium text-sky-700 transition-colors hover:bg-sky-50 dark:border-sky-800 dark:bg-slate-900 dark:text-sky-300 dark:hover:bg-sky-950/50"
+                >
+                  Show all subjects ×
+                </button>
+              )}
+
+              <span className="ml-auto text-[11px] text-slate-500 tabular-nums dark:text-slate-400">
+                {filteredRows.length === totalMatchingCount
+                  ? `${totalMatchingCount} ${totalMatchingCount === 1 ? "course" : "courses"} shown`
+                  : `Showing ${filteredRows.length} of ${totalMatchingCount} courses`}
+              </span>
+            </div>
           </div>
         )}
 
@@ -971,18 +1087,37 @@ export function CoursePickerModal({
               );
             })}
             {filteredRows.length === 0 ? (
-                  <div className="px-6 py-8 text-center text-[13px] text-zinc-500 dark:text-zinc-400">
+                  <div className="px-6 py-8 text-center text-[13px] text-slate-500 dark:text-slate-400">
                     {query.trim()
-                      ? `Nothing here matches “${query.trim()}”.`
-                      : "Nothing matches those filters."}
+                      ? `Nothing here matches “${query.trim()}”${subjectFilter ? ` in ${subjectNameMap.get(subjectFilter) ?? subjectFilter}` : ""}.`
+                      : subjectFilter
+                        ? `No ${subjectNameMap.get(subjectFilter) ?? subjectFilter} (${subjectFilter}) courses match those filters.`
+                        : "Nothing matches those filters."}
                     <br />
-                    It may not be running this year, or you may have taken it
-                    elsewhere.
-                    <div className="mt-3">
+                    Try turning off &ldquo;Prereqs met&rdquo; or &ldquo;Offered {term.season} {calYear}&rdquo;, or add a custom course.
+                    <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+                      {filterPrereq && (
+                        <button
+                          type="button"
+                          onClick={() => setFilterPrereq(false)}
+                          className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-800 transition-colors hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/60 dark:text-amber-300"
+                        >
+                          Show courses with unmet prereqs
+                        </button>
+                      )}
+                      {filterTerm && (
+                        <button
+                          type="button"
+                          onClick={() => setFilterTerm(false)}
+                          className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300"
+                        >
+                          Show all terms
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => openCustomForm(query)}
-                        className="rounded-lg border border-blue-200 bg-blue-50 px-3.5 py-1.5 text-xs font-medium text-blue-800 hover:border-blue-400 dark:border-blue-800 dark:bg-blue-950/60 dark:text-blue-300"
+                        className="rounded-xl border border-sky-200 bg-sky-50 px-3.5 py-1.5 text-xs font-medium text-sky-800 hover:border-sky-400 dark:border-sky-800 dark:bg-sky-950/60 dark:text-sky-300"
                       >
                         ＋ Add a custom course
                       </button>

@@ -23,15 +23,15 @@ export const MAX_SLOTS_PER_TERM = 8;
 export const CREDIT_CAP = 15;
 
 /**
- * Ensures a term has at least SLOTS_PER_TERM (5) slots and at most
- * MAX_SLOTS_PER_TERM (8) slots, trimming trailing empty slots beyond 5.
+ * Compacts all non-empty courses to the top of a term's slot list (no blank
+ * gaps between courses), caps at MAX_SLOTS_PER_TERM (8), and pads up to
+ * SLOTS_PER_TERM (5) with trailing empty slots.
  */
 export function normalizeTermSlots(
   slots: (string | null)[],
 ): (string | null)[] {
-  const next: (string | null)[] = slots
-    .filter((s): s is string => Boolean(s))
-    .slice(0, MAX_SLOTS_PER_TERM);
+  const courses = slots.filter((code): code is string => Boolean(code));
+  const next: (string | null)[] = courses.slice(0, MAX_SLOTS_PER_TERM);
   while (next.length < SLOTS_PER_TERM) {
     next.push(null);
   }
@@ -982,7 +982,7 @@ export function buildDefaultPlan(
   }
 
   for (const term of terms) {
-    while (term.slots.length < SLOTS_PER_TERM) term.slots.push(null);
+    term.slots = normalizeTermSlots(term.slots);
   }
 
   return { terms, unscheduled };
@@ -1386,6 +1386,85 @@ export function evaluateDegreeRules(
   }
 
   return { rules, firstYearCredits, csci4000Credits };
+}
+
+export type BucketAllocation = {
+  credits: number;
+  assignedCodes: string[];
+};
+
+function bucketSpecificityScore(bucket: ElectiveBucket): number {
+  const m = bucket.match;
+  let score = 0;
+  if (m.subjects && m.subjects.length > 0) score += 40;
+  if (m.faculties && m.faculties.length > 0) score += 30;
+  if (m.min_level) score += 20 + m.min_level / 1000;
+  if (m.max_level) score += 10;
+  if (m.exclude_subjects && m.exclude_subjects.length > 0) score += 8;
+  if (m.exclude_faculties && m.exclude_faculties.length > 0) score += 8;
+  return score;
+}
+
+/**
+ * Greedily assigns each free elective course to at most one bucket in this list,
+ * allocating more constrained buckets (e.g. CSCI 4000+, Non-CSCI Science,
+ * outside Science) before general "Any elective" buckets so courses aren't
+ * confusingly double-counted across multiple bars.
+ */
+export function allocateBuckets(
+  buckets: ElectiveBucket[],
+  freeCodes: string[],
+  catalogMap: Map<string, CatalogCourse>,
+  customs: Map<string, CustomCourse>,
+): Map<string, BucketAllocation> {
+  const result = new Map<string, BucketAllocation>();
+  for (const b of buckets) {
+    result.set(b.key, { credits: 0, assignedCodes: [] });
+  }
+  if (buckets.length === 0 || freeCodes.length === 0) return result;
+
+  const uniqueCodes = [...new Set(freeCodes)];
+  const orderedIndices = buckets
+    .map((b, idx) => ({ b, idx, score: bucketSpecificityScore(b) }))
+    .sort((a, b) => b.score - a.score || a.idx - b.idx)
+    .map((entry) => entry.idx);
+
+  const used = new Set<string>();
+
+  for (let pass = 0; pass < orderedIndices.length; pass++) {
+    const bucket = buckets[orderedIndices[pass]];
+    const isLast = pass === orderedIndices.length - 1;
+    const entry = result.get(bucket.key)!;
+
+    const candidates = uniqueCodes.filter(
+      (code) =>
+        !used.has(code) &&
+        matchesBucket(courseOf(code, catalogMap, customs), bucket.match),
+    );
+
+    // If this bucket has sub-requirements (e.g. BUSI / COMM inside outside Science),
+    // prioritize courses matching unsatisfied sub-requirements first.
+    if (bucket.subs.length > 0) {
+      candidates.sort((a, b) => {
+        const ca = courseOf(a, catalogMap, customs);
+        const cb = courseOf(b, catalogMap, customs);
+        const subsA = bucket.subs.filter((s) => matchesBucket(ca, s.match)).length;
+        const subsB = bucket.subs.filter((s) => matchesBucket(cb, s.match)).length;
+        return subsB - subsA;
+      });
+    }
+
+    for (const code of candidates) {
+      if (!isLast && entry.credits >= bucket.credits) break;
+      const cr = creditsOf(code, catalogMap, customs);
+      if (cr <= 0) continue;
+      used.add(code);
+      entry.assignedCodes.push(code);
+      entry.credits += cr;
+    }
+  }
+
+  return result;
 }
 
 export function findBucket(
