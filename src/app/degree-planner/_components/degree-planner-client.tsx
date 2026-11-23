@@ -305,6 +305,7 @@ export function DegreePlannerClient({
   }, [pendingRemoveCourse]);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarTab, setSidebarTab] = useState<"major" | "minor">("major");
+  const [mobileTab, setMobileTab] = useState<"plan" | "requirements">("plan");
   const [minorProgram, setMinorProgram] =
     useState<DegreeProgramDetail | null>(null);
   const [loadingMinor, setLoadingMinor] = useState(false);
@@ -2997,8 +2998,39 @@ export function DegreePlannerClient({
 
       {/* Main Layout */}
       <main className="mx-auto max-w-[1440px] p-4">
+        {program && model && (
+          <div className="mb-3 grid grid-cols-2 rounded-xl border border-line bg-surface p-1 text-xs font-medium shadow-[var(--shadow-sm)] md:hidden">
+            <button
+              type="button"
+              onClick={() => setMobileTab("plan")}
+              className={`rounded-lg py-2 transition-colors ${
+                mobileTab === "plan"
+                  ? "bg-brand text-brand-fg"
+                  : "text-ink-muted hover:text-ink"
+              }`}
+            >
+              Plan
+            </button>
+            <button
+              type="button"
+              onClick={() => setMobileTab("requirements")}
+              className={`rounded-lg py-2 transition-colors ${
+                mobileTab === "requirements"
+                  ? "bg-brand text-brand-fg"
+                  : "text-ink-muted hover:text-ink"
+              }`}
+            >
+              Requirements
+            </button>
+          </div>
+        )}
+
         {program && model && sidebarOpen && (
-          <div className="mb-3 grid grid-cols-1 items-center gap-3 md:grid-cols-[minmax(0,1fr)_300px] md:gap-4 lg:grid-cols-[minmax(0,1fr)_350px] lg:gap-5 xl:grid-cols-[minmax(0,1fr)_395px]">
+          <div
+            className={`mb-3 grid-cols-1 items-center gap-3 md:grid md:grid-cols-[minmax(0,1fr)_300px] md:gap-4 lg:grid-cols-[minmax(0,1fr)_350px] lg:gap-5 xl:grid-cols-[minmax(0,1fr)_395px] ${
+              mobileTab === "plan" ? "grid" : "hidden"
+            }`}
+          >
             {!loadingProgram && academicYears.length > 0 ? (
               <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-3.5 gap-y-1.5 rounded-2xl border border-slate-200/75 bg-white/75 px-3.5 py-2 text-[11.5px] text-slate-500 shadow-[0_1px_6px_rgba(15,23,42,0.03)] backdrop-blur-xs dark:border-slate-800/80 dark:bg-slate-900/55 dark:text-slate-400">
                 <span className="inline-flex items-center gap-1.5">
@@ -3031,7 +3063,7 @@ export function DegreePlannerClient({
               <div className="flex-1" />
             )}
 
-            <div className="flex justify-end">
+            <div className="hidden justify-end md:flex">
               <button
                 type="button"
                 aria-expanded={sidebarOpen}
@@ -3051,14 +3083,24 @@ export function DegreePlannerClient({
             program && model && sidebarOpen
               ? "grid grid-cols-1 items-start gap-5 md:grid-cols-[minmax(0,1fr)_300px] md:gap-4 lg:grid-cols-[minmax(0,1fr)_350px] lg:gap-5 xl:grid-cols-[minmax(0,1fr)_395px]"
               : program && model && !sidebarOpen
-                ? "grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3"
+                ? "grid grid-cols-1 items-start gap-3 md:grid-cols-[minmax(0,1fr)_auto]"
                 : ""
           }
         >
         {/* Planner Grid */}
-        <section className="min-w-0">
+        <section
+          className={`min-w-0 ${
+            program && model && mobileTab === "requirements"
+              ? "hidden md:block"
+              : "block"
+          }`}
+        >
           {program && model && !sidebarOpen && !loadingProgram && academicYears.length > 0 && (
-            <div className="mb-3 flex min-w-0 flex-wrap items-center gap-x-3.5 gap-y-1.5 rounded-2xl border border-slate-200/75 bg-white/75 px-3.5 py-2 text-[11.5px] text-slate-500 shadow-[0_1px_6px_rgba(15,23,42,0.03)] backdrop-blur-xs dark:border-slate-800/80 dark:bg-slate-900/55 dark:text-slate-400">
+            <div
+              className={`mb-3 min-w-0 flex-wrap items-center gap-x-3.5 gap-y-1.5 rounded-2xl border border-slate-200/75 bg-white/75 px-3.5 py-2 text-[11.5px] text-slate-500 shadow-[0_1px_6px_rgba(15,23,42,0.03)] backdrop-blur-xs md:flex dark:border-slate-800/80 dark:bg-slate-900/55 dark:text-slate-400 ${
+                mobileTab === "plan" ? "flex" : "hidden"
+              }`}
+            >
               <span className="inline-flex items-center gap-1.5">
                 <span className="h-2.5 w-1 rounded-full bg-sky-400" />
                 <span>Major core</span>
@@ -3634,10 +3676,20 @@ export function DegreePlannerClient({
           )}
         </section>
 
-        {/* Right Column ("What you need") — toggled from the button above */}
+        {/* Right Column ("What you need") — tab on phone, toggled panel on desktop */}
         {program && model ? (
-          sidebarOpen ? (
-            <div className="relative md:sticky md:top-[calc(var(--site-nav-height,2.75rem)+var(--planner-header-h,152px)+12px)]">
+          <>
+            <div
+              className={
+                sidebarOpen
+                  ? `relative md:sticky md:top-[calc(var(--site-nav-height,2.75rem)+var(--planner-header-h,152px)+12px)] ${
+                      mobileTab === "requirements" ? "block" : "hidden md:block"
+                    }`
+                  : mobileTab === "requirements"
+                    ? "block md:hidden"
+                    : "hidden"
+              }
+            >
               <RequirementsSidebar
                 program={program}
                 model={model}
@@ -3713,20 +3765,21 @@ export function DegreePlannerClient({
                 }}
               />
             </div>
-          ) : (
-            <div className="flex justify-end md:sticky md:top-[calc(var(--site-nav-height,2.75rem)+var(--planner-header-h,152px)+12px)]">
-              <button
-                type="button"
-                aria-expanded={false}
-                aria-label="Show requirements panel"
-                title="Show requirements panel"
-                onClick={() => setSidebarOpen(true)}
-                className="inline-flex min-h-[156px] shrink-0 items-center justify-center rounded-xl border border-slate-200/90 bg-white/95 px-1.5 py-3 text-xs font-medium text-slate-700 shadow-[0_1px_4px_rgba(15,23,42,0.04)] transition-colors [writing-mode:vertical-rl] hover:border-sky-300 hover:bg-sky-50/60 hover:text-sky-800 dark:border-slate-700/80 dark:bg-slate-900/95 dark:text-slate-200 dark:hover:border-sky-700 dark:hover:text-sky-200"
-              >
-                ◀ Show requirements
-              </button>
-            </div>
-          )
+            {!sidebarOpen && (
+              <div className="hidden justify-end md:sticky md:top-[calc(var(--site-nav-height,2.75rem)+var(--planner-header-h,152px)+12px)] md:flex">
+                <button
+                  type="button"
+                  aria-expanded={false}
+                  aria-label="Show requirements panel"
+                  title="Show requirements panel"
+                  onClick={() => setSidebarOpen(true)}
+                  className="inline-flex min-h-[156px] shrink-0 items-center justify-center rounded-xl border border-slate-200/90 bg-white/95 px-1.5 py-3 text-xs font-medium text-slate-700 shadow-[0_1px_4px_rgba(15,23,42,0.04)] transition-colors [writing-mode:vertical-rl] hover:border-sky-300 hover:bg-sky-50/60 hover:text-sky-800 dark:border-slate-700/80 dark:bg-slate-900/95 dark:text-slate-200 dark:hover:border-sky-700 dark:hover:text-sky-200"
+                >
+                  ◀ Show requirements
+                </button>
+              </div>
+            )}
+          </>
         ) : (
           <aside className="rounded-2xl border border-slate-200/80 bg-white/85 shadow-xs backdrop-blur-xs dark:border-slate-800 dark:bg-slate-900/80">
             <div className="border-b border-slate-200/75 px-4 py-3 dark:border-slate-800">

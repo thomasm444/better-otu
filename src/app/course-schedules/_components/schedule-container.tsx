@@ -1518,7 +1518,7 @@ export function ScheduleContainer({
               : "text-ink-muted hover:text-ink"
           }`}
         >
-          Course Lookup &amp; Explore
+          Courses
         </button>
       </div>
 
