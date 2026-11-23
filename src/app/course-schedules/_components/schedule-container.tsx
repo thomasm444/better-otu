@@ -45,6 +45,7 @@ import {
   type SectionGridPickerTarget,
   type TermScheduleCatalog,
 } from "../types";
+import { BannerExportModal } from "./banner-export-modal";
 import { CalendarExportModal } from "./calendar-export-modal";
 import { CourseLookupPanel } from "./course-lookup-panel";
 import { WeekScheduleGrid } from "./timetable-grid";
@@ -117,7 +118,7 @@ export function ScheduleContainer({
 }: ScheduleContainerProps) {
   const supabase = useMemo(() => createClient(), []);
   const catalogCacheRef = useRef<Map<string, TermScheduleCatalog>>(
-    new Map([[initialCatalog.term, initialCatalog]]),
+    new Map([[`${initialCatalog.term}:`, initialCatalog]]),
   );
 
   const [activeTerm, setActiveTerm] = useState<string>(initialCatalog.term);
@@ -222,6 +223,8 @@ export function ScheduleContainer({
   const [blkLabel, setBlkLabel] = useState("Blocked");
 
   const [isCalendarModalOpen, setIsCalendarModalOpen] = useState(false);
+  const [isBannerModalOpen, setIsBannerModalOpen] = useState(false);
+  const bannerExportTriggerRef = useRef<HTMLButtonElement>(null);
   const [syncStatus, setSyncStatus] = useState<
     "idle" | "saving" | "saved" | "local" | "error"
   >("idle");
@@ -364,7 +367,7 @@ export function ScheduleContainer({
       const local = loadLocalTermSchedule(activeTerm);
       const fallLocal = loadLocalTermSchedule("202609");
       const winterLocal = loadLocalTermSchedule("202701");
-      const summerLocal = loadLocalTermSchedule("202605");
+      const summerLocal = loadLocalTermSchedule("202705");
 
       let remotePlans: Awaited<ReturnType<typeof fetchAllDegreePlans>> = [];
       let dbState: Awaited<
@@ -655,7 +658,7 @@ export function ScheduleContainer({
       }
     }
 
-    const cached = catalogCacheRef.current.get(nextTerm);
+    const cached = catalogCacheRef.current.get(`${nextTerm}:`);
     if (cached) {
       setCatalog(cached);
       setActiveTerm(nextTerm);
@@ -669,11 +672,41 @@ export function ScheduleContainer({
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const nextCatalog = (await res.json()) as TermScheduleCatalog;
-      catalogCacheRef.current.set(nextTerm, nextCatalog);
+      catalogCacheRef.current.set(`${nextTerm}:`, nextCatalog);
       setCatalog(nextCatalog);
       setActiveTerm(nextTerm);
     } catch {
       showToast("Failed to load semester courses.");
+    } finally {
+      setLoadingTerm(false);
+    }
+  };
+
+  const handlePreviewTermChange = async (nextPreviewTerm: string | null) => {
+    setHoverPreviewSection(null);
+    setGridSectionPickers([]);
+    const cacheKey = `${activeTerm}:${nextPreviewTerm ?? ""}`;
+    const cached = catalogCacheRef.current.get(cacheKey);
+    if (cached) {
+      setCatalog(cached);
+      return;
+    }
+
+    setLoadingTerm(true);
+    try {
+      const params = new URLSearchParams({ term: activeTerm });
+      if (nextPreviewTerm) {
+        params.set("previewTerm", nextPreviewTerm);
+      }
+      const res = await fetch(
+        `/api/course-schedules/catalog?${params.toString()}`,
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const nextCatalog = (await res.json()) as TermScheduleCatalog;
+      catalogCacheRef.current.set(cacheKey, nextCatalog);
+      setCatalog(nextCatalog);
+    } catch {
+      showToast("Failed to load preview courses.");
     } finally {
       setLoadingTerm(false);
     }
@@ -705,7 +738,7 @@ export function ScheduleContainer({
     let raw: string[] = [];
     if (activeTerm === "202701") {
       raw = fallCodes;
-    } else if (activeTerm === "202605") {
+    } else if (activeTerm === "202705") {
       raw = [...new Set([...fallCodes, ...winterCodes])];
     }
     return raw.filter((c) => !dismissedTempCompleted.has(c));
@@ -832,6 +865,24 @@ export function ScheduleContainer({
     courseMap,
     hoverPreviewSection,
   ]);
+
+  const exportBannerCrns = useMemo(() => {
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const raw of activeCrns) {
+      const trimmed = raw.trim();
+      if (/^\d{5}$/.test(trimmed) && !seen.has(trimmed)) {
+        seen.add(trimmed);
+        result.push(trimmed);
+      }
+    }
+    return result;
+  }, [activeCrns]);
+
+  const activeTermLabel = useMemo(
+    () => terms.find((t) => t.code === activeTerm)?.label ?? catalog.termLabel,
+    [terms, activeTerm, catalog.termLabel],
+  );
 
   const hiddenCourseCodes = useMemo(() => {
     const set = new Set<string>(hiddenUnplannedCodes);
@@ -1587,6 +1638,25 @@ export function ScheduleContainer({
                 <span>{isEditMode ? "Done editing" : "Edit schedule"}</span>
               </button>
 
+              {/* Export to Add/Drop (Banner) */}
+              <button
+                ref={bannerExportTriggerRef}
+                type="button"
+                disabled={exportBannerCrns.length === 0}
+                title={
+                  exportBannerCrns.length === 0
+                    ? "Select at least one course section with a 5-digit CRN to export"
+                    : `Export ${exportBannerCrns.length} CRN${exportBannerCrns.length === 1 ? "" : "s"} to Banner Add/Drop`
+                }
+                onClick={() => setIsBannerModalOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200/90 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-xs transition hover:border-sky-300 hover:bg-sky-50/50 hover:text-sky-900 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700/80 dark:bg-slate-800/90 dark:text-slate-100 dark:hover:border-sky-700 dark:hover:bg-slate-800"
+              >
+                <span>Export to Add/Drop</span>
+                <span className="inline-flex min-w-4 items-center justify-center rounded-full bg-slate-200/80 px-1.5 py-0.5 text-[10px] font-bold text-slate-700 dark:bg-slate-700 dark:text-slate-200">
+                  {exportBannerCrns.length}
+                </span>
+              </button>
+
               {/* Calendar Export */}
               <button
                 type="button"
@@ -1859,6 +1929,70 @@ export function ScheduleContainer({
             </div>
           )}
 
+          {!catalog.hasOfficialCourses &&
+            (catalog.isPreview ||
+              (catalog.availablePreviewTerms?.length ?? 0) > 0) && (
+              <div
+                className={
+                  catalog.isPreview
+                    ? "flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-300/90 bg-amber-50/90 px-4 py-3 text-xs text-amber-950 shadow-sm dark:border-amber-700/80 dark:bg-amber-950/40 dark:text-amber-100"
+                    : "flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white/90 px-4 py-3 text-xs text-slate-700 shadow-sm dark:border-slate-800/80 dark:bg-slate-900/85 dark:text-slate-200"
+                }
+              >
+                <div className="space-y-0.5">
+                  <div className="font-semibold">
+                    {catalog.isPreview
+                      ? `Unofficial Preview — Using ${catalog.previewTermLabel} courses`
+                      : `${catalog.termLabel} courses are not in the database yet`}
+                  </div>
+                  <div
+                    className={
+                      catalog.isPreview
+                        ? "text-[11px] text-amber-800 dark:text-amber-200/90"
+                        : "text-[11px] text-slate-500 dark:text-slate-400"
+                    }
+                  >
+                    {catalog.isPreview
+                      ? `${catalog.termLabel} courses are not in the database yet. Sections and times shown are from ${catalog.previewTermLabel} for reference only and are not official.`
+                      : `No official ${catalog.termLabel} classes are available yet. You can preview a previous summer term for reference only (not official).`}
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {catalog.availablePreviewTerms?.map((p) => {
+                    const activePreview =
+                      catalog.isPreview && catalog.previewTerm === p.code;
+                    return (
+                      <button
+                        key={p.code}
+                        type="button"
+                        disabled={loadingTerm || activePreview}
+                        onClick={() => void handlePreviewTermChange(p.code)}
+                        className={`rounded-lg border px-2.5 py-1 text-[11px] font-medium transition ${
+                          activePreview
+                            ? "border-amber-500 bg-amber-600 text-white dark:border-amber-400 dark:bg-amber-500 dark:text-slate-950"
+                            : "border-amber-300 bg-white text-amber-900 hover:bg-amber-100 disabled:opacity-50 dark:border-amber-700 dark:bg-amber-950/60 dark:text-amber-100 dark:hover:bg-amber-900/70"
+                        }`}
+                      >
+                        {activePreview
+                          ? `Previewing ${p.label}`
+                          : `Preview ${p.label} (Unofficial)`}
+                      </button>
+                    );
+                  })}
+                  {catalog.isPreview && (
+                    <button
+                      type="button"
+                      disabled={loadingTerm}
+                      onClick={() => void handlePreviewTermChange(null)}
+                      className="rounded-lg border border-amber-300/90 bg-white/80 px-2.5 py-1 text-[11px] font-medium text-amber-900 hover:bg-amber-100 disabled:opacity-50 dark:border-amber-700 dark:bg-slate-900 dark:text-amber-100 dark:hover:bg-amber-900/50"
+                    >
+                      Exit preview
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+
           {/* Status & Summary Strip */}
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-slate-200/80 bg-white/90 px-3.5 py-2 text-xs shadow-[0_1px_4px_rgba(15,23,42,0.03)] backdrop-blur-sm dark:border-slate-800/80 dark:bg-slate-900/85">
             <div className="flex flex-wrap items-center gap-3">
@@ -2086,9 +2220,21 @@ export function ScheduleContainer({
             showRmp={showRmp}
             defaultYearOfStudy={userYearOfStudy}
             searchTabTrigger={lookupTabTrigger}
+            onSelectPreviewTerm={(pt) => void handlePreviewTermChange(pt)}
+            loadingPreviewTerm={loadingTerm}
           />
         </div>
       </div>
+
+      {/* Banner Add/Drop Export Modal */}
+      <BannerExportModal
+        isOpen={isBannerModalOpen}
+        onClose={() => setIsBannerModalOpen(false)}
+        term={activeTerm}
+        termLabel={activeTermLabel}
+        crns={exportBannerCrns}
+        triggerRef={bannerExportTriggerRef}
+      />
 
       {/* Calendar Export Modal */}
       <CalendarExportModal

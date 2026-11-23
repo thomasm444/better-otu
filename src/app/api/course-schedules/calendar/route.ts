@@ -369,16 +369,20 @@ export async function GET(request: Request) {
           m.start_date ||
           (termInfo.code === "202701"
             ? "2027-01-11"
-            : termInfo.code === "202605"
-              ? "2026-05-04"
-              : "2026-09-08");
+            : termInfo.code === "202705"
+              ? "2027-05-03"
+              : termInfo.code === "202605"
+                ? "2026-05-04"
+                : "2026-09-08");
         const endDate =
           m.end_date ||
           (termInfo.code === "202701"
             ? "2027-04-09"
-            : termInfo.code === "202605"
-              ? "2026-08-07"
-              : "2026-12-07");
+            : termInfo.code === "202705"
+              ? "2027-08-06"
+              : termInfo.code === "202605"
+                ? "2026-08-07"
+                : "2026-12-07");
 
         const activeDayCols = DAY_COLUMNS.filter((d) => m[d.key]);
         if (activeDayCols.length === 0) continue;

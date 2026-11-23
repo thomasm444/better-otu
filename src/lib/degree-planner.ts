@@ -478,6 +478,22 @@ export function completedBefore(
   return expandWithEquivalents(set, equivMap);
 }
 
+const HIGH_SCHOOL_CODE_RE = /^[A-Z]{3}[1-4][UMOECP]$/;
+const HIGH_SCHOOL_TEXT_RE =
+  /\b(grade\s*(9|10|11|12)|high\s*school|secondary\s*school|ossd)\b/i;
+
+function isAssumedSatisfiedCondition(text: string | null | undefined): boolean {
+  const trimmed = (text ?? "").trim();
+  if (!trimmed) return false;
+  if (HIGH_SCHOOL_CODE_RE.test(trimmed.toUpperCase())) return true;
+  if (HIGH_SCHOOL_TEXT_RE.test(trimmed)) return true;
+  // Scraper splits "Grade 12 Calculus and Vectors (MCV4U)" on "and" into
+  // standalone fragments such as "Vectors".
+  if (/^vectors$/i.test(trimmed)) return true;
+  if (/^recommended$/i.test(trimmed)) return true;
+  return false;
+}
+
 export type PrereqEvalContext = {
   termYear?: number;
   priorCredits?: number;
@@ -487,15 +503,12 @@ function evalConditionText(
   text: string,
   ctx?: PrereqEvalContext,
 ): boolean | null {
+  if (isAssumedSatisfiedCondition(text)) return true;
   if (!ctx) return null;
   const low = text.toLowerCase();
 
-  // Keep high-school and co-op / registration gates as informational
-  if (
-    /grade\s+12|mhf4u|mcv4u|sph4u|sch4u|eng4u|co-?op\s+program|registration\s+in/i.test(
-      low,
-    )
-  ) {
+  // Keep co-op / registration gates as informational
+  if (/co-?op\s+program|registration\s+in/i.test(low)) {
     return null;
   }
 
@@ -988,10 +1001,36 @@ export function buildDefaultPlan(
   return { terms, unscheduled };
 }
 
+const LIBERAL_STUDIES_RE = /liberal\s*studies/i;
+
+export function normalizeElectiveMatch(
+  match: ElectiveMatch | null | undefined,
+  text?: string | null,
+): ElectiveMatch | null | undefined {
+  if (!match && !text) return match;
+  const isLiberal =
+    LIBERAL_STUDIES_RE.test(match?.label ?? "") ||
+    LIBERAL_STUDIES_RE.test(text ?? "");
+  if (!isLiberal) return match;
+  const label =
+    match?.label && LIBERAL_STUDIES_RE.test(match.label)
+      ? match.label
+      : "Liberal Studies";
+  return {
+    ...match,
+    label,
+    subjects: ["LBAT"],
+    exclude_subjects: [],
+    faculties: [],
+    exclude_faculties: [],
+  };
+}
+
 export function matchesBucket(
   course: CatalogCourse | CustomCourse | null | undefined,
-  match: ElectiveMatch | null | undefined,
+  rawMatch: ElectiveMatch | null | undefined,
 ): boolean {
+  const match = normalizeElectiveMatch(rawMatch);
   if (!course || !match) return true;
   if ((course.credit_hours || 0) <= 0) return false;
   if (
@@ -1037,7 +1076,7 @@ export function buildModel(program: DegreeProgramDetail): RequirementModel {
     store: Map<string, ElectiveBucket>,
     item: Extract<ProgramItemNode, { type: "elective" }>,
   ) => {
-    const match = item.match ?? {};
+    const match = normalizeElectiveMatch(item.match ?? {}, item.text) ?? {};
     const key = JSON.stringify([
       match.subjects,
       match.exclude_subjects,
@@ -1057,20 +1096,21 @@ export function buildModel(program: DegreeProgramDetail): RequirementModel {
     bucket.credits += item.credit_hours || 0;
     if (item.text) bucket.sources.push(item.text);
     for (const sub of item.sub_requirements ?? []) {
+      const subMatch = normalizeElectiveMatch(sub.match, sub.text) ?? sub.match;
       const skey = JSON.stringify([
-        sub.match.subjects,
-        sub.match.exclude_subjects,
-        sub.match.faculties,
-        sub.match.exclude_faculties,
-        sub.match.min_level,
-        sub.match.max_level,
+        subMatch.subjects,
+        subMatch.exclude_subjects,
+        subMatch.faculties,
+        subMatch.exclude_faculties,
+        subMatch.min_level,
+        subMatch.max_level,
       ]);
       if (!bucket.subs.some((s) => s.key === skey)) {
         bucket.subs.push({
           key: skey,
-          label: sub.match.label || sub.text || "Sub-requirement",
+          label: subMatch.label || sub.text || "Sub-requirement",
           credits: sub.credits,
-          match: sub.match,
+          match: subMatch,
         });
       }
     }
