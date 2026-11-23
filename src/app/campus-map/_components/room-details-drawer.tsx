@@ -16,6 +16,7 @@ import {
   formatFloor,
   formatMinutesToTime,
   getEventTypeLabel,
+  getInfosilemBookingUrl,
   getLibraryBookingUrl,
   type RoomStatus,
 } from "../utils";
@@ -29,6 +30,8 @@ interface RoomDetailsDrawerProps {
   selectedDayInfo: WeekDayInfo | null;
   currentSlotStart: number;
   currentDuration: number;
+  selectedSubRoom?: string | null;
+  onSelectSubRoom?: (subRoom: string) => void;
   onClose: () => void;
   onOpenWeeklySchedule: (feature: CampusMapFeature, subRoom?: string) => void;
   onFocusRoom: (feature: CampusMapFeature) => void;
@@ -80,6 +83,8 @@ export function RoomDetailsDrawer({
   selectedDayInfo,
   currentSlotStart,
   currentDuration,
+  selectedSubRoom,
+  onSelectSubRoom,
   onClose,
   onOpenWeeklySchedule,
   onFocusRoom,
@@ -92,9 +97,10 @@ export function RoomDetailsDrawer({
     if (!feature?.properties.isBuildingContainer) return null;
     const rooms = feature.properties.rooms ?? [];
     if (rooms.length === 0) return null;
+    if (selectedSubRoom && rooms.includes(selectedSubRoom)) return selectedSubRoom;
     const saved = selectedSubRoomByFeature[feature.id];
     return saved && rooms.includes(saved) ? saved : rooms[0];
-  }, [feature, selectedSubRoomByFeature]);
+  }, [feature, selectedSubRoom, selectedSubRoomByFeature]);
 
   const todayIntervals = useMemo<ScheduleInterval[]>(() => {
     if (!feature || !weekData) return [];
@@ -156,13 +162,17 @@ export function RoomDetailsDrawer({
     Math.min(100 - windowLeftPct, (currentDuration / DAY_SPAN_MIN) * 100),
   );
 
+  const activeBookingUuid = p.isBuildingContainer
+    ? activeSubStatus?.bookingUuid ?? null
+    : p.bookingUuid ?? null;
+
   return (
     <aside
       aria-label="Room details"
       onMouseDown={(e) => e.stopPropagation()}
       onTouchStart={(e) => e.stopPropagation()}
       onWheel={(e) => e.stopPropagation()}
-      className="absolute inset-x-0 bottom-0 top-auto z-[1050] flex max-h-[72dvh] w-full flex-col rounded-t-2xl border-t border-slate-200 bg-white/98 shadow-2xl backdrop-blur-md transition-transform duration-200 lg:inset-x-auto lg:bottom-0 lg:left-0 lg:top-0 lg:max-h-none lg:max-w-[360px] lg:rounded-none lg:border-r lg:border-t-0 dark:border-zinc-800 dark:bg-zinc-900/98 dark:text-zinc-100"
+      className="absolute inset-x-2 bottom-[calc(max(0.75rem,env(safe-area-inset-bottom))+3.5rem)] top-auto z-[1050] flex max-h-[60dvh] flex-col rounded-2xl border border-slate-200 bg-white/98 shadow-2xl backdrop-blur-md transition-transform duration-200 lg:inset-x-auto lg:bottom-0 lg:left-0 lg:top-0 lg:max-h-none lg:w-full lg:max-w-[360px] lg:rounded-none lg:border-r lg:border-t-0 dark:border-zinc-800 dark:bg-zinc-900/98 dark:text-zinc-100"
     >
       {/* Mobile Bottom Sheet Handle */}
       <div className="mx-auto mt-2 h-1 w-10 shrink-0 rounded-full bg-slate-300 lg:hidden dark:bg-zinc-700" />
@@ -395,12 +405,16 @@ export function RoomDetailsDrawer({
                   <button
                     key={sub.roomId}
                     type="button"
-                    onClick={() =>
-                      setSelectedSubRoomByFeature((prev) => ({
-                        ...prev,
-                        [feature.id]: sub.roomId,
-                      }))
-                    }
+                    onClick={() => {
+                      if (onSelectSubRoom) {
+                        onSelectSubRoom(sub.roomId);
+                      } else {
+                        setSelectedSubRoomByFeature((prev) => ({
+                          ...prev,
+                          [feature.id]: sub.roomId,
+                        }));
+                      }
+                    }}
                     className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold transition ${
                       isSelected
                         ? "border-sky-600 bg-sky-600 text-white shadow-xs"
@@ -530,7 +544,27 @@ export function RoomDetailsDrawer({
 
       {/* Primary Action Footer */}
       <div className="border-t border-slate-200 bg-slate-50/90 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:py-3 dark:border-zinc-800 dark:bg-zinc-900/90">
-        {p.isLibraryRoom ? (
+        {activeBookingUuid ? (
+          <div className="flex gap-2">
+            <a
+              href={getInfosilemBookingUrl(activeBookingUuid)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-emerald-700"
+            >
+              <span>Book this room &rarr;</span>
+            </a>
+            {status.isScheduled && (
+              <button
+                type="button"
+                onClick={() => onOpenWeeklySchedule(feature, activeSubRoom ?? undefined)}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs font-bold text-slate-700 shadow-xs transition hover:bg-slate-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+              >
+                View Schedule
+              </button>
+            )}
+          </div>
+        ) : p.isLibraryRoom ? (
           <div className="flex gap-2">
             <a
               href={getLibraryBookingUrl(p.externalId || roomCode, currentSlotStart)}

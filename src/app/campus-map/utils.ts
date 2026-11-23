@@ -11,6 +11,8 @@ export type SubRoomStatus = {
   capacity: number | null;
   capacitySource: string | null;
   type?: string;
+  isBookable?: boolean;
+  bookingUuid?: string | null;
   isAvailable: boolean;
   currentBooking: string | null;
   bookingStart: number | null;
@@ -48,14 +50,6 @@ export type RoomStatus =
       nextBooking?: ScheduleInterval | null;
     };
 
-export const FLOOR_COLORS: Record<string, string> = {
-  "-10": "#9333ea", // purple
-  "0": "#0284c7", // blue
-  "20": "#0d9488", // teal
-  "30": "#eab308", // amber
-  "40": "#f43f5e", // rose
-};
-
 export const FLOOR_LABELS: Record<string, string> = {
   ALL: "All",
   "-10": "B",
@@ -75,6 +69,18 @@ export const VENUES = {
 } as const;
 
 export type VenueKey = keyof typeof VENUES;
+
+export const MAIN_NORTH_BUILDINGS = ["SCI", "ENG", "SIR", "SHA", "ERC", "BIT", "LIB"] as const;
+export const MAIN_DOWNTOWN_BUILDINGS = ["REG", "CHA"] as const;
+export const MAIN_BUILDING_SET = new Set<string>([
+  ...MAIN_NORTH_BUILDINGS,
+  ...MAIN_DOWNTOWN_BUILDINGS,
+]);
+
+/** Strips all whitespace and uppercases text for room/building search comparison. */
+export function normalizeSearchCode(raw: string | null | undefined): string {
+  return (raw ?? "").replace(/\s+/g, "").toUpperCase();
+}
 
 export function formatFloor(fl: string | null | undefined): string {
   const key = String(fl ?? "");
@@ -176,6 +182,26 @@ export function formatMinutesToTime(min: number): string {
   return `${h12}:${m === 0 ? "00" : m < 10 ? "0" + m : m} ${ampm}`;
 }
 
+export function formatMinutesShort(min: number): string {
+  return formatMinutesToTime(min).replace(":00 ", " ");
+}
+
+export function minutesToTimeInputValue(min: number): string {
+  const clamped = Math.max(0, Math.min(1439, Math.round(min)));
+  const h = String(Math.floor(clamped / 60)).padStart(2, "0");
+  const m = String(clamped % 60).padStart(2, "0");
+  return `${h}:${m}`;
+}
+
+export function parseTimeInputToMinutes(val: string): number | null {
+  const match = val.trim().match(/^(\d{2}):(\d{2})$/);
+  if (!match) return null;
+  const h = Number(match[1]);
+  const m = Number(match[2]);
+  if (!Number.isInteger(h) || !Number.isInteger(m) || h > 23 || m > 59) return null;
+  return Math.max(480, Math.min(1290, h * 60 + m));
+}
+
 export function getContainerColor(ratio: number): string {
   let r: number, g: number, b: number;
   if (ratio <= 0.5) {
@@ -209,4 +235,8 @@ export function getLibraryBookingUrl(
 ): string {
   const bookTime = formatMinutesToTime(slotStartMinutes);
   return `https://apps.library.dc-ot.ca/OTrooms/temp.aspx?starttime=${encodeURIComponent(bookTime)}&room=${encodeURIComponent(roomId)}&next=book.aspx`;
+}
+
+export function getInfosilemBookingUrl(roomUuid: string): string {
+  return `https://campusportal.ca.infosilem.com/ontariotech/p/CreateBooking/i/00000000-0000-0000-0000-000000000000/d/-1/t/-1/r/${encodeURIComponent(roomUuid)}/d/0`;
 }
