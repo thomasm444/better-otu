@@ -668,31 +668,47 @@ export function CoursePickerModal({
             {!initialTransferMode && terms.length > 0 && (
               <label className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400">
                 <span>Add to:</span>
-                <select
-                  value={selectedTermIndex}
-                  onChange={(e) => setSelectedTermIndex(Number(e.target.value))}
-                  aria-label="Target year and term"
-                  className="rounded-xl border border-slate-200/90 bg-white px-2.5 py-1 text-xs font-medium text-slate-900 focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                >
-                  {terms.map((t, idx) => {
-                    const usedCount = t.slots.filter(Boolean).length;
-                    const isFull =
-                      usedCount >= MAX_SLOTS_PER_TERM &&
-                      idx !== picker.termIndex;
-                    const yCal = termCalendarYear(startYear, t.year, t.season);
-                    return (
-                      <option
-                        key={`${t.year}-${t.season}-${idx}`}
-                        value={idx}
-                        disabled={isFull}
-                      >
-                        Year {t.year} · {t.season} {yCal} ({usedCount}/
-                        {MAX_SLOTS_PER_TERM}
-                        {isFull ? " full" : ""})
-                      </option>
-                    );
-                  })}
-                </select>
+                <span className="relative inline-flex items-center">
+                  <select
+                    value={selectedTermIndex}
+                    onChange={(e) => setSelectedTermIndex(Number(e.target.value))}
+                    aria-label="Target year and term"
+                    className="appearance-none rounded-xl border border-slate-200/90 bg-white py-1.5 pr-8 pl-3 text-xs font-medium text-slate-900 focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                  >
+                    {terms.map((t, idx) => {
+                      const usedCount = t.slots.filter(Boolean).length;
+                      const isFull =
+                        usedCount >= MAX_SLOTS_PER_TERM &&
+                        idx !== picker.termIndex;
+                      const yCal = termCalendarYear(startYear, t.year, t.season);
+                      return (
+                        <option
+                          key={`${t.year}-${t.season}-${idx}`}
+                          value={idx}
+                          disabled={isFull}
+                        >
+                          Year {t.year} · {t.season} {yCal} ({usedCount}/
+                          {MAX_SLOTS_PER_TERM}
+                          {isFull ? " full" : ""})
+                        </option>
+                      );
+                    })}
+                  </select>
+                  <svg
+                    viewBox="0 0 20 20"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={1.75}
+                    aria-hidden="true"
+                    className="pointer-events-none absolute right-2.5 h-3.5 w-3.5 text-slate-500 dark:text-slate-400"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="m6 8 4 4 4-4"
+                    />
+                  </svg>
+                </span>
               </label>
             )}
             <button
@@ -727,7 +743,7 @@ export function CoursePickerModal({
                 }}
                 placeholder="Search code or title…"
                 autoComplete="off"
-                className="min-w-[200px] flex-1 rounded-xl border border-slate-200/90 bg-slate-50/70 px-3 py-1.5 text-sm text-slate-900 focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-400/20 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                className="min-w-[200px] flex-1 rounded-xl border border-slate-200/90 bg-slate-50/70 px-3 py-1.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-sky-400 focus:bg-white focus:ring-2 focus:ring-sky-400/20 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:bg-slate-900"
               />
               {[
                 {
@@ -788,27 +804,47 @@ export function CoursePickerModal({
             <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200/80 bg-slate-50/75 px-3 py-2 dark:border-slate-800 dark:bg-slate-950/60">
               <label className="flex min-w-0 flex-1 flex-wrap items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-300">
                 <span className="shrink-0">Only show subject:</span>
-                <select
-                  value={subjectFilter}
-                  onChange={(e) => setSubjectFilter(e.target.value)}
-                  aria-label="Only show courses from subject"
-                  className={`min-w-[220px] flex-1 rounded-xl border px-2.5 py-1 text-xs font-medium focus:outline-none sm:max-w-xs ${
-                    subjectFilter
-                      ? "border-sky-300 bg-sky-50/80 text-sky-900 focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20 dark:border-sky-700 dark:bg-sky-950/50 dark:text-sky-100"
-                      : "border-slate-200 bg-white text-slate-800 focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-                  }`}
-                >
-                  <option value="">
-                    All subjects ({baseRows.length} courses)
-                  </option>
-                  {subjectOptions.map((opt) => (
-                    <option key={opt.code} value={opt.code}>
-                      {opt.name === opt.code
-                        ? `${opt.code} (${opt.count})`
-                        : `${opt.name} (${opt.code}) · ${opt.count}`}
+                <span className="relative inline-flex min-w-[220px] flex-1 items-center sm:max-w-xs">
+                  <select
+                    value={subjectFilter}
+                    onChange={(e) => setSubjectFilter(e.target.value)}
+                    aria-label="Only show courses from subject"
+                    className={`w-full appearance-none rounded-xl border py-1.5 pr-8 pl-3 text-xs font-medium focus:outline-none ${
+                      subjectFilter
+                        ? "border-sky-300 bg-sky-50/80 text-sky-900 focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20 dark:border-sky-700 dark:bg-sky-950/50 dark:text-sky-100"
+                        : "border-slate-200 bg-white text-slate-800 focus:border-sky-400 focus:ring-2 focus:ring-sky-400/20 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                    }`}
+                  >
+                    <option value="">
+                      All subjects ({baseRows.length} courses)
                     </option>
-                  ))}
-                </select>
+                    {subjectOptions.map((opt) => (
+                      <option key={opt.code} value={opt.code}>
+                        {opt.name === opt.code
+                          ? `${opt.code} (${opt.count})`
+                          : `${opt.name} (${opt.code}) · ${opt.count}`}
+                      </option>
+                    ))}
+                  </select>
+                  <svg
+                    viewBox="0 0 20 20"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth={1.75}
+                    aria-hidden="true"
+                    className={`pointer-events-none absolute right-2.5 h-3.5 w-3.5 ${
+                      subjectFilter
+                        ? "text-sky-600 dark:text-sky-300"
+                        : "text-slate-500 dark:text-slate-400"
+                    }`}
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      d="m6 8 4 4 4-4"
+                    />
+                  </svg>
+                </span>
               </label>
 
               {subjectFilter && (

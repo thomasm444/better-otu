@@ -1410,7 +1410,7 @@ export function RequirementsSidebar({
               value={minorQuery}
               onChange={(e) => setMinorQuery(e.target.value)}
               placeholder={`Search ${minorOptions.length} minors (${program.catalog_year})…`}
-              className="w-full rounded-xl border border-slate-200/90 bg-slate-50/70 px-3 py-1.5 text-xs text-slate-900 focus:border-violet-400 focus:bg-white focus:ring-2 focus:ring-violet-400/20 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+              className="w-full rounded-xl border border-slate-200/90 bg-slate-50/70 px-3 py-1.5 text-xs text-slate-900 placeholder:text-slate-400 focus:border-violet-400 focus:bg-white focus:ring-2 focus:ring-violet-400/20 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-500 dark:focus:bg-slate-900"
             />
 
             <div className="max-h-72 divide-y divide-slate-100 overflow-auto rounded-xl border border-slate-200/80 bg-slate-50/40 dark:divide-slate-800 dark:border-slate-800 dark:bg-slate-950/40">
