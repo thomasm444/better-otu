@@ -45,6 +45,7 @@ import {
   type SectionGridPickerTarget,
   type TermScheduleCatalog,
 } from "../types";
+import { BannerExportModal } from "./banner-export-modal";
 import { CalendarExportModal } from "./calendar-export-modal";
 import { CourseLookupPanel } from "./course-lookup-panel";
 import { WeekScheduleGrid } from "./timetable-grid";
@@ -222,6 +223,8 @@ export function ScheduleContainer({
   const [blkLabel, setBlkLabel] = useState("Blocked");
 
   const [isCalendarModalOpen, setIsCalendarModalOpen] = useState(false);
+  const [isBannerModalOpen, setIsBannerModalOpen] = useState(false);
+  const bannerExportTriggerRef = useRef<HTMLButtonElement>(null);
   const [syncStatus, setSyncStatus] = useState<
     "idle" | "saving" | "saved" | "local" | "error"
   >("idle");
@@ -862,6 +865,24 @@ export function ScheduleContainer({
     courseMap,
     hoverPreviewSection,
   ]);
+
+  const exportBannerCrns = useMemo(() => {
+    const seen = new Set<string>();
+    const result: string[] = [];
+    for (const raw of activeCrns) {
+      const trimmed = raw.trim();
+      if (/^\d{5}$/.test(trimmed) && !seen.has(trimmed)) {
+        seen.add(trimmed);
+        result.push(trimmed);
+      }
+    }
+    return result;
+  }, [activeCrns]);
+
+  const activeTermLabel = useMemo(
+    () => terms.find((t) => t.code === activeTerm)?.label ?? catalog.termLabel,
+    [terms, activeTerm, catalog.termLabel],
+  );
 
   const hiddenCourseCodes = useMemo(() => {
     const set = new Set<string>(hiddenUnplannedCodes);
@@ -1617,6 +1638,25 @@ export function ScheduleContainer({
                 <span>{isEditMode ? "Done editing" : "Edit schedule"}</span>
               </button>
 
+              {/* Export to Add/Drop (Banner) */}
+              <button
+                ref={bannerExportTriggerRef}
+                type="button"
+                disabled={exportBannerCrns.length === 0}
+                title={
+                  exportBannerCrns.length === 0
+                    ? "Select at least one course section with a 5-digit CRN to export"
+                    : `Export ${exportBannerCrns.length} CRN${exportBannerCrns.length === 1 ? "" : "s"} to Banner Add/Drop`
+                }
+                onClick={() => setIsBannerModalOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200/90 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-xs transition hover:border-sky-300 hover:bg-sky-50/50 hover:text-sky-900 disabled:cursor-not-allowed disabled:opacity-50 dark:border-slate-700/80 dark:bg-slate-800/90 dark:text-slate-100 dark:hover:border-sky-700 dark:hover:bg-slate-800"
+              >
+                <span>Export to Add/Drop</span>
+                <span className="inline-flex min-w-4 items-center justify-center rounded-full bg-slate-200/80 px-1.5 py-0.5 text-[10px] font-bold text-slate-700 dark:bg-slate-700 dark:text-slate-200">
+                  {exportBannerCrns.length}
+                </span>
+              </button>
+
               {/* Calendar Export */}
               <button
                 type="button"
@@ -2185,6 +2225,16 @@ export function ScheduleContainer({
           />
         </div>
       </div>
+
+      {/* Banner Add/Drop Export Modal */}
+      <BannerExportModal
+        isOpen={isBannerModalOpen}
+        onClose={() => setIsBannerModalOpen(false)}
+        term={activeTerm}
+        termLabel={activeTermLabel}
+        crns={exportBannerCrns}
+        triggerRef={bannerExportTriggerRef}
+      />
 
       {/* Calendar Export Modal */}
       <CalendarExportModal
