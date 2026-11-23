@@ -276,6 +276,30 @@ export function DegreePlannerClient({
     slotIndex: number;
   } | null>(null);
   const [dragTargetKey, setDragTargetKey] = useState<string | null>(null);
+  const [overloadTooltip, setOverloadTooltip] = useState<{
+    termIndex: number;
+    creds: number;
+    top: number;
+    right: number;
+  } | null>(null);
+
+  const openOverloadTooltip = (
+    el: HTMLElement,
+    termIndex: number,
+    creds: number,
+  ) => {
+    const r = el.getBoundingClientRect();
+    setOverloadTooltip({
+      termIndex,
+      creds,
+      top: r.bottom + 6,
+      right: Math.max(12, window.innerWidth - r.right),
+    });
+  };
+
+  const closeOverloadTooltip = (termIndex: number) => {
+    setOverloadTooltip((cur) => (cur?.termIndex === termIndex ? null : cur));
+  };
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
   const supabase = useMemo(() => createClient(), []);
@@ -2626,10 +2650,10 @@ export function DegreePlannerClient({
                           return (
                             <div
                               key={`${academicYear}-${term.season}-${termIndex}`}
-                              className={`min-w-[235px] flex-1 basis-[235px] overflow-hidden rounded-2xl border bg-white/95 shadow-[0_1px_6px_rgba(15,23,42,0.04)] dark:bg-slate-900/85 ${seasonCardClass}`}
+                              className={`min-w-[235px] flex-1 basis-[235px] rounded-2xl border bg-white/95 shadow-[0_1px_6px_rgba(15,23,42,0.04)] dark:bg-slate-900/85 ${seasonCardClass}`}
                             >
                               <div
-                                className={`flex items-center gap-2 px-3 py-2 ${seasonHeaderClass}`}
+                                className={`flex items-center gap-2 rounded-t-[15px] px-3 py-2 ${seasonHeaderClass}`}
                               >
                                 <span
                                   className={`h-2 w-2 shrink-0 rounded-full ${seasonDotClass}`}
@@ -2644,11 +2668,61 @@ export function DegreePlannerClient({
                                     summer
                                   </span>
                                 )}
-                                <span
-                                  className={`ml-auto rounded-full px-2 py-0.5 text-[11px] tabular-nums ${seasonCreditClass}`}
-                                >
-                                  {creds} cr{over ? " ⚠" : ""}
-                                </span>
+                                {over ? (
+                                  <button
+                                    type="button"
+                                    onMouseEnter={(e) =>
+                                      openOverloadTooltip(
+                                        e.currentTarget,
+                                        termIndex,
+                                        creds,
+                                      )
+                                    }
+                                    onPointerEnter={(e) =>
+                                      openOverloadTooltip(
+                                        e.currentTarget,
+                                        termIndex,
+                                        creds,
+                                      )
+                                    }
+                                    onMouseLeave={() =>
+                                      closeOverloadTooltip(termIndex)
+                                    }
+                                    onFocus={(e) =>
+                                      openOverloadTooltip(
+                                        e.currentTarget,
+                                        termIndex,
+                                        creds,
+                                      )
+                                    }
+                                    onBlur={() =>
+                                      closeOverloadTooltip(termIndex)
+                                    }
+                                    onClick={(e) => {
+                                      if (
+                                        overloadTooltip?.termIndex === termIndex
+                                      ) {
+                                        closeOverloadTooltip(termIndex);
+                                      } else {
+                                        openOverloadTooltip(
+                                          e.currentTarget,
+                                          termIndex,
+                                          creds,
+                                        );
+                                      }
+                                    }}
+                                    title={`Above standard ${CREDIT_CAP}-credit load (allowed if required by your program or approved for overload).`}
+                                    className={`ml-auto cursor-help rounded-full px-2 py-0.5 text-[11px] tabular-nums focus:outline-none ${seasonCreditClass}`}
+                                  >
+                                    {creds} cr ⚠
+                                  </button>
+                                ) : (
+                                  <span
+                                    className={`ml-auto rounded-full px-2 py-0.5 text-[11px] tabular-nums ${seasonCreditClass}`}
+                                  >
+                                    {creds} cr
+                                  </span>
+                                )}
                                 {term.summer && (
                                   <button
                                     type="button"
@@ -3097,6 +3171,23 @@ export function DegreePlannerClient({
             setSelectedCourse(null);
           }}
         />
+      )}
+
+      {/* Fixed Overload Tooltip (rendered at root so nothing can clip it) */}
+      {overloadTooltip && (
+        <div
+          role="tooltip"
+          style={{
+            position: "fixed",
+            top: overloadTooltip.top,
+            right: overloadTooltip.right,
+            zIndex: 9999,
+          }}
+          className="pointer-events-none w-64 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-left text-[11.5px] leading-snug font-medium text-amber-950 shadow-xl dark:border-amber-700/80 dark:bg-slate-900 dark:text-amber-200"
+        >
+          ⚠ {overloadTooltip.creds} credits — above standard {CREDIT_CAP}-credit
+          load (allowed if required by your program or approved for overload).
+        </div>
       )}
 
       {/* Toast */}
