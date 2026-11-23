@@ -2542,29 +2542,29 @@ export function DegreePlannerClient({
           {/* Right Side: Credits on top; Reset controls directly below */}
           <div className="flex flex-col items-start gap-1.5 md:order-2 md:items-end lg:order-3">
             {/* Credit Progress Hero */}
-            <div className="flex flex-col items-start gap-1 rounded-xl border border-line bg-surface-subtle/50 px-3 py-1.5 md:items-end">
-              <div className="flex items-center gap-2">
-                <strong className="font-mono text-lg leading-none font-semibold tracking-tight tabular-nums text-accent-ink">
+            <div className="flex flex-col items-start gap-0.5 rounded-xl border border-slate-200/80 bg-white/85 px-2.5 py-1 shadow-[0_1px_4px_rgba(15,23,42,0.03)] md:items-end dark:border-slate-800 dark:bg-slate-800/60">
+              <div className="flex items-center gap-1.5">
+                <strong className="text-sm leading-none font-semibold tracking-tight tabular-nums text-emerald-600 dark:text-emerald-400">
                   {totalPlacedCredits}
                 </strong>
-                <span className="font-mono text-xs text-ink-muted tabular-nums">
+                <span className="text-[11px] leading-none text-slate-500 tabular-nums dark:text-slate-400">
                   / {totalTarget} cr
                 </span>
                 <div
-                  className="h-2 w-28 overflow-hidden rounded-full bg-surface-hover sm:w-36"
+                  className="h-2 w-20 overflow-hidden rounded-full bg-slate-200/85 ring-1 ring-inset ring-slate-300/40 sm:w-24 dark:bg-slate-900 dark:ring-slate-700/60"
                   title={`${totalPlacedCredits} completed · ${Math.max(0, totalTarget - totalPlacedCredits)} remaining`}
                 >
                   <div
-                    className="h-full rounded-full bg-accent transition-[width] duration-300"
+                    className="h-full rounded-full bg-gradient-to-r from-sky-400 via-teal-400 to-emerald-400 transition-[width] duration-300"
                     style={{ width: `${heroPct}%` }}
                   />
                 </div>
-                <span className="rounded-md bg-accent-soft px-1.5 py-0.5 font-mono text-[11px] font-medium tabular-nums text-accent-ink">
+                <span className="rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] leading-none font-semibold tabular-nums text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
                   {Math.round(heroPct)}%
                 </span>
               </div>
               {program && (
-                <div className="text-[11px] text-ink-muted tabular-nums">
+                <div className="text-[10px] leading-tight text-slate-500 tabular-nums dark:text-slate-400">
                   {creditBreakdown.transfer > 0
                     ? `${creditBreakdown.planned} cr planned + ${creditBreakdown.transfer} cr transfer = ${creditBreakdown.total} cr`
                     : `${creditBreakdown.planned} cr planned`}
