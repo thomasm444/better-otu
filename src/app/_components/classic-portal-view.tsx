@@ -212,8 +212,6 @@ export function ClassicPortalView({
     onRemoveCustomShortcut,
   ]);
 
-  const activeStudyYear = profile?.year_of_study ?? 3;
-
   return (
     <div className="mt-8 flex flex-1 flex-col justify-center pb-4">
       {/* Row 1: 3 Primary Tool Boxes */}
@@ -432,55 +430,25 @@ export function ClassicPortalView({
               </>
             ) : (
               <>
-                <div className="flex items-center justify-between gap-2 text-xs font-medium text-ink-secondary">
-                  <span className="truncate">
+                <div className="flex items-center justify-between gap-2 text-xs font-medium">
+                  <span className="truncate text-ink">
                     {latestPlan?.degree_name ||
                       profileDegreeName ||
-                      "Term progression"}
+                      "Program roadmap"}
                   </span>
                   <span className="shrink-0 font-mono text-accent-ink tabular-nums">
-                    {latestPlan?.start_year || profile?.year_of_study
-                      ? `Start ${latestPlan?.start_year ?? derivedProfileStartYear}`
-                      : "120 cr"}
+                    0/120 cr
                   </span>
                 </div>
-                {profileMinorName && (
-                  <p className="mt-0.5 truncate text-[11px] font-medium text-accent-ink">
-                    Minor: {profileMinorName}
-                  </p>
-                )}
-                <div className="mt-2.5 flex items-center justify-between gap-1">
-                  {[1, 2, 3, 4].map((yr, index) => {
-                    const done = yr < activeStudyYear;
-                    const current = yr === activeStudyYear;
-                    return (
-                      <React.Fragment key={yr}>
-                        <span
-                          className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full font-mono text-[10px] font-medium ${
-                            done
-                              ? "bg-brand text-brand-fg"
-                              : current
-                                ? "border border-accent bg-accent-soft text-accent-ink"
-                                : "border border-line bg-surface text-ink-muted"
-                          }`}
-                        >
-                          Y{yr}
-                        </span>
-                        {index < 3 && (
-                          <div
-                            className={`h-0.5 flex-1 rounded-full ${
-                              yr + 1 < activeStudyYear
-                                ? "bg-brand"
-                                : yr + 1 === activeStudyYear
-                                  ? "bg-accent"
-                                  : "bg-line"
-                            }`}
-                          />
-                        )}
-                      </React.Fragment>
-                    );
-                  })}
+                <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-line-subtle">
+                  <div className="h-full w-0 rounded-full bg-accent" />
                 </div>
+                <p className="mt-1.5 truncate text-[11px] text-ink-muted">
+                  {latestPlan?.start_year || profile?.year_of_study
+                    ? `Start ${latestPlan?.start_year ?? derivedProfileStartYear}`
+                    : "Track prerequisites & credits"}
+                  {profileMinorName ? ` · Minor: ${profileMinorName}` : ""}
+                </p>
               </>
             )}
           </div>

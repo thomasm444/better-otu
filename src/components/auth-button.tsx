@@ -118,7 +118,7 @@ export function AuthButton({
                     : "border-line bg-surface text-ink-secondary hover:bg-surface-subtle hover:text-ink"
                 }`}
               >
-                Profile
+                Settings
               </button>
               <button
                 type="button"
@@ -204,7 +204,7 @@ export function AuthButton({
             aria-expanded={profileOpen}
             className="rounded-lg border border-line bg-surface px-2.5 py-1 text-xs font-medium text-ink-secondary transition-colors hover:bg-surface-subtle hover:text-ink"
           >
-            Profile
+            Settings
           </button>
           <button
             type="button"

@@ -1531,8 +1531,8 @@ export function ScheduleContainer({
           }`}
         >
           {/* Control Toolbar */}
-          <div className="flex flex-wrap items-center justify-between gap-2.5 rounded-2xl border border-line bg-surface p-3 shadow-[var(--shadow-sm)]">
-            <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-line bg-surface px-3 py-2.5 shadow-[var(--shadow-sm)]">
+            <div className="flex flex-wrap items-center gap-1.5">
               {/* Semester Selector */}
               <select
                 value={activeTerm}
@@ -1606,7 +1606,7 @@ export function ScheduleContainer({
               </button>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-1.5">
               {/* Edit Schedule Toggle */}
               <button
                 type="button"
@@ -1629,7 +1629,7 @@ export function ScheduleContainer({
                     return next;
                   });
                 }}
-                className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${
+                className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
                   isEditMode
                     ? "border-accent bg-accent text-accent-fg hover:bg-accent-hover"
                     : "border-line bg-surface text-ink-secondary hover:border-line-strong hover:bg-surface-subtle hover:text-ink"
@@ -1649,7 +1649,7 @@ export function ScheduleContainer({
                     : `Export ${exportBannerCrns.length} CRN${exportBannerCrns.length === 1 ? "" : "s"} to Banner Add/Drop`
                 }
                 onClick={() => setIsBannerModalOpen(true)}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-line bg-surface px-3 py-1.5 text-xs font-medium text-ink-secondary transition-colors hover:border-line-strong hover:bg-surface-subtle hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs font-medium text-ink-secondary transition-colors hover:border-line-strong hover:bg-surface-subtle hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <span>Export to Add/Drop</span>
                 <span className="inline-flex min-w-4 items-center justify-center rounded-md bg-surface-subtle px-1.5 py-0.5 font-mono text-[10px] font-medium text-ink-secondary tabular-nums">
@@ -1661,7 +1661,7 @@ export function ScheduleContainer({
               <button
                 type="button"
                 onClick={() => setIsCalendarModalOpen(true)}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-3 py-1.5 text-xs font-medium text-brand-fg transition-colors hover:bg-brand-hover"
+                className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg bg-brand px-2.5 py-1.5 text-xs font-medium text-brand-fg transition-colors hover:bg-brand-hover"
               >
                 <span>Export / Sync Calendar</span>
               </button>
