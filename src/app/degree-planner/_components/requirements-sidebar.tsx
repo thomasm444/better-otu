@@ -133,6 +133,37 @@ export function RequirementsSidebar({
     Record<string, boolean>
   >({});
 
+  const programCourseYear = useMemo(() => {
+    const map = new Map<string, number>();
+    const collectItemCodes = (
+      node: DegreeProgramDetail["sections"][number]["groups"][number]["items"][number],
+      year: number,
+    ) => {
+      if (node.type === "course" || node.type === "course_set") {
+        for (const c of node.courses ?? []) {
+          if (c.code && !map.has(c.code)) map.set(c.code, year);
+        }
+      } else if (node.type === "any_of") {
+        for (const opt of node.options ?? []) collectItemCodes(opt, year);
+      }
+    };
+
+    for (const section of program.sections) {
+      if (section.role === "info" || section.is_alternative_track) continue;
+      const titleText = section.title_clean || section.title || "";
+      const m = titleText.match(/\byear\s*(\d+)\b/i);
+      if (!m) continue;
+      const yearNum = Number(m[1]);
+      if (!Number.isFinite(yearNum) || yearNum <= 0) continue;
+      for (const group of section.groups ?? []) {
+        for (const item of group.items ?? []) {
+          collectItemCodes(item, yearNum);
+        }
+      }
+    }
+    return map;
+  }, [program.sections]);
+
   const updateBreadthOverride = (code: string, bucketKey: string) => {
     setBreadthOverrides((prev) => ({ ...prev, [code]: bucketKey }));
   };
@@ -150,11 +181,13 @@ export function RequirementsSidebar({
       return;
     }
     const course = courseOf(code, catalogMap, customs);
-    const targetYear = course?.level
-      ? Math.max(1, Math.min(4, Math.floor(course.level / 1000)))
-      : 1;
+    const targetYear =
+      programCourseYear.get(code) ??
+      (course?.level
+        ? Math.max(1, Math.min(4, Math.floor(course.level / 1000)))
+        : 1);
 
-    // Pick a sensible default term: non-full, offered, near the course's level
+    // Pick a sensible default term: non-full, offered, preferring recommended year
     let bestIndex = -1;
     let bestScore = -1;
     for (let i = 0; i < terms.length; i++) {
@@ -167,8 +200,8 @@ export function RequirementsSidebar({
         context: offeringContext,
       });
       const hasEmpty = t.slots.includes(null);
-      const levelMatch = t.year >= targetYear ? 2 : 0;
-      const score = (runs ? 4 : 0) + (hasEmpty ? 2 : 0) + levelMatch;
+      const yearMatch = t.year === targetYear ? 4 : t.year > targetYear ? 1 : 0;
+      const score = (runs ? 5 : 0) + yearMatch + (hasEmpty ? 2 : 0);
       if (score > bestScore) {
         bestScore = score;
         bestIndex = i;
@@ -186,7 +219,11 @@ export function RequirementsSidebar({
   ) => {
     if (pendingAddKey !== rowKey) return null;
     const course = courseOf(code, catalogMap, customs);
-    const targetTerm = terms[selectedTermIndex];
+    const safeTermIndex =
+      selectedTermIndex >= 0 && selectedTermIndex < terms.length
+        ? selectedTermIndex
+        : 0;
+    const targetTerm = terms[safeTermIndex];
     const targetFull =
       !targetTerm ||
       targetTerm.slots.filter(Boolean).length >= MAX_SLOTS_PER_TERM;
@@ -197,6 +234,7 @@ export function RequirementsSidebar({
       context: offeringContext,
     });
     const isMajor = accent === "major";
+    const recYear = isMajor ? programCourseYear.get(code) : undefined;
 
     return (
       <div
@@ -221,6 +259,7 @@ export function RequirementsSidebar({
         </div>
         <div className="mt-0.5 text-[10.5px] text-slate-500 dark:text-slate-400">
           {creditsOf(code, catalogMap, customs)} cr
+          {recYear !== undefined ? ` · Recommended: Year ${recYear}` : ""}
           {offeredSeasons.length > 0
             ? ` · Usually offered: ${offeredSeasons.join(", ")}`
             : ""}
@@ -235,7 +274,7 @@ export function RequirementsSidebar({
             <label className="text-[10.5px] font-medium text-slate-600 dark:text-slate-300">
               Choose year &amp; term:
               <select
-                value={selectedTermIndex}
+                value={safeTermIndex}
                 onChange={(e) => setSelectedTermIndex(Number(e.target.value))}
                 className={`mt-1 w-full rounded-lg border bg-white px-2 py-1 text-xs font-medium text-slate-900 focus:ring-2 focus:outline-none dark:bg-slate-900 dark:text-slate-100 ${
                   isMajor
@@ -275,7 +314,7 @@ export function RequirementsSidebar({
                 type="button"
                 disabled={targetFull}
                 onClick={() => {
-                  onPlaceCourseInTerm(selectedTermIndex, code);
+                  onPlaceCourseInTerm(safeTermIndex, code);
                   setPendingAddKey(null);
                 }}
                 className={`rounded-lg px-2.5 py-1 text-[11px] font-semibold text-white shadow-xs transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
@@ -359,13 +398,27 @@ export function RequirementsSidebar({
             {course?.title ?? "Course title unavailable"}
           </span>
           {picked && placedTerm ? (
-            <span className="shrink-0 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[9.5px] font-medium text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
-              Y{placedTerm.year} {placedTerm.season}
-            </span>
+            <>
+              <span className="shrink-0 rounded-full bg-emerald-50 px-1.5 py-0.5 text-[9.5px] font-medium text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300">
+                Y{placedTerm.year} {placedTerm.season}
+              </span>
+              {matchedCode && matchedCode !== code && (
+                <span className="shrink-0 rounded-full bg-emerald-50 px-1.5 py-0.5 font-mono text-[9.5px] text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
+                  via {matchedCode}
+                </span>
+              )}
+            </>
           ) : picked ? (
-            <span className="shrink-0 rounded-full bg-indigo-50 px-1.5 py-0.5 text-[9.5px] font-medium text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300">
-              Transfer
-            </span>
+            <>
+              <span className="shrink-0 rounded-full bg-indigo-50 px-1.5 py-0.5 text-[9.5px] font-medium text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300">
+                Transfer
+              </span>
+              {matchedCode && matchedCode !== code && (
+                <span className="shrink-0 rounded-full bg-emerald-50 px-1.5 py-0.5 font-mono text-[9.5px] text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
+                  via {matchedCode}
+                </span>
+              )}
+            </>
           ) : (
             <button
               type="button"
@@ -792,52 +845,15 @@ export function RequirementsSidebar({
               {doneRequired.length}/{model.required.length}
             </span>
           </summary>
-          <ul className="mb-1.5 space-y-0.5 pl-5 pr-1.5">
-            {model.required.map((r) => {
-              const matchedCode = findEquivalentInSet(r.code, placed, equivMap);
-              const done = Boolean(matchedCode);
-              const viaEquiv =
-                matchedCode && matchedCode !== r.code ? matchedCode : null;
-              const course = courseOf(r.code, catalogMap, customs);
-              return (
-                <li
-                  key={r.code}
-                  className="flex items-baseline gap-2 py-0.5 text-[12.5px]"
-                >
-                  <span
-                    className={`w-3.5 shrink-0 text-center text-[11px] ${
-                      done
-                        ? "text-emerald-600 dark:text-emerald-400"
-                        : "text-slate-300 dark:text-slate-600"
-                    }`}
-                  >
-                    {done ? "✓" : "○"}
-                  </span>
-                  <span className="shrink-0 font-mono text-[11.5px] font-medium text-sky-700 dark:text-sky-300">
-                    {r.code}
-                  </span>
-                  <span
-                    className={`truncate ${
-                      done
-                        ? "text-slate-400 dark:text-slate-500"
-                        : "text-slate-600 dark:text-slate-300"
-                    }`}
-                    title={
-                      viaEquiv
-                        ? `${course?.title ?? ""} (satisfied by equivalent ${viaEquiv})`
-                        : (course?.title ?? "")
-                    }
-                  >
-                    {course?.title ?? ""}
-                  </span>
-                  {viaEquiv && (
-                    <span className="shrink-0 rounded-full bg-emerald-50 px-1.5 py-0.5 font-mono text-[10px] text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
-                      via {viaEquiv}
-                    </span>
-                  )}
-                </li>
-              );
-            })}
+          <ul className="mb-1.5 space-y-0.5 pl-4 pr-1">
+            {model.required.map((r) =>
+              renderCourseOptionRow({
+                rowKey: `major-req:${r.code}`,
+                code: r.code,
+                placedSet: placed,
+                accent: "major",
+              }),
+            )}
           </ul>
         </details>
 
