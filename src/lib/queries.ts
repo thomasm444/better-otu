@@ -1490,6 +1490,135 @@ export async function getCampusMapWeekSchedule(
   };
 }
 
+type ScheduledRoomMeta = {
+  externalId: string | null;
+  isBuildingContainer: boolean;
+  rooms: string[] | null;
+};
+
+/**
+ * Lightweight cached metadata for scheduled campus rooms (no GeoJSON `geometry`
+ * polygons), used to compute live free-room counts without downloading 7,500+
+ * geometry payloads.
+ */
+async function getCampusScheduledRoomsMeta(): Promise<ScheduledRoomMeta[]> {
+  "use cache";
+  cacheLife("days");
+  cacheTag("campus-map-base");
+
+  const supabase = getPublicClient();
+
+  const [spacesRaw, rbdRes, libRes] = await Promise.all([
+    collectPagesById<string>((lastId, limit) => {
+      let query = supabase
+        .from("campus_spaces")
+        .select(
+          "id, external_id, building, is_building_container, has_schedule, is_library_room, sub_rooms",
+        )
+        .not("geometry", "is", null)
+        .order("id", { ascending: true })
+        .limit(limit);
+      if (lastId !== null) query = query.gt("id", lastId);
+      return query;
+    }, 1000),
+    supabase.from("room_booking_details").select("room, building"),
+    supabase.from("library_study_rooms").select("room_id"),
+  ]);
+
+  if (rbdRes.error) {
+    throw new Error(
+      `getCampusScheduledRoomsMeta rbd failed: ${rbdRes.error.message}`,
+    );
+  }
+  if (libRes.error) {
+    throw new Error(
+      `getCampusScheduledRoomsMeta library failed: ${libRes.error.message}`,
+    );
+  }
+
+  const spaceRows = spacesRaw as Array<{
+    id: string;
+    external_id: string | null;
+    building: string | null;
+    is_building_container: boolean;
+    has_schedule: boolean;
+    is_library_room: boolean;
+    sub_rooms: string[] | null;
+  }>;
+
+  const rbdBuildingMap: Record<string, string> = {};
+  const rbdRooms: string[] = [];
+  for (const r of (rbdRes.data ?? []) as Array<{
+    room: string;
+    building: string | null;
+  }>) {
+    rbdRooms.push(r.room);
+    if (r.building) rbdBuildingMap[r.room] = r.building;
+  }
+
+  const libRoomIds = new Set<string>(
+    ((libRes.data ?? []) as Array<{ room_id: string }>).map((l) => l.room_id),
+  );
+
+  const extSet = new Set<string>();
+  const subRoomSet = new Set<string>([
+    ...U5_EXTRA_SUB_ROOMS,
+    ...UP_EXTRA_SUB_ROOMS,
+  ]);
+  for (const row of spaceRows) {
+    const eid = getEffectiveExternalId(row.id, row.external_id);
+    if (eid) extSet.add(eid);
+    if (row.is_building_container && row.sub_rooms) {
+      for (const sr of row.sub_rooms) subRoomSet.add(sr);
+    }
+  }
+
+  const extraScheduledTargets = new Set<string>([
+    "SIR2010A",
+    "SIR2010B",
+    "SIR2020",
+    "REG100",
+  ]);
+  for (const room of rbdRooms) {
+    const resolved = resolveRoomTarget(
+      room,
+      extSet,
+      rbdBuildingMap,
+      subRoomSet,
+    );
+    if (resolved.kind === "spaces") {
+      for (const id of resolved.ids) extraScheduledTargets.add(id);
+    }
+  }
+
+  const scheduled: ScheduledRoomMeta[] = [];
+  for (const row of spaceRows) {
+    const patch = SPACE_PATCHES[row.id];
+    const eid = patch?.externalId ?? row.external_id;
+    const isLibraryRoom = Boolean(
+      row.is_library_room || (eid && libRoomIds.has(eid)),
+    );
+    const hasSchedule = Boolean(
+      row.has_schedule ||
+        isLibraryRoom ||
+        (eid && extraScheduledTargets.has(eid)),
+    );
+    if (!hasSchedule) continue;
+
+    const rooms = row.is_building_container
+      ? getContainerSubRooms(eid ?? null, row.sub_rooms)
+      : (row.sub_rooms ?? null);
+
+    scheduled.push({
+      externalId: eid ?? null,
+      isBuildingContainer: row.is_building_container,
+      rooms,
+    });
+  }
+
+  return scheduled;
+}
+
 /**
  * Counts how many scheduled campus rooms (`hasSchedule === true`) are free
  * during `[slotStart, slotStart + 30]` on `dayIndex` of `weekStart`, including
@@ -1504,8 +1633,8 @@ export async function getCampusLiveFreeRoomCount(
   cacheLife({ stale: 300, revalidate: 900, expire: 3600 });
   cacheTag("campus-map-base", "campus-map-week");
 
-  const [mapData, weekData] = await Promise.all([
-    getCampusMapData(),
+  const [scheduledRooms, weekData] = await Promise.all([
+    getCampusScheduledRoomsMeta(),
     getCampusMapWeekSchedule(weekStart),
   ]);
 
@@ -1515,10 +1644,7 @@ export async function getCampusLiveFreeRoomCount(
   const seenSubRooms = new Set<string>();
   let freeCount = 0;
 
-  for (const feature of mapData.features) {
-    const p = feature.properties;
-    if (!p.hasSchedule) continue;
-
+  for (const p of scheduledRooms) {
     if (p.isBuildingContainer && p.rooms && p.rooms.length > 0) {
       for (const rid of p.rooms) {
         if (seenSubRooms.has(rid)) continue;

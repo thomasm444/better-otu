@@ -380,7 +380,16 @@ export function CourseLookupPanel({
             profName,
             entry.courseCode,
             sec?.rmp ?? selectedRmp ?? null,
-            sec?.salaries ?? [],
+            sec?.salaries ??
+              (() => {
+                const rmp = sec?.rmp ?? selectedRmp;
+                if (!rmp) return [];
+                return (
+                  catalog.salariesByRmpId?.[
+                    String(rmp.legacyId ?? rmp.fullName)
+                  ] ?? []
+                );
+              })(),
           )
         }
         className="mt-0.5 inline-flex max-w-full cursor-pointer items-center gap-1 truncate text-[11px] font-medium text-sky-700 hover:underline dark:text-sky-400"

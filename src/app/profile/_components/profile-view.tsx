@@ -22,7 +22,10 @@ import {
   yearOfStudyToStartYear,
   type YearOfStudy,
 } from "@/lib/onboarding";
-import type { StudentProfile } from "@/lib/student-courses";
+import {
+  invalidateStudentProfileCache,
+  type StudentProfile,
+} from "@/lib/student-courses";
 
 interface ProfileViewProps {
   programs: ProgramSummary[];
@@ -209,6 +212,7 @@ export function ProfileView({
         degreeId: nextValues.degreeId,
         minorId: nextValues.minorId,
       });
+      invalidateStudentProfileCache();
       setEditingField(null);
       setSavedField(field);
       router.refresh();

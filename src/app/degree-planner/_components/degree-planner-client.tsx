@@ -10,6 +10,8 @@ import React, {
 } from "react";
 
 import {
+  MAX_DEGREE_PLANS,
+  MAX_DEGREE_PLANS_MESSAGE,
   deleteDegreePlan,
   fetchAllDegreePlans,
   fetchDegreePlanByProgram,
@@ -190,7 +192,12 @@ export function DegreePlannerClient({
     };
   }, [bootstrap.subjects, bootstrap.courses]);
 
-  const programCacheRef = useRef<Map<string, DegreeProgramDetail>>(new Map());
+  const programCacheRef = useRef<Map<string, DegreeProgramDetail>>(
+    new Map(initialProgram ? [[initialProgram.program_id, initialProgram]] : []),
+  );
+  const programInFlightRef = useRef<Map<string, Promise<DegreeProgramDetail>>>(
+    new Map(),
+  );
 
   const availableCatalogYears = useMemo(() => {
     const source =
@@ -503,13 +510,23 @@ export function DegreePlannerClient({
     const cached = programCacheRef.current.get(programId);
     if (cached) return cached;
 
-    const res = await fetch(
-      `/api/degree-planner/programs/${encodeURIComponent(programId)}`,
-    );
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const detail = (await res.json()) as DegreeProgramDetail;
-    programCacheRef.current.set(detail.program_id, detail);
-    return detail;
+    const inFlight = programInFlightRef.current.get(programId);
+    if (inFlight) return inFlight;
+
+    const promise = (async () => {
+      const res = await fetch(
+        `/api/degree-planner/programs/${encodeURIComponent(programId)}`,
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const detail = (await res.json()) as DegreeProgramDetail;
+      programCacheRef.current.set(detail.program_id, detail);
+      return detail;
+    })().finally(() => {
+      programInFlightRef.current.delete(programId);
+    });
+
+    programInFlightRef.current.set(programId, promise);
+    return promise;
   }, []);
 
   const loadMinorDetail = useCallback(
@@ -1600,6 +1617,10 @@ export function DegreePlannerClient({
       const existingSaved = savedPlans.find(
         (p) => p.program_id === detail.program_id,
       );
+      if (!existingSaved && savedPlans.length >= MAX_DEGREE_PLANS) {
+        showToast(MAX_DEGREE_PLANS_MESSAGE);
+        return;
+      }
       const shouldUsePreview =
         carryPreviewOnAdd &&
         !existingSaved &&
@@ -1696,8 +1717,12 @@ export function DegreePlannerClient({
             savedPlansRef.current = next;
             return next;
           });
-        } catch {
-          showToast("Could not save plan to your account");
+        } catch (err) {
+          showToast(
+            err instanceof Error
+              ? err.message
+              : "Could not save plan to your account",
+          );
         }
       }
 
@@ -2542,12 +2567,18 @@ export function DegreePlannerClient({
                   <div className="absolute top-9 left-0 z-50 max-h-[60vh] w-[min(360px,calc(100vw-2rem))] overflow-auto rounded-xl border border-line bg-surface shadow-[var(--shadow-lg)]">
                     <div className="flex items-center justify-between border-b border-line-subtle px-3.5 py-2.5">
                       <span className="text-xs font-medium text-ink-muted">
-                        Saved plans ({savedPlans.length})
+                        Saved plans ({savedPlans.length}/{MAX_DEGREE_PLANS})
                       </span>
                       <button
                         type="button"
+                        disabled={savedPlans.length >= MAX_DEGREE_PLANS}
+                        title={
+                          savedPlans.length >= MAX_DEGREE_PLANS
+                            ? MAX_DEGREE_PLANS_MESSAGE
+                            : "Create a new degree plan"
+                        }
                         onClick={openAddPlanModal}
-                        className="rounded-md bg-accent-soft px-2.5 py-1 text-xs font-medium text-accent-ink transition-colors hover:bg-accent hover:text-accent-fg"
+                        className="rounded-md bg-accent-soft px-2.5 py-1 text-xs font-medium text-accent-ink transition-colors hover:bg-accent hover:text-accent-fg disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         + New plan
                       </button>

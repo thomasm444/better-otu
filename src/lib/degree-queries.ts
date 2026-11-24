@@ -164,6 +164,40 @@ export async function getCatalogCourses(): Promise<CatalogCourse[]> {
   }));
 }
 
+/**
+ * Lightweight cached lookup of courses whose credit_hours !== 3 (only ~60 rows),
+ * avoiding a full 1,800+ row catalog scan on the Home page.
+ */
+export async function getNonStandardCourseCredits(): Promise<
+  Record<string, number>
+> {
+  "use cache";
+  cacheLife("days");
+  cacheTag("catalog-courses");
+
+  const supabase = getPublicClient();
+  const { data, error } = await supabase
+    .from("catalog_courses")
+    .select("code, credit_hours")
+    .neq("credit_hours", 3);
+
+  if (error) {
+    throw new Error(`getNonStandardCourseCredits failed: ${error.message}`);
+  }
+
+  const result: Record<string, number> = {};
+  for (const row of (data ?? []) as Array<{
+    code: string | null;
+    credit_hours: number | null;
+  }>) {
+    const credits = Number(row.credit_hours);
+    if (row.code && Number.isFinite(credits) && credits !== 3) {
+      result[row.code.trim().toUpperCase()] = credits;
+    }
+  }
+  return result;
+}
+
 export async function getCourseOfferings(): Promise<CourseOffering[]> {
   "use cache";
   cacheLife("days");

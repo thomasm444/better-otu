@@ -131,6 +131,7 @@ export function StackedPortalView({
                   <Link
                     key={term.code}
                     href={`/course-schedules?term=${term.code}`}
+                    prefetch={false}
                     title={term.label}
                     className={`whitespace-nowrap rounded-md border px-2 py-0.5 font-mono text-xs font-medium transition-all duration-200 hover:-translate-y-0.5 hover:scale-105 hover:shadow-[var(--shadow-sm)] ${
                       isActive
@@ -279,6 +280,7 @@ export function StackedPortalView({
                 <Link
                   key={venue.key}
                   href={`/campus-map?venue=${venue.key}`}
+                  prefetch={false}
                   className="rounded-md border border-line bg-surface px-2 py-0.5 text-[11px] font-medium text-ink-secondary transition-all duration-200 hover:-translate-y-0.5 hover:scale-105 hover:border-positive-line hover:bg-positive-soft hover:text-positive hover:shadow-[var(--shadow-sm)]"
                 >
                   {venue.label}
@@ -295,6 +297,7 @@ export function StackedPortalView({
             </span>
             <Link
               href="/campus-map?building=LIB&filter=available&now=1"
+              prefetch={false}
               className="mt-2 rounded-md after:absolute after:inset-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             >
               <p className="text-sm font-semibold leading-snug text-ink transition-colors group-hover:text-accent-ink">
@@ -308,6 +311,7 @@ export function StackedPortalView({
             )}
             <Link
               href="/campus-map?filter=available&now=1"
+              prefetch={false}
               className="relative z-10 mt-2 inline-flex items-center rounded-md border border-line bg-surface-subtle px-2.5 py-1 text-xs font-medium text-ink-secondary transition-all duration-200 hover:-translate-y-0.5 hover:scale-105 hover:border-accent-line hover:text-ink hover:shadow-[var(--shadow-sm)]"
             >
               All open rooms
@@ -330,6 +334,7 @@ export function StackedPortalView({
                 <Link
                   key={bldg}
                   href={`/campus-map?building=${bldg}&filter=available&now=1`}
+                  prefetch={false}
                   className="rounded-md border border-line bg-surface px-2 py-0.5 font-mono text-xs font-medium text-ink-secondary transition-all duration-200 hover:-translate-y-0.5 hover:scale-105 hover:border-accent-line hover:bg-accent-soft hover:text-accent-ink hover:shadow-[var(--shadow-sm)]"
                 >
                   {bldg}

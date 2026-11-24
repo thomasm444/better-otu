@@ -143,6 +143,12 @@ export function ScheduleContainer({
   const [programElectives, setProgramElectives] = useState<
     Array<{ id: string; label: string; match: ElectiveMatch }>
   >([]);
+  const remotePlansCacheRef = useRef<
+    Map<string, Awaited<ReturnType<typeof fetchAllDegreePlans>>>
+  >(new Map());
+  const programElectivesCacheRef = useRef<
+    Map<string, Array<{ id: string; label: string; match: ElectiveMatch }>>
+  >(new Map());
 
   const [degreePlanOptions, setDegreePlanOptions] = useState<
     DegreePlanImportOption[]
@@ -379,8 +385,15 @@ export function ScheduleContainer({
 
       if (user?.email) {
         try {
+          const emailKey = user.email.trim().toLowerCase();
+          const cachedPlans = remotePlansCacheRef.current.get(emailKey);
           const [plansRes, hydrationRes] = await Promise.all([
-            fetchAllDegreePlans(supabase, user.email),
+            cachedPlans
+              ? Promise.resolve(cachedPlans)
+              : fetchAllDegreePlans(supabase, user.email).then((plans) => {
+                  remotePlansCacheRef.current.set(emailKey, plans);
+                  return plans;
+                }),
             loadUserScheduleHydrationFromDb(
               supabase,
               user.id,
@@ -423,34 +436,40 @@ export function ScheduleContainer({
       // Optionally load program elective buckets from the active Degree Plan
       const latestProgId = remotePlans[0]?.program_id;
       if (latestProgId) {
-        fetch(`/api/degree-planner/programs/${encodeURIComponent(latestProgId)}`)
-          .then((r) => (r.ok ? r.json() : null))
-          .then((detail: DegreeProgramDetail | null) => {
-            if (cancelled || !detail) return;
-            const model = buildModel(detail);
-            const seenKeys = new Set<string>();
-            const buckets: Array<{
-              id: string;
-              label: string;
-              match: ElectiveMatch;
-            }> = [];
-            for (const b of [...model.buckets, ...model.breadth]) {
-              if (!b.label || b.label === "Elective") continue;
-              const m = b.match;
-              const hasConstraint =
-                Boolean(m.subjects?.length) ||
-                Boolean(m.exclude_subjects?.length) ||
-                Boolean(m.faculties?.length) ||
-                Boolean(m.exclude_faculties?.length) ||
-                m.min_level != null ||
-                m.max_level != null;
-              if (!hasConstraint || seenKeys.has(b.key)) continue;
-              seenKeys.add(b.key);
-              buckets.push({ id: b.key, label: b.label, match: m });
-            }
-            setProgramElectives(buckets);
-          })
-          .catch(() => {});
+        const cachedElectives = programElectivesCacheRef.current.get(latestProgId);
+        if (cachedElectives) {
+          setProgramElectives(cachedElectives);
+        } else {
+          fetch(`/api/degree-planner/programs/${encodeURIComponent(latestProgId)}`)
+            .then((r) => (r.ok ? r.json() : null))
+            .then((detail: DegreeProgramDetail | null) => {
+              if (cancelled || !detail) return;
+              const model = buildModel(detail);
+              const seenKeys = new Set<string>();
+              const buckets: Array<{
+                id: string;
+                label: string;
+                match: ElectiveMatch;
+              }> = [];
+              for (const b of [...model.buckets, ...model.breadth]) {
+                if (!b.label || b.label === "Elective") continue;
+                const m = b.match;
+                const hasConstraint =
+                  Boolean(m.subjects?.length) ||
+                  Boolean(m.exclude_subjects?.length) ||
+                  Boolean(m.faculties?.length) ||
+                  Boolean(m.exclude_faculties?.length) ||
+                  m.min_level != null ||
+                  m.max_level != null;
+                if (!hasConstraint || seenKeys.has(b.key)) continue;
+                seenKeys.add(b.key);
+                buckets.push({ id: b.key, label: b.label, match: m });
+              }
+              programElectivesCacheRef.current.set(latestProgId, buckets);
+              setProgramElectives(buckets);
+            })
+            .catch(() => {});
+        }
       }
 
       const fallLocalCodes = (fallLocal?.plannedCourses ?? [])

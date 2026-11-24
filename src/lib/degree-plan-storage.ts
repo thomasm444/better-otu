@@ -2,6 +2,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { CustomCourse, PlannerTerm } from "@/lib/degree-types";
 
+export const MAX_DEGREE_PLANS = 5;
+export const MAX_DEGREE_PLANS_MESSAGE =
+  "You can save up to 5 degree plans. Delete an existing plan to add another.";
+
 export interface DegreePlanRecord {
   id: string;
   user_id: string;
@@ -100,7 +104,15 @@ export async function upsertDegreePlan(
     .select("*")
     .single();
 
-  if (error) throw error;
+  if (error) {
+    if (
+      error.code === "23514" ||
+      error.message?.toLowerCase().includes("up to 5 degree plans")
+    ) {
+      throw new Error(MAX_DEGREE_PLANS_MESSAGE);
+    }
+    throw error;
+  }
   return data as DegreePlanRecord;
 }
 

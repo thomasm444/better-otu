@@ -57,3 +57,5 @@ next-env.d.ts
 # local agent skills (installed per-machine)
 /.agents/
 /.taste-skill/
+
+*.har

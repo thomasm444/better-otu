@@ -81,6 +81,31 @@ async function resolveUserId(
   return user.id;
 }
 
+const PROFILE_CACHE_TTL_MS = 15_000;
+const profileCache = new Map<
+  string,
+  { value: StudentProfile | null; expiresAt: number }
+>();
+const profileInFlight = new Map<string, Promise<StudentProfile | null>>();
+const profileWithProgramsCache = new Map<
+  string,
+  { value: StudentProfileWithPrograms | null; expiresAt: number }
+>();
+const profileWithProgramsInFlight = new Map<
+  string,
+  Promise<StudentProfileWithPrograms | null>
+>();
+
+export function invalidateStudentProfileCache(userId?: string): void {
+  if (userId) {
+    profileCache.delete(userId);
+    profileWithProgramsCache.delete(userId);
+    return;
+  }
+  profileCache.clear();
+  profileWithProgramsCache.clear();
+}
+
 export async function fetchStudentProfile(
   supabase: SupabaseClient,
   userId?: string,
@@ -88,14 +113,33 @@ export async function fetchStudentProfile(
   const resolvedUserId = await resolveUserId(supabase, userId);
   if (!resolvedUserId) return null;
 
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("*")
-    .eq("id", resolvedUserId)
-    .maybeSingle();
+  const cached = profileCache.get(resolvedUserId);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.value;
+  }
+  const inFlight = profileInFlight.get(resolvedUserId);
+  if (inFlight) return inFlight;
 
-  if (error) throw error;
-  return data as StudentProfile | null;
+  const promise = (async () => {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", resolvedUserId)
+      .maybeSingle();
+
+    if (error) throw error;
+    const value = data as StudentProfile | null;
+    profileCache.set(resolvedUserId, {
+      value,
+      expiresAt: Date.now() + PROFILE_CACHE_TTL_MS,
+    });
+    return value;
+  })().finally(() => {
+    profileInFlight.delete(resolvedUserId);
+  });
+
+  profileInFlight.set(resolvedUserId, promise);
+  return promise;
 }
 
 function normalizeJoinedProgram(
@@ -112,47 +156,68 @@ export async function fetchStudentProfileWithPrograms(
   const resolvedUserId = await resolveUserId(supabase, userId);
   if (!resolvedUserId) return null;
 
-  const { data, error } = await supabase
-    .from("profiles")
-    .select(
-      `
-      *,
-      degree_program:degree_programs!profiles_degree_program_id_fkey (
-        program_id,
-        name,
-        catalog_year,
-        credential,
-        degree,
-        degree_abbrev,
-        faculty
-      ),
-      minor_program:degree_programs!profiles_minor_program_id_fkey (
-        program_id,
-        name,
-        catalog_year,
-        credential,
-        degree,
-        degree_abbrev,
-        faculty
+  const cached = profileWithProgramsCache.get(resolvedUserId);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.value;
+  }
+  const inFlight = profileWithProgramsInFlight.get(resolvedUserId);
+  if (inFlight) return inFlight;
+
+  const promise = (async () => {
+    const { data, error } = await supabase
+      .from("profiles")
+      .select(
+        `
+        *,
+        degree_program:degree_programs!profiles_degree_program_id_fkey (
+          program_id,
+          name,
+          catalog_year,
+          credential,
+          degree,
+          degree_abbrev,
+          faculty
+        ),
+        minor_program:degree_programs!profiles_minor_program_id_fkey (
+          program_id,
+          name,
+          catalog_year,
+          credential,
+          degree,
+          degree_abbrev,
+          faculty
+        )
+      `,
       )
-    `,
-    )
-    .eq("id", resolvedUserId)
-    .maybeSingle();
+      .eq("id", resolvedUserId)
+      .maybeSingle();
 
-  if (error) throw error;
-  if (!data) return null;
+    if (error) throw error;
 
-  const row = data as StudentProfile & {
-    degree_program?: ProfileProgramSummary | ProfileProgramSummary[] | null;
-    minor_program?: ProfileProgramSummary | ProfileProgramSummary[] | null;
-  };
+    let value: StudentProfileWithPrograms | null = null;
+    if (data) {
+      const row = data as StudentProfile & {
+        degree_program?: ProfileProgramSummary | ProfileProgramSummary[] | null;
+        minor_program?: ProfileProgramSummary | ProfileProgramSummary[] | null;
+      };
+      value = {
+        ...row,
+        degree_program: normalizeJoinedProgram(row.degree_program),
+        minor_program: normalizeJoinedProgram(row.minor_program),
+      };
+    }
 
-  return {
-    ...row,
-    degree_program: normalizeJoinedProgram(row.degree_program),
-    minor_program: normalizeJoinedProgram(row.minor_program),
-  };
+    profileWithProgramsCache.set(resolvedUserId, {
+      value,
+      expiresAt: Date.now() + PROFILE_CACHE_TTL_MS,
+    });
+    return value;
+  })().finally(() => {
+    profileWithProgramsInFlight.delete(resolvedUserId);
+  });
+
+  profileWithProgramsInFlight.set(resolvedUserId, promise);
+  return promise;
 }
 
 export async function fetchStudentCourses(

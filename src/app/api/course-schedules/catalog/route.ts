@@ -23,7 +23,8 @@ export async function GET(request: Request) {
     const catalog = await getTermScheduleCatalog(term, previewTerm);
     return NextResponse.json(catalog, {
       headers: {
-        "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=86400",
+        "Cache-Control":
+          "public, max-age=1800, s-maxage=3600, stale-while-revalidate=86400",
       },
     });
   } catch (error) {

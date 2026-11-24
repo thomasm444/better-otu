@@ -538,6 +538,7 @@ export async function getTermScheduleCatalog(
   }
 
   const grouped = new Map<string, ScheduleSection[]>();
+  const salariesByRmpId: Record<string, ProfessorSalaryRecord[]> = {};
   const subjectsSet = new Set<string>();
   const instructorsSet = new Set<string>();
 
@@ -545,6 +546,13 @@ export async function getTermScheduleCatalog(
   for (const row of effectiveSections) {
     const sec = normalizeSection(row, normalizationTerm);
     if (!sec) continue;
+    if (sec.rmp && sec.salaries && sec.salaries.length > 0) {
+      const rmpKey = String(sec.rmp.legacyId ?? sec.rmp.fullName);
+      if (!salariesByRmpId[rmpKey]) {
+        salariesByRmpId[rmpKey] = sec.salaries;
+      }
+      delete sec.salaries;
+    }
     subjectsSet.add(sec.subject);
     if (sec.instructor) instructorsSet.add(sec.instructor);
 
@@ -667,6 +675,7 @@ export async function getTermScheduleCatalog(
     previewTermLabel: activePreviewTerm?.label ?? null,
     ...(availablePreviewTerms.length > 0 ? { availablePreviewTerms } : {}),
     courses,
+    ...(Object.keys(salariesByRmpId).length > 0 ? { salariesByRmpId } : {}),
     allCatalogCourses,
     subjects: [...subjectsSet].sort((a, b) => a.localeCompare(b, "en")),
     instructors: [...instructorsSet].sort((a, b) => a.localeCompare(b, "en")),

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 
-import { getCatalogCourses } from "@/lib/degree-queries";
+import { getNonStandardCourseCredits } from "@/lib/degree-queries";
 import { TERM_LABEL, getLastUpdatedInfo } from "@/lib/queries";
 
 import { PortalDashboard } from "./_components/portal-dashboard";
@@ -61,6 +61,7 @@ function HomeFooter() {
         </Suspense>
         <Link
           href="/privacy-policy"
+          prefetch={false}
           className="underline decoration-line-strong underline-offset-2 transition-colors hover:text-ink"
         >
           Privacy Policy
@@ -75,14 +76,7 @@ async function PortalDashboardWithCredits({
 }: {
   footer: React.ReactNode;
 }) {
-  const catalogCourses = await getCatalogCourses();
-  const nonStandardCredits: Record<string, number> = {};
-  for (const course of catalogCourses) {
-    const credits = Number(course.credit_hours);
-    if (Number.isFinite(credits) && credits !== 3 && course.code) {
-      nonStandardCredits[course.code.trim().toUpperCase()] = credits;
-    }
-  }
+  const nonStandardCredits = await getNonStandardCourseCredits();
   return (
     <PortalDashboard
       termLabel={TERM_LABEL}

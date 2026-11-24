@@ -221,6 +221,7 @@ export function computeCampusGeoBounds(
 /** Verified non-DB building names already established in app copy (e.g. "Find a Library Room"). */
 export const VERIFIED_APP_BUILDING_NAMES: Record<string, string> = {
   LIB: "Library",
+  SIR: "Software and Informatics Research Centre",
 };
 
 const VENUE_LABELS: Record<string, string> = {

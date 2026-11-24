@@ -322,6 +322,8 @@ export interface TermScheduleCatalog {
   previewTermLabel?: string | null;
   availablePreviewTerms?: Array<{ code: string; label: string }>;
   courses: ScheduleCourseGroup[];
+  /** Deduplicated professor salary records keyed by `rmp.id` */
+  salariesByRmpId?: Record<string, ProfessorSalaryRecord[]>;
   allCatalogCourses?: Array<{ code: string; title: string }>;
   subjects: string[];
   instructors: string[];

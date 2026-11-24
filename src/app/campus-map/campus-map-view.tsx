@@ -1707,8 +1707,22 @@ export function CampusMapView() {
           </button>
         </div>
 
-        {/* Right (Row 1 right on mobile, far right on md+): Menu */}
+        {/* Right (Row 1 right on mobile, far right on md+): Active building filter + Menu */}
         <div className="order-2 ml-auto flex shrink-0 items-center gap-2 md:order-3">
+          {focusedBuilding !== "ALL" && (
+            <button
+              type="button"
+              onClick={() => setFocusedBuilding("ALL")}
+              title={`Clear ${focusedBuilding} building filter`}
+              aria-label={`Clear ${focusedBuilding} building filter`}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-accent-line bg-accent-soft px-2.5 py-1.5 text-xs font-medium text-accent-ink transition-colors hover:bg-accent hover:text-accent-fg"
+            >
+              <span>{focusedBuilding}</span>
+              <span aria-hidden="true" className="text-sm leading-none">
+                &times;
+              </span>
+            </button>
+          )}
           <div ref={menuRef} className="relative">
             <button
               type="button"
@@ -2136,20 +2150,6 @@ export function CampusMapView() {
                   }`}
                 />
                 <span>{stats.busyCount} in use</span>
-              </button>
-            </>
-          )}
-
-          {focusedBuilding !== "ALL" && (
-            <>
-              <span className="text-slate-400 dark:text-zinc-500">&middot;</span>
-              <button
-                type="button"
-                onClick={() => setFocusedBuilding("ALL")}
-                title={`Clear ${focusedBuilding} filter`}
-                className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[11px] font-bold text-slate-700 hover:bg-slate-200 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
-              >
-                {focusedBuilding} &times;
               </button>
             </>
           )}

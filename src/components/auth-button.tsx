@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { ProfileDrawer } from "@/components/profile-drawer";
 import { signInWithOntarioTechGoogle, signOut } from "@/lib/auth";
+import { invalidateStudentProfileCache } from "@/lib/student-courses";
 import { createClient } from "@/lib/supabase/client";
 
 export function AuthButton({
@@ -79,6 +80,7 @@ export function AuthButton({
     setErrorMessage(null);
     setSubmitting(true);
     try {
+      invalidateStudentProfileCache();
       await signOut();
       router.replace("/login");
       router.refresh();

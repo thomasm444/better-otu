@@ -615,6 +615,7 @@ export function ClassicPortalView({
               <div className="flex shrink-0 flex-wrap items-center gap-2">
                 <Link
                   href="/campus-map?building=LIB&filter=available&now=1"
+                  prefetch={false}
                   className="group/cta inline-flex items-center gap-2 rounded-lg bg-accent px-4 py-2 text-xs font-medium text-accent-fg shadow-[var(--shadow-sm)] transition-all duration-200 hover:-translate-y-0.5 hover:scale-[1.03] hover:bg-accent-hover hover:shadow-[var(--shadow-md)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
                 >
                   <span>Find a library room</span>
@@ -622,6 +623,7 @@ export function ClassicPortalView({
                 </Link>
                 <Link
                   href="/campus-map?filter=available&now=1"
+                  prefetch={false}
                   className="inline-flex items-center rounded-lg border border-white/20 bg-white/10 px-3.5 py-2 text-xs font-medium text-white transition-all duration-200 hover:-translate-y-0.5 hover:scale-[1.03] hover:bg-white/18 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white dark:border-line dark:bg-surface-subtle dark:text-ink dark:hover:border-accent-line dark:hover:bg-surface-hover"
                 >
                   All open rooms
@@ -640,6 +642,7 @@ export function ClassicPortalView({
                   <Link
                     key={bldg}
                     href={`/campus-map?building=${bldg}&filter=available&now=1`}
+                    prefetch={false}
                     className="rounded-md border border-white/18 bg-white/10 px-2 py-0.5 font-mono text-xs font-medium text-white transition-all duration-200 hover:-translate-y-0.5 hover:scale-105 hover:border-accent hover:bg-accent hover:text-accent-fg hover:shadow-[var(--shadow-sm)] dark:border-line dark:bg-surface-subtle dark:text-ink-secondary dark:hover:border-accent-line dark:hover:bg-accent-soft dark:hover:text-accent-ink"
                   >
                     {bldg}
