@@ -823,6 +823,37 @@ function distributeYear(
   return remaining;
 }
 
+export function parseSectionYearRange(
+  title: string | null | undefined,
+): { startYear: number; endYear: number } | null {
+  const text = (title ?? "").trim();
+  const match = text.match(/\byear\s*(\d+)(?:\s*(?:and|&|to|-|–)\s*(\d+))?\b/i);
+  if (!match) return null;
+  const startYear = Number(match[1]);
+  if (!Number.isFinite(startYear) || startYear <= 0) return null;
+  const rawEnd = match[2] ? Number(match[2]) : startYear;
+  const endYear =
+    Number.isFinite(rawEnd) && rawEnd >= startYear ? rawEnd : startYear;
+  return { startYear, endYear };
+}
+
+export function resolveCourseYearForSection(
+  code: string,
+  range: { startYear: number; endYear: number },
+  catalogMap?: Map<string, CatalogCourse>,
+): number {
+  if (range.endYear <= range.startYear) return range.startYear;
+  const level = catalogMap?.get(code)?.level;
+  let courseYear: number | null =
+    typeof level === "number" && level >= 1000 ? Math.trunc(level / 1000) : null;
+  if (courseYear === null) {
+    const numMatch = code.match(/\b[A-Z]{2,6}\s*([1-9])\d{3}/i);
+    if (numMatch) courseYear = Number(numMatch[1]);
+  }
+  if (courseYear === null) return range.startYear;
+  return Math.max(range.startYear, Math.min(range.endYear, courseYear));
+}
+
 export function buildDefaultPlan(
   program: DegreeProgramDetail,
   catalogMap: Map<string, CatalogCourse>,
@@ -863,31 +894,91 @@ export function buildDefaultPlan(
     (s) => /^year\s*\d/i.test(s.title || "") && s.groups.length > 0,
   );
 
+  const intendedYearOfCode = new Map<string, number>();
+  const pushRequired = (year: number, code: string) => {
+    push(year, code);
+    if (!intendedYearOfCode.has(code)) intendedYearOfCode.set(code, year);
+  };
+
   if (yearSections.length > 0) {
+    const multiYearNullChunks: Array<{
+      startYear: number;
+      endYear: number;
+      count: number;
+    }> = [];
+
     for (const section of yearSections) {
-      const match = (section.title || "").match(/^year\s*(\d+)/i);
-      const year = Number(match?.[1] ?? 1) || 1;
+      const range = parseSectionYearRange(section.title);
+      if (!range) continue;
+      let multiYearNullCount = 0;
+      const isMultiYear = range.endYear > range.startYear;
+      const addNulls = (n: number) => {
+        if (isMultiYear) {
+          multiYearNullCount += n;
+        } else {
+          for (let i = 0; i < n; i++) push(range.startYear, null);
+        }
+      };
+
       for (const group of section.groups) {
         if (group.kind === "choose") {
           const takes = group.required || 1;
-          for (let i = 0; i < takes; i++) push(year, null);
+          addNulls(takes);
           continue;
         }
         for (const item of group.items) {
           if (item.type === "elective") {
             const count =
               item.count || Math.round((item.credit_hours || 0) / 3) || 1;
-            for (let i = 0; i < count; i++) push(year, null);
+            addNulls(count);
             continue;
           }
           const shape = requirementShape(item);
           if (shape.kind === "required") {
-            if (shape.code) push(year, shape.code);
-            for (const code of shape.codes ?? []) push(year, code);
+            if (shape.code) {
+              pushRequired(
+                resolveCourseYearForSection(shape.code, range, catalogMap),
+                shape.code,
+              );
+            }
+            for (const code of shape.codes ?? []) {
+              pushRequired(
+                resolveCourseYearForSection(code, range, catalogMap),
+                code,
+              );
+            }
           } else if (shape.kind === "choose") {
-            for (let i = 0; i < shape.takes; i++) push(year, null);
+            addNulls(shape.takes);
           }
         }
+      }
+
+      if (multiYearNullCount > 0) {
+        multiYearNullChunks.push({
+          startYear: range.startYear,
+          endYear: range.endYear,
+          count: multiYearNullCount,
+        });
+      }
+    }
+
+    // Spread placeholder/elective slots from combined sections (e.g. "Year 3 and 4")
+    // evenly across the spanned years without crowding required courses out of their level year.
+    for (const chunk of multiYearNullChunks) {
+      let left = chunk.count;
+      const targetPerYear = SLOTS_PER_TERM * 2;
+      for (let y = chunk.startYear; y <= chunk.endYear && left > 0; y++) {
+        const existingCount = plan.get(y)?.length ?? 0;
+        const needed = Math.max(0, targetPerYear - existingCount);
+        const toAdd = Math.min(left, needed);
+        for (let i = 0; i < toAdd; i++) push(y, null);
+        left -= toAdd;
+      }
+      let cursor = chunk.startYear;
+      while (left > 0) {
+        push(cursor, null);
+        left--;
+        cursor = cursor < chunk.endYear ? cursor + 1 : chunk.startYear;
       }
     }
   } else {
@@ -918,9 +1009,11 @@ export function buildDefaultPlan(
         }
       }
     }
-    codes.forEach((code, index) =>
-      push(Math.min(4, Math.floor(index / 10) + 1), code),
-    );
+    codes.forEach((code, index) => {
+      const targetYear = Math.min(4, Math.floor(index / 10) + 1);
+      if (code) pushRequired(targetYear, code);
+      else push(targetYear, null);
+    });
   }
 
   let carry: (string | null)[] = [];
@@ -950,8 +1043,21 @@ export function buildDefaultPlan(
     const stillLeft: (string | null)[] = [];
     for (const code of carry) {
       if (!code) continue;
+      const intendedStudyYear = intendedYearOfCode.get(code) ?? 1;
+      const minAcademicYear =
+        studyToAcademicYear.get(intendedStudyYear) ?? intendedStudyYear;
+      const termIndices = terms
+        .map((_, idx) => idx)
+        .sort((a, b) => {
+          const aOk = terms[a].year >= minAcademicYear ? 0 : 1;
+          const bOk = terms[b].year >= minAcademicYear ? 0 : 1;
+          if (aOk !== bOk) return aOk - bOk;
+          return a - b;
+        });
+
       let done = false;
-      for (let index = 0; index < terms.length && !done; index++) {
+      for (const index of termIndices) {
+        if (done) break;
         const term = terms[index];
         if (term.season === "Summer") continue;
         const calYear = termCalendarYear(startYear, term.year, term.season);

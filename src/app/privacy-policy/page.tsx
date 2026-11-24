@@ -12,7 +12,7 @@ const LAST_UPDATED_DATE = "November 23, 2026";
 
 export default function PrivacyPolicyPage() {
   return (
-    <div className="min-h-screen bg-canvas font-sans text-ink">
+    <div className="flex-1 bg-canvas font-sans text-ink">
       <main className="mx-auto w-full max-w-3xl px-4 py-8 sm:px-6 sm:py-12">
         <article className="overflow-hidden rounded-2xl border border-line bg-surface shadow-[var(--shadow-sm)]">
           <div className="border-b border-line-subtle bg-surface-subtle/50 px-6 py-6 sm:px-8">

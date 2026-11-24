@@ -49,18 +49,23 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html
       lang="en"
       suppressHydrationWarning
-      style={{ "--site-nav-height": "2.75rem" } as CSSProperties}
+      style={
+        {
+          "--site-nav-height": "2.75rem",
+          "--site-footer-height": "2rem",
+        } as CSSProperties
+      }
       className={`${geistSans.variable} ${geistMono.variable} ${outfit.variable} h-full antialiased`}
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
-      <body className="flex min-h-screen flex-col font-sans">
+      <body className="flex min-h-dvh flex-col font-sans">
         <Suspense fallback={<SiteNavFallback />}>
           <SiteNav />
         </Suspense>
-        <div className="flex flex-1 flex-col">{children}</div>
-        <footer className="border-t border-line-subtle bg-canvas px-4 py-2.5 text-center text-[11px] text-ink-muted">
+        <div className="flex min-h-0 flex-1 flex-col">{children}</div>
+        <footer className="sticky bottom-0 z-30 flex min-h-[var(--site-footer-height,2rem)] shrink-0 items-center justify-center border-t border-line-subtle bg-surface/95 px-4 py-1 text-center text-[11px] leading-tight text-ink-muted backdrop-blur-sm">
           Unofficial student project &mdash; not affiliated with or endorsed by
           Ontario Tech University
         </footer>

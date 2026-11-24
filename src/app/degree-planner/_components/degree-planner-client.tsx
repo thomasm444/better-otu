@@ -2224,7 +2224,7 @@ export function DegreePlannerClient({
       style={
         { "--planner-header-h": `${headerHeight}px` } as React.CSSProperties
       }
-      className="min-h-screen bg-canvas text-ink"
+      className="flex-1 bg-canvas text-ink"
     >
       {/* Sticky Top Header */}
       <header

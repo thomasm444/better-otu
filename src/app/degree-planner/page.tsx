@@ -49,7 +49,7 @@ async function DegreePlannerContent({
 
 function DegreePlannerSkeleton() {
   return (
-    <div className="min-h-screen bg-canvas text-ink">
+    <div className="flex-1 bg-canvas text-ink">
       <div className="border-b border-line-subtle bg-surface/95 px-4 py-3 backdrop-blur-sm">
         <div className="mx-auto flex max-w-[1440px] items-center gap-4">
           <div className="h-7 w-20 rounded-lg bg-surface-subtle" />

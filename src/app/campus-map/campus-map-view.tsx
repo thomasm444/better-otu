@@ -224,6 +224,9 @@ export function CampusMapView() {
     zoom: number;
   } | null>(null);
   const initialBoundsAppliedRef = useRef<boolean>(false);
+  const boundsLockCleanupRef = useRef<(() => void) | null>(null);
+  const activeCampusRef = useRef<CampusSwitchKey>(activeCampus);
+  activeCampusRef.current = activeCampus;
   const dataRef = useRef<CampusMapData | null>(null);
   dataRef.current = data;
   const weekCacheRef = useRef<Map<string, { data: CampusMapWeekData; fetchedAt: number }>>(
@@ -323,6 +326,98 @@ export function CampusMapView() {
     };
   }, [isLiveTime]);
 
+  // Apply campus bounds, zoom-out floor (so all bookings stay visible), and optional camera move
+  const applyCampusViewport = useCallback(
+    (
+      campus: CampusSwitchKey,
+      options: { moveCamera: boolean; animate: boolean } = {
+        moveCamera: true,
+        animate: true,
+      },
+    ) => {
+      const map = mapInstanceRef.current;
+      const L = leafletRef.current;
+      if (!map || !L) return;
+
+      boundsLockCleanupRef.current?.();
+      boundsLockCleanupRef.current = null;
+
+      const latestData = dataRef.current;
+      const rawBounds = latestData?.features
+        ? computeCampusGeoBounds(latestData.features, campus)
+        : CAMPUS_FALLBACK_BOUNDS[campus];
+      const latLngBounds = L.latLngBounds(rawBounds[0], rawBounds[1]);
+      const isMobile = window.innerWidth < 1024;
+      const totalPadX = isMobile ? 40 : 64;
+      const totalPadY = isMobile ? 104 : 108;
+
+      // Reset minZoom before getBoundsZoom() because Leaflet clamps getBoundsZoom() to this.getMinZoom()
+      map.setMaxBounds(null as unknown as LeafletType.LatLngBoundsExpression);
+      map.setMinZoom(MAP_MIN_ZOOM);
+
+      const fitZoom = Math.max(
+        MAP_MIN_ZOOM,
+        Math.min(
+          MAP_MAX_ZOOM - 1,
+          map.getBoundsZoom(latLngBounds, false, L.point(totalPadX, totalPadY)),
+        ),
+      );
+      const center = latLngBounds.getCenter();
+      const targetMaxBounds = latLngBounds.pad(0.35);
+
+      defaultCampusViewRef.current = {
+        campus,
+        lat: center.lat,
+        lng: center.lng,
+        zoom: fitZoom,
+      };
+
+      const lockBoundsAndMinZoom = () => {
+        if (activeCampusRef.current !== campus) return;
+        map.setMinZoom(fitZoom);
+        map.setMaxBounds(targetMaxBounds);
+      };
+
+      if (options.moveCamera) {
+        activeCampusRef.current = campus;
+        map.stop();
+
+        if (options.animate) {
+          let settled = false;
+          const finish = () => {
+            if (settled) return;
+            settled = true;
+            map.off("moveend", finish);
+            window.clearTimeout(fallbackTimer);
+            boundsLockCleanupRef.current = null;
+            lockBoundsAndMinZoom();
+            setIsAtDefaultView(true);
+          };
+          const fallbackTimer = window.setTimeout(finish, 800);
+          boundsLockCleanupRef.current = () => {
+            settled = true;
+            map.off("moveend", finish);
+            window.clearTimeout(fallbackTimer);
+          };
+          map.on("moveend", finish);
+          map.flyTo([center.lat, center.lng], fitZoom, { duration: 0.65 });
+          setIsAtDefaultView(true);
+        } else {
+          map.setView([center.lat, center.lng], fitZoom, { animate: false });
+          lockBoundsAndMinZoom();
+          setIsAtDefaultView(true);
+        }
+      } else {
+        lockBoundsAndMinZoom();
+        const curCenter = map.getCenter();
+        const distMeters = curCenter.distanceTo(center);
+        const zoomDiff = Math.abs(map.getZoom() - fitZoom);
+        setIsAtDefaultView(distMeters <= 18 && zoomDiff <= 0.15);
+      }
+    },
+    [],
+  );
+
   // Reset transient map state on load / URL param change / bfcache restore
   const syncFromUrl = useCallback((params: URLSearchParams) => {
     const live = getLiveTorontoMapState();
@@ -406,49 +501,16 @@ export function CampusMapView() {
       (MAIN_DOWNTOWN_BUILDINGS as readonly string[]).includes(buildingParam)
         ? "downtown"
         : "north";
+    activeCampusRef.current = inferredCampus;
     setActiveCampus(inferredCampus);
 
-    const targetVenue = VENUES[inferredCampus];
-    if (!buildingParam && mapInstanceRef.current) {
-      const map = mapInstanceRef.current;
-      const L = leafletRef.current;
-      if (L) {
-        const latestData = dataRef.current;
-        const rawBounds = latestData?.features
-          ? computeCampusGeoBounds(latestData.features, inferredCampus)
-          : CAMPUS_FALLBACK_BOUNDS[inferredCampus];
-        const latLngBounds = L.latLngBounds(rawBounds[0], rawBounds[1]);
-        const isMobile = window.innerWidth < 1024;
-        const padTL: [number, number] = isMobile ? [20, 28] : [32, 32];
-        const padBR: [number, number] = isMobile ? [20, 76] : [32, 76];
-        const fitZoom = Math.max(
-          14,
-          Math.min(
-            MAP_MAX_ZOOM - 1,
-            map.getBoundsZoom(latLngBounds, false, L.point(padTL[0] + padBR[0], padTL[1] + padBR[1])),
-          ),
-        );
-        const center = latLngBounds.getCenter();
-        map.setMaxBounds(null as unknown as LeafletType.LatLngBoundsExpression);
-        map.setMinZoom(fitZoom);
-        map.setMaxBounds(latLngBounds.pad(0.35));
-        defaultCampusViewRef.current = {
-          campus: inferredCampus,
-          lat: center.lat,
-          lng: center.lng,
-          zoom: fitZoom,
-        };
-        map.setView([center.lat, center.lng], fitZoom, { animate: false });
-        setIsAtDefaultView(true);
-      } else {
-        map.setView(
-          [targetVenue.lat, targetVenue.lng],
-          Math.min(targetVenue.zoom, MAP_MAX_ZOOM - 1),
-          { animate: false },
-        );
-      }
+    if (mapInstanceRef.current) {
+      applyCampusViewport(inferredCampus, {
+        moveCamera: !buildingParam,
+        animate: false,
+      });
     }
-  }, []);
+  }, [applyCampusViewport]);
 
   useEffect(() => {
     let active = true;
@@ -668,6 +730,8 @@ export function CampusMapView() {
 
     return () => {
       isMounted = false;
+      boundsLockCleanupRef.current?.();
+      boundsLockCleanupRef.current = null;
       resizeObserver?.disconnect();
       resizeObserver = null;
       setMapReady(false);
@@ -970,82 +1034,16 @@ export function CampusMapView() {
     );
   }, [campusBuildings, otherBuildings, buildingSearchQuery, buildingNameMap]);
 
-  // Apply campus bounds, zoom-out floor (so all bookings stay visible), and optional camera move
-  const applyCampusViewport = useCallback(
-    (
-      campus: CampusSwitchKey,
-      options: { moveCamera: boolean; animate: boolean } = {
-        moveCamera: true,
-        animate: true,
-      },
-    ) => {
-      const map = mapInstanceRef.current;
-      const L = leafletRef.current;
-      if (!map || !L) return;
-
-      const rawBounds = data?.features
-        ? computeCampusGeoBounds(data.features, campus)
-        : CAMPUS_FALLBACK_BOUNDS[campus];
-      const latLngBounds = L.latLngBounds(rawBounds[0], rawBounds[1]);
-      const isMobile = window.innerWidth < 1024;
-      const totalPadX = isMobile ? 40 : 64;
-      const totalPadY = isMobile ? 104 : 108;
-
-      const fitZoom = Math.max(
-        14,
-        Math.min(
-          MAP_MAX_ZOOM - 1,
-          map.getBoundsZoom(latLngBounds, false, L.point(totalPadX, totalPadY)),
-        ),
-      );
-      const center = latLngBounds.getCenter();
-
-      // Clear old bounds first so cross-campus flyTo is never clamped to the previous campus
-      map.setMaxBounds(undefined as unknown as LeafletType.LatLngBoundsExpression);
-      map.setMinZoom(fitZoom);
-      map.setMaxBounds(latLngBounds.pad(0.35));
-
-      defaultCampusViewRef.current = {
-        campus,
-        lat: center.lat,
-        lng: center.lng,
-        zoom: fitZoom,
-      };
-
-      if (options.moveCamera) {
-        if (options.animate) {
-          map.flyTo([center.lat, center.lng], fitZoom, { duration: 0.65 });
-        } else {
-          map.setView([center.lat, center.lng], fitZoom, { animate: false });
-        }
-        setIsAtDefaultView(true);
-      } else {
-        const curCenter = map.getCenter();
-        const distMeters = curCenter.distanceTo(center);
-        const zoomDiff = Math.abs(map.getZoom() - fitZoom);
-        setIsAtDefaultView(distMeters <= 18 && zoomDiff <= 0.15);
-      }
-    },
-    [data],
-  );
-
   // When map & GeoJSON data finish loading, lock bounds & fit initial campus view so all bookings are visible
   useEffect(() => {
-    if (!mapReady || !data) return;
-    if (!initialBoundsAppliedRef.current) {
-      initialBoundsAppliedRef.current = true;
-      const hasBuildingParam = Boolean(pendingBuildingZoom) || focusedBuilding !== "ALL";
-      applyCampusViewport(activeCampus, {
-        moveCamera: !hasBuildingParam,
-        animate: false,
-      });
-    } else {
-      applyCampusViewport(activeCampus, {
-        moveCamera: false,
-        animate: false,
-      });
-    }
-  }, [mapReady, data, activeCampus, pendingBuildingZoom, focusedBuilding, applyCampusViewport]);
+    if (!mapReady || !data || initialBoundsAppliedRef.current) return;
+    initialBoundsAppliedRef.current = true;
+    const hasBuildingParam = Boolean(pendingBuildingZoom) || focusedBuilding !== "ALL";
+    applyCampusViewport(activeCampusRef.current, {
+      moveCamera: !hasBuildingParam,
+      animate: false,
+    });
+  }, [mapReady, data, pendingBuildingZoom, focusedBuilding, applyCampusViewport]);
 
   // Switch active campus, recenter map, and clear cross-campus selections
   const handleSwitchCampus = useCallback(
@@ -1538,7 +1536,7 @@ export function CampusMapView() {
   };
 
   return (
-    <div className="relative flex h-[calc(100dvh-var(--site-nav-height,2.75rem))] w-full flex-col overflow-hidden bg-canvas font-sans text-ink lg:h-[calc(100vh-var(--site-nav-height,2.75rem))]">
+    <div className="relative flex h-[calc(100dvh-var(--site-nav-height,2.75rem)-var(--site-footer-height,2rem))] w-full flex-col overflow-hidden bg-canvas font-sans text-ink">
       {/* Compact Top Navigation Bar */}
       <header className="relative z-30 flex w-full flex-wrap items-center gap-x-3 gap-y-2 border-b border-line-subtle bg-surface px-3 py-2 sm:px-4 md:flex-nowrap">
         {/* Left: Title + Campus Switcher Pill Toggle */}
@@ -1745,7 +1743,7 @@ export function CampusMapView() {
               <div
                 role="dialog"
                 aria-label="Campus map menu"
-                className="absolute right-0 top-full z-50 mt-2 max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-4.5rem)] w-80 max-w-[calc(100vw-1.25rem)] overflow-x-hidden overflow-y-auto rounded-2xl border border-line bg-surface p-3 text-xs text-ink shadow-[var(--shadow-lg)] sm:w-[352px]"
+                className="absolute right-0 top-full z-50 mt-2 max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-var(--site-footer-height,2rem)-4.5rem)] w-80 max-w-[calc(100vw-1.25rem)] overflow-x-hidden overflow-y-auto rounded-2xl border border-line bg-surface p-3 text-xs text-ink shadow-[var(--shadow-lg)] sm:w-[352px]"
               >
                 {/* Buildings */}
                 <div>

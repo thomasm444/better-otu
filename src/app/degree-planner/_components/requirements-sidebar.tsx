@@ -18,7 +18,9 @@ import {
   matchesBucket,
   MAX_SLOTS_PER_TERM,
   offeredIn,
+  parseSectionYearRange,
   placedTermIndex,
+  resolveCourseYearForSection,
   seasonsOf,
   termCalendarYear,
   transferCodes,
@@ -137,32 +139,35 @@ export function RequirementsSidebar({
     const map = new Map<string, number>();
     const collectItemCodes = (
       node: DegreeProgramDetail["sections"][number]["groups"][number]["items"][number],
-      year: number,
+      range: { startYear: number; endYear: number },
     ) => {
       if (node.type === "course" || node.type === "course_set") {
         for (const c of node.courses ?? []) {
-          if (c.code && !map.has(c.code)) map.set(c.code, year);
+          if (c.code && !map.has(c.code)) {
+            map.set(
+              c.code,
+              resolveCourseYearForSection(c.code, range, catalogMap),
+            );
+          }
         }
       } else if (node.type === "any_of") {
-        for (const opt of node.options ?? []) collectItemCodes(opt, year);
+        for (const opt of node.options ?? []) collectItemCodes(opt, range);
       }
     };
 
     for (const section of program.sections) {
       if (section.role === "info" || section.is_alternative_track) continue;
       const titleText = section.title_clean || section.title || "";
-      const m = titleText.match(/\byear\s*(\d+)\b/i);
-      if (!m) continue;
-      const yearNum = Number(m[1]);
-      if (!Number.isFinite(yearNum) || yearNum <= 0) continue;
+      const range = parseSectionYearRange(titleText);
+      if (!range) continue;
       for (const group of section.groups ?? []) {
         for (const item of group.items ?? []) {
-          collectItemCodes(item, yearNum);
+          collectItemCodes(item, range);
         }
       }
     }
     return map;
-  }, [program.sections]);
+  }, [program.sections, catalogMap]);
 
   const updateBreadthOverride = (code: string, bucketKey: string) => {
     setBreadthOverrides((prev) => ({ ...prev, [code]: bucketKey }));

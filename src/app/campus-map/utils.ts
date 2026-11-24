@@ -69,7 +69,7 @@ export const FLOOR_LABELS: Record<string, string> = {
 /** Ordered top-to-bottom like an indoor map / elevator floor picker, with All at top. */
 export const VERTICAL_FLOOR_KEYS = ["ALL", "40", "30", "20", "0", "-10"] as const;
 
-export const MAP_MIN_ZOOM = 15;
+export const MAP_MIN_ZOOM = 14;
 export const MAP_MAX_ZOOM = 22;
 
 export const VENUES = {

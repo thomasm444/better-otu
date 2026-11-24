@@ -19,7 +19,7 @@ export const metadata: Metadata = {
 
 export default function ProfilePage() {
   return (
-    <main className="relative flex min-h-screen flex-1 flex-col overflow-x-clip bg-[#F8FAFD] font-sans text-slate-900 dark:bg-[#090D16] dark:text-slate-100">
+    <main className="relative flex flex-1 flex-col overflow-x-clip bg-[#F8FAFD] font-sans text-slate-900 dark:bg-[#090D16] dark:text-slate-100">
       <div
         aria-hidden="true"
         className="pointer-events-none absolute inset-x-0 top-0 h-80 bg-[radial-gradient(ellipse_70%_60%_at_50%_-10%,rgba(191,219,254,0.45),transparent_72%)] dark:bg-[radial-gradient(ellipse_70%_60%_at_50%_-10%,rgba(0,60,113,0.35),transparent_72%)]"

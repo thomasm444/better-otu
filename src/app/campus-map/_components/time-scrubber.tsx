@@ -193,8 +193,8 @@ export function TimeScrubber({
           aria-label="Select date, time, and duration"
           className={`absolute left-1/2 w-[320px] max-w-[calc(100vw-1.5rem)] -translate-x-1/2 overflow-y-auto rounded-2xl border border-line bg-surface/98 p-3 text-xs shadow-[var(--shadow-lg)] backdrop-blur-md ${
             isDrawerOpen
-              ? "bottom-[calc(100%+5.75rem)] max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-14.5rem)] lg:bottom-full lg:mb-2 lg:max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-7.5rem)]"
-              : "bottom-full mb-2 max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-9.5rem)] lg:max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-7.5rem)]"
+              ? "bottom-[calc(100%+5.75rem)] max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-var(--site-footer-height,2rem)-14.5rem)] lg:bottom-full lg:mb-2 lg:max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-var(--site-footer-height,2rem)-7.5rem)]"
+              : "bottom-full mb-2 max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-var(--site-footer-height,2rem)-9.5rem)] lg:max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-var(--site-footer-height,2rem)-7.5rem)]"
           }`}
         >
           {/* Upward-expanding custom calendar (sits at top of bottom-anchored popover) */}
