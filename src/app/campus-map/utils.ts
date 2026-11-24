@@ -70,7 +70,7 @@ export const FLOOR_LABELS: Record<string, string> = {
 export const VERTICAL_FLOOR_KEYS = ["ALL", "40", "30", "20", "0", "-10"] as const;
 
 export const MAP_MIN_ZOOM = 3;
-export const MAP_MAX_ZOOM = 19;
+export const MAP_MAX_ZOOM = 22;
 
 export const VENUES = {
   north: { lat: 43.9454, lng: -78.8968, zoom: 17, label: "North" },

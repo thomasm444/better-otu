@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import {
   GoogleLogoIcon,
@@ -259,21 +258,15 @@ function CampusMiniMapPreview() {
       aria-hidden="true"
       className="pointer-events-none relative mt-4 h-[76px] w-full overflow-hidden rounded-xl border border-line-subtle bg-surface-subtle select-none"
     >
-      <Image
-        src="/images/north-campus-preview-light.svg"
-        alt=""
-        width={640}
-        height={200}
-        priority
-        className="block h-full w-full object-cover object-center transition-transform duration-500 ease-[var(--ease-standard)] group-hover:scale-[1.04] dark:hidden"
-      />
-      <Image
-        src="/images/north-campus-preview-dark.svg"
-        alt=""
-        width={640}
-        height={200}
-        priority
-        className="hidden h-full w-full object-cover object-center transition-transform duration-500 ease-[var(--ease-standard)] group-hover:scale-[1.04] dark:block"
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/north-campus-preview.png"
+        alt="Ontario Tech North Campus map preview"
+        width={720}
+        height={225}
+        loading="eager"
+        decoding="async"
+        className="h-full w-full object-cover object-center transition-transform duration-300 ease-[var(--ease-standard)] group-hover:scale-105 dark:brightness-[0.82] dark:contrast-[1.06]"
       />
 
       {/* Subtle campus preview overlay badge */}

@@ -525,6 +525,7 @@ export function CampusMapView() {
       leafletRef.current = L;
 
       const osm = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxNativeZoom: 19,
         maxZoom: MAP_MAX_ZOOM,
         attribution: "&copy; OpenStreetMap contributors",
       });
@@ -532,6 +533,7 @@ export function CampusMapView() {
       const esriSatellite = L.tileLayer(
         "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
         {
+          maxNativeZoom: 19,
           maxZoom: MAP_MAX_ZOOM,
           attribution: "Tiles &copy; Esri",
         },
@@ -540,6 +542,7 @@ export function CampusMapView() {
       const esriStreets = L.tileLayer(
         "https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
         {
+          maxNativeZoom: 19,
           maxZoom: MAP_MAX_ZOOM,
           attribution: "Tiles &copy; Esri",
         },
@@ -820,7 +823,7 @@ export function CampusMapView() {
         map.flyToBounds(bounds, {
           paddingTopLeft: isMobile ? [24, 48] : [380, 70],
           paddingBottomRight: isMobile ? [24, 240] : [90, 140],
-          maxZoom: MAP_MAX_ZOOM - 1,
+          maxZoom: Math.min(20, MAP_MAX_ZOOM),
           duration: 0.75,
         });
       }
@@ -853,7 +856,7 @@ export function CampusMapView() {
           map.flyToBounds(bounds, {
             paddingTopLeft: isMobile ? [24, 48] : [380, 70],
             paddingBottomRight: isMobile ? [24, 240] : [90, 140],
-            maxZoom: MAP_MAX_ZOOM - 1,
+            maxZoom: Math.min(19, MAP_MAX_ZOOM),
             duration: 0.75,
           });
         }
@@ -931,6 +934,19 @@ export function CampusMapView() {
       );
     }
   }, []);
+
+  // Recenter map to the currently active campus default center & zoom
+  const handleRecenterMap = useCallback(() => {
+    const target = VENUES[activeCampus];
+    const map = mapInstanceRef.current;
+    if (map) {
+      map.flyTo(
+        [target.lat, target.lng],
+        Math.min(target.zoom, MAP_MAX_ZOOM - 1),
+        { duration: 0.65 },
+      );
+    }
+  }, [activeCampus]);
 
   // Zoom to ?building=CODE once map and features are ready
   useEffect(() => {
@@ -1818,30 +1834,62 @@ export function CampusMapView() {
           id="map-container"
         />
 
-        {/* Collapsed Floor Selector Dropdown (directly beneath Leaflet +/- zoom controls) */}
+        {/* Collapsed Floor Selector & Recenter Control (directly beneath Leaflet +/- zoom controls) */}
         {floorControlEl &&
           createPortal(
             <div
               onMouseDown={(e) => e.stopPropagation()}
               onTouchStart={(e) => e.stopPropagation()}
-              className="mt-1 rounded-xl border border-line bg-surface/95 p-1 shadow-[var(--shadow-md)] backdrop-blur-md"
+              onDoubleClick={(e) => e.stopPropagation()}
+              className="mt-1 flex flex-col items-end gap-1.5"
             >
-              <select
-                aria-label="Filter by floor"
-                value={currentFloor}
-                onChange={(e) => setCurrentFloor(e.target.value)}
-                className="cursor-pointer rounded-lg bg-transparent px-1.5 py-1 text-xs font-medium text-ink outline-none"
+              <div className="rounded-xl border border-line bg-surface/95 p-1 shadow-[var(--shadow-md)] backdrop-blur-md">
+                <select
+                  aria-label="Filter by floor"
+                  value={currentFloor}
+                  onChange={(e) => setCurrentFloor(e.target.value)}
+                  className="cursor-pointer rounded-lg bg-transparent px-1.5 py-1 text-xs font-medium text-ink outline-none"
+                >
+                  {VERTICAL_FLOOR_KEYS.map((fl) => (
+                    <option key={fl} value={fl} className="bg-surface text-ink">
+                      {fl === "ALL"
+                        ? "All Floors"
+                        : fl === "-10"
+                          ? "Floor B"
+                          : `Floor ${FLOOR_LABELS[fl]}`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleRecenterMap();
+                }}
+                aria-label={`Recenter map on ${activeCampus === "downtown" ? "Downtown Oshawa" : "North Campus"}`}
+                title={`Recenter on ${activeCampus === "downtown" ? "Downtown Oshawa" : "North Campus"}`}
+                className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-line bg-surface/95 px-2.5 py-1.5 text-xs font-medium text-ink shadow-[var(--shadow-md)] backdrop-blur-md transition-colors hover:border-accent-line hover:text-accent-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
               >
-                {VERTICAL_FLOOR_KEYS.map((fl) => (
-                  <option key={fl} value={fl} className="bg-surface text-ink">
-                    {fl === "ALL"
-                      ? "All Floors"
-                      : fl === "-10"
-                        ? "Floor B"
-                        : `Floor ${FLOOR_LABELS[fl]}`}
-                  </option>
-                ))}
-              </select>
+                <svg
+                  className="h-3.5 w-3.5 shrink-0"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.9"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <circle cx="12" cy="12" r="4" />
+                  <path d="M12 2v3" />
+                  <path d="M12 19v3" />
+                  <path d="M2 12h3" />
+                  <path d="M19 12h3" />
+                </svg>
+                <span>Recenter</span>
+              </button>
             </div>,
             floorControlEl,
           )}
