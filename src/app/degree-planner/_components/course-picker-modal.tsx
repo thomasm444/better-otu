@@ -120,6 +120,9 @@ type CoursePickerModalProps = {
     target: { termIndex: number; slotIndex: number } | null,
   ) => void;
   onToast: (message: string) => void;
+  sidebarSlot?: React.ReactNode;
+  suppressEscape?: boolean;
+  onSelectedTermChange?: (termIndex: number) => void;
 };
 
 export function CoursePickerModal({
@@ -143,6 +146,9 @@ export function CoursePickerModal({
   onClearSlot,
   onSaveCustom,
   onToast,
+  sidebarSlot,
+  suppressEscape = false,
+  onSelectedTermChange,
 }: CoursePickerModalProps) {
   const initialSubjectCode = (() => {
     const raw = picker.initialQuery?.trim().toUpperCase();
@@ -181,6 +187,10 @@ export function CoursePickerModal({
   const searchInputRef = useRef<HTMLInputElement>(null);
   const codeInputRef = useRef<HTMLInputElement>(null);
   const txEquivInputRef = useRef<HTMLInputElement>(null);
+  const sidebarContainerRef = useRef<HTMLDivElement>(null);
+  const [mobilePane, setMobilePane] = useState<"picker" | "requirements">(
+    "picker",
+  );
 
   const bucket = useMemo(
     () => (picker.bucketKey ? findBucket(model, picker.bucketKey) : null),
@@ -197,22 +207,35 @@ export function CoursePickerModal({
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
+        if (suppressEscape) return;
         onClose();
         return;
       }
       if (event.key === "Tab" && !initialTransferMode && !customOpen) {
+        if (sidebarContainerRef.current?.contains(event.target as Node)) {
+          return;
+        }
         if (terms.length === 0) return;
         event.preventDefault();
         const delta = event.shiftKey ? -1 : 1;
         const nextIdx =
           (selectedTermIndex + delta + terms.length) % terms.length;
         setSelectedTermIndex(nextIdx);
+        onSelectedTermChange?.(nextIdx);
         setTimeout(() => searchInputRef.current?.focus(), 0);
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose, initialTransferMode, customOpen, terms, selectedTermIndex]);
+  }, [
+    onClose,
+    initialTransferMode,
+    customOpen,
+    terms,
+    selectedTermIndex,
+    suppressEscape,
+    onSelectedTermChange,
+  ]);
 
   const term = terms[selectedTermIndex] ?? terms[picker.termIndex];
   const activeSlotIndex = useMemo(() => {
@@ -646,14 +669,8 @@ export function CoursePickerModal({
       ? `${bucket.credits} credits needed · choosing from the whole catalogue`
       : "Defaults to courses offered in this term whose prerequisites you already meet.";
 
-  return (
-    <div
-      className="fixed inset-0 z-[1300] flex items-start justify-center bg-[#0b1018]/55 px-4 pt-[calc(var(--site-nav-height,2.75rem)+4vh)] pb-[4vh] backdrop-blur-sm"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="flex max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-8vh)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-[var(--shadow-lg)]">
+  const pickerCardContent = (
+    <>
         {/* Header */}
         <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line-subtle bg-surface-subtle/60 px-5 py-3.5">
           <div className="min-w-0 flex-1">
@@ -671,7 +688,11 @@ export function CoursePickerModal({
                 <span className="relative inline-flex items-center">
                   <select
                     value={selectedTermIndex}
-                    onChange={(e) => setSelectedTermIndex(Number(e.target.value))}
+                    onChange={(e) => {
+                      const nextIdx = Number(e.target.value);
+                      setSelectedTermIndex(nextIdx);
+                      onSelectedTermChange?.(nextIdx);
+                    }}
                     aria-label="Target year and term"
                     className="appearance-none rounded-lg border border-line bg-surface py-1.5 pr-8 pl-3 text-xs font-medium text-ink focus:border-accent focus:ring-2 focus:ring-focus focus:outline-none"
                   >
@@ -1405,7 +1426,70 @@ export function CoursePickerModal({
                 </div>
           </div>
         )}
-      </div>
+    </>
+  );
+
+  return (
+    <div
+      className="fixed inset-0 z-[1300] flex items-start justify-center bg-[#0b1018]/55 px-3 pt-[calc(var(--site-nav-height,2.75rem)+3vh)] pb-[3vh] backdrop-blur-sm sm:px-5"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      {sidebarSlot ? (
+        <div
+          className="flex h-[calc(100dvh-var(--site-nav-height,2.75rem)-6vh)] w-full max-w-[1240px] flex-col gap-3 lg:flex-row lg:items-stretch lg:gap-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) onClose();
+          }}
+        >
+          <div className="grid shrink-0 grid-cols-2 gap-1 rounded-xl border border-line bg-surface/95 p-1 shadow-[var(--shadow-sm)] lg:hidden">
+            <button
+              type="button"
+              onClick={() => setMobilePane("picker")}
+              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                mobilePane === "picker"
+                  ? "bg-brand text-brand-fg shadow-2xs"
+                  : "text-ink-muted hover:text-ink"
+              }`}
+            >
+              Add course
+            </button>
+            <button
+              type="button"
+              onClick={() => setMobilePane("requirements")}
+              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                mobilePane === "requirements"
+                  ? "bg-brand text-brand-fg shadow-2xs"
+                  : "text-ink-muted hover:text-ink"
+              }`}
+            >
+              What you need
+            </button>
+          </div>
+
+          <div
+            className={`${
+              mobilePane === "picker" ? "flex" : "hidden lg:flex"
+            } min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-[var(--shadow-lg)]`}
+          >
+            {pickerCardContent}
+          </div>
+
+          <div
+            ref={sidebarContainerRef}
+            className={`${
+              mobilePane === "requirements" ? "flex" : "hidden lg:flex"
+            } min-h-0 w-full flex-1 flex-col lg:w-[390px] lg:flex-none xl:w-[410px]`}
+          >
+            {sidebarSlot}
+          </div>
+        </div>
+      ) : (
+        <div className="flex max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-6vh)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-[var(--shadow-lg)]">
+          {pickerCardContent}
+        </div>
+      )}
     </div>
   );
 }

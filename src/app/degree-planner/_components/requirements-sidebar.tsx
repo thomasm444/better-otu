@@ -65,6 +65,7 @@ type RequirementsSidebarProps = {
   onPickMinorBucket: (bucketKey: string) => void;
   onPlaceCourseInTerm: (termIndex: number, code: string) => void;
   onOpenMinorSearch: (initialQuery?: string) => void;
+  inModal?: boolean;
 };
 
 function parseSectionNotes(raw: string | null): string[] {
@@ -115,6 +116,7 @@ export function RequirementsSidebar({
   onPickMinorBucket,
   onPlaceCourseInTerm,
   onOpenMinorSearch,
+  inModal = false,
 }: RequirementsSidebarProps) {
   const [minorQuery, setMinorQuery] = useState("");
   const [changingMinor, setChangingMinor] = useState(false);
@@ -746,7 +748,13 @@ export function RequirementsSidebar({
   };
 
   return (
-    <aside className="overflow-hidden rounded-2xl border border-line bg-surface shadow-[var(--shadow-sm)] md:max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-var(--planner-header-h,152px)-24px)] md:overflow-auto">
+    <aside
+      className={
+        inModal
+          ? "flex h-full max-h-full flex-col overflow-y-auto rounded-2xl border border-line bg-surface shadow-[var(--shadow-lg)]"
+          : "overflow-hidden rounded-2xl border border-line bg-surface shadow-[var(--shadow-sm)] md:max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-var(--planner-header-h,152px)-24px)] md:overflow-auto"
+      }
+    >
       <div className="sticky top-0 z-10 border-b border-line-subtle bg-surface-subtle/60 px-4 pt-3 pb-2.5 backdrop-blur-sm">
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-xs font-medium text-ink">

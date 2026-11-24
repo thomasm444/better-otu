@@ -363,6 +363,7 @@ export function DegreePlannerClient({
   const menuContainerRef = useRef<HTMLDivElement>(null);
   const plansMenuContainerRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLElement>(null);
+  const activePickerTermRef = useRef<number | null>(null);
   const [headerHeight, setHeaderHeight] = useState(152);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -2136,7 +2137,7 @@ export function DegreePlannerClient({
       }
       const emptyIdx = targetTerm.slots.indexOf(null);
       const slotIndex = emptyIdx >= 0 ? emptyIdx : targetTerm.slots.length;
-      placeCourse(termIndex, slotIndex, code);
+      placeCourse(termIndex, slotIndex, code, undefined, { keepOpen: true });
       showToast(
         `Added ${code} to Year ${targetTerm.year} ${targetTerm.season}`,
       );
@@ -2218,6 +2219,109 @@ export function DegreePlannerClient({
   const heroPct = totalTarget
     ? Math.min(100, (totalPlacedCredits / totalTarget) * 100)
     : 0;
+
+  const renderRequirementsSidebar = (inModal: boolean) => {
+    if (!program || !model) return null;
+
+    const resolveTargetSlot = (fallbackEmptyFirst: boolean) => {
+      if (inModal && picker) {
+        const preferredIdx = activePickerTermRef.current ?? picker.termIndex;
+        const preferredTerm = terms[preferredIdx];
+        if (
+          preferredTerm &&
+          preferredTerm.slots.filter(Boolean).length < MAX_SLOTS_PER_TERM
+        ) {
+          const emptySlot = preferredTerm.slots.indexOf(null);
+          return {
+            termIndex: preferredIdx,
+            slotIndex:
+              emptySlot >= 0 ? emptySlot : preferredTerm.slots.length,
+          };
+        }
+      }
+      if (fallbackEmptyFirst) {
+        const emptyTerm = terms.findIndex((t) => t.slots.includes(null));
+        const termIndex = emptyTerm >= 0 ? emptyTerm : 0;
+        const slotIndex =
+          emptyTerm >= 0
+            ? terms[termIndex].slots.indexOf(null)
+            : (terms[0]?.slots.length ?? 0);
+        return { termIndex, slotIndex };
+      }
+      return firstFreeSlot(terms);
+    };
+
+    return (
+      <RequirementsSidebar
+        program={program}
+        model={model}
+        terms={terms}
+        catalogMap={catalogMap}
+        offeringsMap={offeringsMap}
+        offeringContext={offeringContext}
+        startYear={startYear}
+        customs={customs}
+        unscheduled={unscheduled}
+        planMismatches={planMismatches}
+        equivMap={equivMap}
+        plannedCredits={creditBreakdown.planned}
+        transferCredits={creditBreakdown.transfer}
+        totalTargetCredits={totalTarget}
+        onPickBucket={(bucketKey) => {
+          const target = resolveTargetSlot(true);
+          setPickerTransferMode(false);
+          setPicker({
+            termIndex: target.termIndex,
+            slotIndex: target.slotIndex,
+            bucketKey,
+            modelSource: "major",
+          });
+        }}
+        onOpenTransferPicker={() => {
+          const free = firstFreeSlot(terms);
+          setPickerTransferMode(true);
+          setPicker({
+            termIndex: free.termIndex,
+            slotIndex: free.slotIndex,
+            bucketKey: null,
+            modelSource: "major",
+          });
+        }}
+        onRemoveTransfer={handleRemoveTransfer}
+        activeTab={sidebarTab}
+        onTabChange={setSidebarTab}
+        minorProgram={minorProgram}
+        minorModel={minorModel}
+        minorOptions={minorOptions}
+        loadingMinor={loadingMinor}
+        onSelectMinor={(summary) => void handleSelectMinor(summary)}
+        onRemoveMinor={handleRemoveMinor}
+        onPickMinorBucket={(bucketKey) => {
+          const target = resolveTargetSlot(false);
+          setPickerTransferMode(false);
+          setPicker({
+            termIndex: target.termIndex,
+            slotIndex: target.slotIndex,
+            bucketKey,
+            modelSource: "minor",
+          });
+        }}
+        onPlaceCourseInTerm={handlePlaceCourseInTerm}
+        onOpenMinorSearch={(initialQuery) => {
+          const target = resolveTargetSlot(false);
+          setPickerTransferMode(false);
+          setPicker({
+            termIndex: target.termIndex,
+            slotIndex: target.slotIndex,
+            bucketKey: null,
+            modelSource: "minor",
+            initialQuery,
+          });
+        }}
+        inModal={inModal}
+      />
+    );
+  };
 
   return (
     <div
@@ -3690,80 +3794,7 @@ export function DegreePlannerClient({
                     : "hidden"
               }
             >
-              <RequirementsSidebar
-                program={program}
-                model={model}
-                terms={terms}
-                catalogMap={catalogMap}
-                offeringsMap={offeringsMap}
-                offeringContext={offeringContext}
-                startYear={startYear}
-                customs={customs}
-                unscheduled={unscheduled}
-                planMismatches={planMismatches}
-                equivMap={equivMap}
-                plannedCredits={creditBreakdown.planned}
-                transferCredits={creditBreakdown.transfer}
-                totalTargetCredits={totalTarget}
-                onPickBucket={(bucketKey) => {
-                  const emptyTerm = terms.findIndex((t) =>
-                    t.slots.includes(null),
-                  );
-                  const termIndex = emptyTerm >= 0 ? emptyTerm : 0;
-                  const slotIndex =
-                    emptyTerm >= 0
-                      ? terms[termIndex].slots.indexOf(null)
-                      : (terms[0]?.slots.length ?? 0);
-                  setPickerTransferMode(false);
-                  setPicker({
-                    termIndex,
-                    slotIndex,
-                    bucketKey,
-                    modelSource: "major",
-                  });
-                }}
-                onOpenTransferPicker={() => {
-                  const free = firstFreeSlot(terms);
-                  setPickerTransferMode(true);
-                  setPicker({
-                    termIndex: free.termIndex,
-                    slotIndex: free.slotIndex,
-                    bucketKey: null,
-                    modelSource: "major",
-                  });
-                }}
-                onRemoveTransfer={handleRemoveTransfer}
-                activeTab={sidebarTab}
-                onTabChange={setSidebarTab}
-                minorProgram={minorProgram}
-                minorModel={minorModel}
-                minorOptions={minorOptions}
-                loadingMinor={loadingMinor}
-                onSelectMinor={(summary) => void handleSelectMinor(summary)}
-                onRemoveMinor={handleRemoveMinor}
-                onPickMinorBucket={(bucketKey) => {
-                  const free = firstFreeSlot(terms);
-                  setPickerTransferMode(false);
-                  setPicker({
-                    termIndex: free.termIndex,
-                    slotIndex: free.slotIndex,
-                    bucketKey,
-                    modelSource: "minor",
-                  });
-                }}
-                onPlaceCourseInTerm={handlePlaceCourseInTerm}
-                onOpenMinorSearch={(initialQuery) => {
-                  const free = firstFreeSlot(terms);
-                  setPickerTransferMode(false);
-                  setPicker({
-                    termIndex: free.termIndex,
-                    slotIndex: free.slotIndex,
-                    bucketKey: null,
-                    modelSource: "minor",
-                    initialQuery,
-                  });
-                }}
-              />
+              {renderRequirementsSidebar(false)}
             </div>
             {!sidebarOpen && (
               <div className="hidden justify-end md:sticky md:top-[calc(var(--site-nav-height,2.75rem)+var(--planner-header-h,152px)+12px)] md:flex">
@@ -3813,6 +3844,7 @@ export function DegreePlannerClient({
           degreeSubjects={bootstrap.subjects}
           subjectFaculty={subjectFaculty}
           onClose={() => {
+            activePickerTermRef.current = null;
             setPicker(null);
             setPickerTransferMode(false);
           }}
@@ -3822,6 +3854,13 @@ export function DegreePlannerClient({
           onClearSlot={(ti, si) => requestClearSlot(ti, si)}
           onSaveCustom={handleSaveCustom}
           onToast={showToast}
+          suppressEscape={Boolean(pendingRemoveCourse)}
+          onSelectedTermChange={(ti) => {
+            activePickerTermRef.current = ti;
+          }}
+          sidebarSlot={
+            program && model ? renderRequirementsSidebar(true) : undefined
+          }
         />
       )}
 
