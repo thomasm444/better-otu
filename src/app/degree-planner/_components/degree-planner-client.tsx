@@ -10,6 +10,11 @@ import React, {
 } from "react";
 
 import {
+  matchesProgramSearch,
+  mergeProgramsPreferringCatalogYear,
+  sortDegreePrograms,
+} from "@/components/program-combobox";
+import {
   MAX_DEGREE_PLANS,
   MAX_DEGREE_PLANS_MESSAGE,
   deleteDegreePlan,
@@ -128,6 +133,45 @@ function persistPlan(
       ...(minorProgramId ? { minorProgramId } : {}),
     }),
   );
+}
+
+const BASE_STUDY_YEARS = 4;
+const MAX_GAP_YEARS = 15;
+const MAX_ADDED_YEARS = 15;
+
+/** Count non-gap study years represented across terms and gap years. */
+function countStudyYears(terms: PlannerTerm[], gapYears: number[]): number {
+  const maxY = Math.max(
+    0,
+    ...terms.map((t) => t.year),
+    ...gapYears,
+  );
+  const gapSet = new Set(gapYears);
+  let count = 0;
+  for (let y = 1; y <= maxY; y++) {
+    if (!gapSet.has(y)) count++;
+  }
+  return count;
+}
+
+/** Filter, deduplicate across catalog years (preferring the active one), and sort degree programs. */
+function filterAndSortPrograms(
+  programs: ProgramSummary[],
+  preferredCatalogYear: string,
+  query: string,
+): ProgramSummary[] {
+  const eligible = programs.filter(
+    (p) =>
+      p.credential !== "Minor" &&
+      (p.catalog_year >= MIN_PLAN_CATALOG_YEAR ||
+        p.catalog_year === preferredCatalogYear),
+  );
+  const merged = mergeProgramsPreferringCatalogYear(
+    eligible,
+    preferredCatalogYear,
+  );
+  const matched = merged.filter((p) => matchesProgramSearch(p, query));
+  return sortDegreePrograms(matched, query);
 }
 
 /** Reconstruct gap years from skipped academic-year numbers when loading remote plans. */
@@ -1002,35 +1046,16 @@ export function DegreePlannerClient({
     return () => window.clearInterval(timer);
   }, [planToDelete, deleteCountdown]);
 
-  const filteredPrograms = useMemo(() => {
-    const q = programQuery.trim().toLowerCase();
-    return bootstrap.programs
-      .filter(
-        (p) =>
-          p.catalog_year === catalogYear &&
-          p.credential !== "Minor" &&
-          (!q ||
-            `${p.name} ${p.credential ?? ""} ${p.degree_abbrev ?? ""} ${p.faculty ?? ""}`
-              .toLowerCase()
-              .includes(q)),
-      )
-      .slice(0, 60);
-  }, [bootstrap.programs, catalogYear, programQuery]);
+  const filteredPrograms = useMemo(
+    () => filterAndSortPrograms(bootstrap.programs, catalogYear, programQuery),
+    [bootstrap.programs, catalogYear, programQuery],
+  );
 
-  const filteredDegreeEditPrograms = useMemo(() => {
-    const q = planDegreeQuery.trim().toLowerCase();
-    return bootstrap.programs
-      .filter(
-        (p) =>
-          p.catalog_year === catalogYear &&
-          p.credential !== "Minor" &&
-          (!q ||
-            `${p.name} ${p.credential ?? ""} ${p.degree_abbrev ?? ""} ${p.faculty ?? ""}`
-              .toLowerCase()
-              .includes(q)),
-      )
-      .slice(0, 60);
-  }, [bootstrap.programs, catalogYear, planDegreeQuery]);
+  const filteredDegreeEditPrograms = useMemo(
+    () =>
+      filterAndSortPrograms(bootstrap.programs, catalogYear, planDegreeQuery),
+    [bootstrap.programs, catalogYear, planDegreeQuery],
+  );
 
   const minorOptions = useMemo(() => {
     const activeCatYear = program?.catalog_year ?? catalogYear;
@@ -1580,21 +1605,15 @@ export function DegreePlannerClient({
     setAddPlanModalOpen(true);
   }, [program, bootstrap.programs, startYear, catalogYear, availableCatalogYears]);
 
-  const filteredNewPlanPrograms = useMemo(() => {
-    const q = newPlanQuery.trim().toLowerCase();
-    const targetCatalogYear = newPlanCatalogYear;
-    return bootstrap.programs
-      .filter(
-        (p) =>
-          p.catalog_year === targetCatalogYear &&
-          p.credential !== "Minor" &&
-          (!q ||
-            `${p.name} ${p.credential ?? ""} ${p.degree_abbrev ?? ""} ${p.faculty ?? ""}`
-              .toLowerCase()
-              .includes(q)),
-      )
-      .slice(0, 60);
-  }, [bootstrap.programs, newPlanQuery, newPlanCatalogYear]);
+  const filteredNewPlanPrograms = useMemo(
+    () =>
+      filterAndSortPrograms(
+        bootstrap.programs,
+        newPlanCatalogYear,
+        newPlanQuery,
+      ),
+    [bootstrap.programs, newPlanQuery, newPlanCatalogYear],
+  );
 
   const handleCreateNewPlan = useCallback(async () => {
     if (!newPlanProgram || creatingPlan) return;
@@ -2206,6 +2225,10 @@ export function DegreePlannerClient({
 
   const handleInsertGapYear = useCallback(
     (academicYear: number) => {
+      if (gapYears.length >= MAX_GAP_YEARS) {
+        showToast(`Maximum of ${MAX_GAP_YEARS} gap years reached`);
+        return;
+      }
       const nextTerms = terms.map((t) =>
         t.year >= academicYear ? { ...t, year: t.year + 1 } : t,
       );
@@ -2236,6 +2259,14 @@ export function DegreePlannerClient({
   );
 
   const handleAddYear = useCallback(() => {
+    const addedYears = Math.max(
+      0,
+      countStudyYears(terms, gapYears) - BASE_STUDY_YEARS,
+    );
+    if (addedYears >= MAX_ADDED_YEARS) {
+      showToast(`Maximum of ${MAX_ADDED_YEARS} added years reached`);
+      return;
+    }
     const maxY = Math.max(
       0,
       ...terms.map((t) => t.year),
@@ -2411,6 +2442,17 @@ export function DegreePlannerClient({
     }
     return rows;
   }, [terms, gapYears, startYear]);
+
+  const atMaxGapYears = gapYears.length >= MAX_GAP_YEARS;
+  const addedYearsCount = useMemo(
+    () =>
+      Math.max(
+        0,
+        academicYears.filter((row) => !row.isGap).length - BASE_STUDY_YEARS,
+      ),
+    [academicYears],
+  );
+  const atMaxAddedYears = addedYearsCount >= MAX_ADDED_YEARS;
 
   const heroPct = totalTarget
     ? Math.min(100, (totalPlacedCredits / totalTarget) * 100)
@@ -2731,7 +2773,7 @@ export function DegreePlannerClient({
                       <div className="absolute top-9 left-0 z-50 max-h-64 w-[min(420px,calc(100vw-2rem))] overflow-auto rounded-xl border border-line bg-surface shadow-[var(--shadow-lg)]">
                         {filteredDegreeEditPrograms.length === 0 ? (
                           <div className="p-4 text-center text-xs text-ink-muted">
-                            No degrees match in {catalogYear}
+                            No matching degrees found
                           </div>
                         ) : (
                           filteredDegreeEditPrograms.map((p) => {
@@ -2764,6 +2806,9 @@ export function DegreePlannerClient({
                                     {[
                                       p.credential,
                                       p.degree_abbrev,
+                                      p.catalog_year !== catalogYear
+                                        ? p.catalog_year
+                                        : null,
                                       p.total_credit_hours
                                         ? `${p.total_credit_hours} cr`
                                         : null,
@@ -2953,6 +2998,9 @@ export function DegreePlannerClient({
                           {[
                             p.credential,
                             p.degree_abbrev,
+                            p.catalog_year !== catalogYear
+                              ? p.catalog_year
+                              : null,
                             p.total_credit_hours
                               ? `${p.total_credit_hours} cr`
                               : null,
@@ -3096,12 +3144,13 @@ export function DegreePlannerClient({
               </button>
               <button
                 type="button"
+                disabled={atMaxGapYears}
                 onClick={() => {
                   const targetYear = gapYearToInsert.academicYear;
                   setGapYearToInsert(null);
                   handleInsertGapYear(targetYear);
                 }}
-                className="rounded-xl bg-amber-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-amber-700"
+                className="rounded-xl bg-amber-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Insert gap year
               </button>
@@ -3224,6 +3273,9 @@ export function DegreePlannerClient({
                           onClick={() => {
                             setNewPlanProgram(p);
                             setNewPlanQuery(p.name);
+                            if (p.catalog_year !== newPlanCatalogYear) {
+                              setNewPlanCatalogYear(p.catalog_year);
+                            }
                             setNewPlanName((prev) =>
                               !prev.trim() ||
                               (newPlanProgram && prev === newPlanProgram.name)
@@ -3242,7 +3294,13 @@ export function DegreePlannerClient({
                               {p.name}
                             </span>
                             <span className="text-[11px] text-slate-500 dark:text-slate-400">
-                              {[p.credential, p.degree_abbrev]
+                              {[
+                                p.credential,
+                                p.degree_abbrev,
+                                p.catalog_year !== newPlanCatalogYear
+                                  ? p.catalog_year
+                                  : null,
+                              ]
                                 .filter(Boolean)
                                 .join(" · ")}
                             </span>
@@ -3633,15 +3691,30 @@ export function DegreePlannerClient({
                         <div className="ml-auto flex items-center gap-1.5">
                           <button
                             type="button"
-                            onClick={() =>
+                            disabled={atMaxGapYears}
+                            onClick={() => {
+                              if (atMaxGapYears) {
+                                showToast(
+                                  `Maximum of ${MAX_GAP_YEARS} gap years reached`,
+                                );
+                                return;
+                              }
                               setGapYearToInsert({
                                 academicYear,
                                 calStart,
                                 calEnd,
-                              })
+                              });
+                            }}
+                            className={`rounded-xl border px-2.5 py-1 text-xs font-medium transition-colors ${
+                              atMaxGapYears
+                                ? "cursor-not-allowed border-slate-200 bg-slate-100/80 text-slate-400 dark:border-slate-800 dark:bg-slate-900/60 dark:text-slate-600"
+                                : "border-amber-200/80 bg-amber-50/55 text-amber-800 hover:border-amber-300 hover:bg-amber-100/70 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300 dark:hover:bg-amber-950/60"
+                            }`}
+                            title={
+                              atMaxGapYears
+                                ? `Maximum of ${MAX_GAP_YEARS} gap years reached`
+                                : `Insert a gap year at ${calStart}–${calEnd}`
                             }
-                            className="rounded-xl border border-amber-200/80 bg-amber-50/55 px-2.5 py-1 text-xs font-medium text-amber-800 transition-colors hover:border-amber-300 hover:bg-amber-100/70 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-300 dark:hover:bg-amber-950/60"
-                            title={`Insert a gap year at ${calStart}–${calEnd}`}
                           >
                             + Gap year
                           </button>
@@ -4095,10 +4168,22 @@ export function DegreePlannerClient({
 
               <button
                 type="button"
+                disabled={atMaxAddedYears}
                 onClick={handleAddYear}
-                className="flex w-full items-center justify-center gap-1.5 rounded-2xl border border-dashed border-slate-300/90 bg-white/70 py-3 text-xs font-semibold text-slate-600 shadow-[0_1px_4px_rgba(15,23,42,0.02)] transition-colors hover:border-sky-400 hover:bg-sky-50/55 hover:text-sky-700 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-400 dark:hover:border-sky-600 dark:hover:bg-sky-950/30 dark:hover:text-sky-300"
+                title={
+                  atMaxAddedYears
+                    ? `Maximum of ${MAX_ADDED_YEARS} added years reached`
+                    : undefined
+                }
+                className={`flex w-full items-center justify-center gap-1.5 rounded-2xl border border-dashed py-3 text-xs font-semibold shadow-[0_1px_4px_rgba(15,23,42,0.02)] transition-colors ${
+                  atMaxAddedYears
+                    ? "cursor-not-allowed border-slate-200 bg-slate-100/60 text-slate-400 dark:border-slate-800 dark:bg-slate-900/40 dark:text-slate-600"
+                    : "border-slate-300/90 bg-white/70 text-slate-600 hover:border-sky-400 hover:bg-sky-50/55 hover:text-sky-700 dark:border-slate-700 dark:bg-slate-900/50 dark:text-slate-400 dark:hover:border-sky-600 dark:hover:bg-sky-950/30 dark:hover:text-sky-300"
+                }`}
               >
-                + Add Year ({startYear + academicYears.length}–{startYear + academicYears.length + 1})
+                {atMaxAddedYears
+                  ? `Maximum of ${MAX_ADDED_YEARS} added years reached`
+                  : `+ Add Year (${startYear + academicYears.length}–${startYear + academicYears.length + 1})`}
               </button>
             </div>
           )}
