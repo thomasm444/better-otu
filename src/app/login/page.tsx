@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 
 export default function LoginPage() {
   return (
-    <main className="flex min-h-screen w-full flex-1 flex-col items-center justify-center bg-zinc-50 px-4 py-12 font-sans dark:bg-zinc-950">
+    <main className="flex w-full flex-1 flex-col items-center justify-center bg-canvas px-4 py-10 font-sans text-ink">
       <LoginCard />
     </main>
   );

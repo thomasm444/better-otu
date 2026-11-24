@@ -55,11 +55,15 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
-      <body className="min-h-full flex flex-col">
+      <body className="min-h-screen flex flex-col">
         <Suspense fallback={<SiteNavFallback />}>
           <SiteNav />
         </Suspense>
-        {children}
+        <div className="flex flex-1 flex-col">{children}</div>
+        <footer className="border-t border-line-subtle bg-canvas px-4 py-2.5 text-center text-[11px] text-ink-muted">
+          Unofficial student project &mdash; not affiliated with or endorsed by
+          Ontario Tech University
+        </footer>
       </body>
     </html>
   );

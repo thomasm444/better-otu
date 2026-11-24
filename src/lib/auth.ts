@@ -1,6 +1,6 @@
 "use client";
 
-import { getSafeNextPath } from "@/lib/onboarding";
+import { AUTH_NEXT_COOKIE_NAME, getSafeNextPath } from "@/lib/onboarding";
 import { createClient } from "@/lib/supabase/client";
 
 export const ONTARIO_TECH_DOMAIN = "ontariotechu.net";
@@ -23,10 +23,20 @@ export async function signInWithOntarioTechGoogle(nextPath?: string) {
         : "/"),
   );
 
-  const callbackUrl = new URL("/auth/callback", window.location.origin);
-  if (safeNext !== "/") {
-    callbackUrl.searchParams.set("next", safeNext);
+  // Keep the OAuth redirectTo URL free of query parameters so exact-match
+  // entries in Supabase's Redirect URLs allow-list (e.g. http://localhost:3000/auth/callback)
+  // never fall back to the production Site URL.
+  if (typeof document !== "undefined") {
+    const secureFlag =
+      window.location.protocol === "https:" ? "; Secure" : "";
+    if (safeNext !== "/") {
+      document.cookie = `${AUTH_NEXT_COOKIE_NAME}=${encodeURIComponent(safeNext)}; Path=/; Max-Age=600; SameSite=Lax${secureFlag}`;
+    } else {
+      document.cookie = `${AUTH_NEXT_COOKIE_NAME}=; Path=/; Max-Age=0; SameSite=Lax${secureFlag}`;
+    }
   }
+
+  const callbackUrl = new URL("/auth/callback", window.location.origin);
 
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "google",
