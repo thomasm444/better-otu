@@ -87,3 +87,4 @@ Course and meeting data comes from Ontario Tech's course schedules. Room availab
 | Frankie Antoine | `frankie.antoine@ontariotechu.net` / `frankant36@gmail.com` |
 | Zainab Mehraban | `zainab.mehraban@ontariotechu.net` |
 | Ruhma | `ruhmalodhi18@gmail.com` |
+.
