@@ -104,6 +104,54 @@ export async function upsertDegreePlan(
   return data as DegreePlanRecord;
 }
 
+export async function updateDegreePlanProgram(
+  supabase: SupabaseClient,
+  params: {
+    userId: string;
+    userEmail: string;
+    previousProgramId: string;
+    newProgramId: string;
+    degreeName: string;
+    startYear: number;
+    catalogYear?: string | null;
+    minorProgramId?: string | null;
+    terms: PlannerTerm[];
+    customs: CustomCourse[];
+  },
+): Promise<DegreePlanRecord> {
+  const email = normalizeEmail(params.userEmail);
+  const { data, error } = await supabase
+    .from("degree_plans")
+    .update({
+      program_id: params.newProgramId,
+      degree_name: params.degreeName,
+      start_year: params.startYear,
+      catalog_year: params.catalogYear ?? null,
+      minor_program_id: params.minorProgramId ?? null,
+      terms: params.terms,
+      customs: params.customs,
+    })
+    .eq("user_email", email)
+    .eq("program_id", params.previousProgramId)
+    .select("*")
+    .maybeSingle();
+
+  if (error) throw error;
+  if (data) return data as DegreePlanRecord;
+
+  return upsertDegreePlan(supabase, {
+    userId: params.userId,
+    userEmail: email,
+    degreeName: params.degreeName,
+    startYear: params.startYear,
+    catalogYear: params.catalogYear,
+    programId: params.newProgramId,
+    minorProgramId: params.minorProgramId,
+    terms: params.terms,
+    customs: params.customs,
+  });
+}
+
 export async function deleteDegreePlan(
   supabase: SupabaseClient,
   userEmail: string,

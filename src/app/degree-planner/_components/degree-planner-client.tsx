@@ -13,6 +13,7 @@ import {
   deleteDegreePlan,
   fetchAllDegreePlans,
   fetchDegreePlanByProgram,
+  updateDegreePlanProgram,
   upsertDegreePlan,
   type DegreePlanRecord,
 } from "@/lib/degree-plan-storage";
@@ -233,6 +234,9 @@ export function DegreePlannerClient({
   const [planName, setPlanName] = useState(initialProgram?.name ?? "");
   const [editingPlanName, setEditingPlanName] = useState(false);
   const [planNameDraft, setPlanNameDraft] = useState("");
+  const [editingPlanDegree, setEditingPlanDegree] = useState(false);
+  const [planDegreeQuery, setPlanDegreeQuery] = useState("");
+  const [changingPlanDegree, setChangingPlanDegree] = useState(false);
   const [addPlanModalOpen, setAddPlanModalOpen] = useState(false);
   const [newPlanQuery, setNewPlanQuery] = useState("");
   const [newPlanProgram, setNewPlanProgram] = useState<ProgramSummary | null>(
@@ -362,6 +366,7 @@ export function DegreePlannerClient({
 
   const menuContainerRef = useRef<HTMLDivElement>(null);
   const plansMenuContainerRef = useRef<HTMLDivElement>(null);
+  const degreeEditContainerRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLElement>(null);
   const activePickerTermRef = useRef<number | null>(null);
   const [headerHeight, setHeaderHeight] = useState(152);
@@ -489,6 +494,7 @@ export function DegreePlannerClient({
       setProgramQuery("");
       setPlanName(saved.planName?.trim() || prog.name);
       setEditingPlanName(false);
+      setEditingPlanDegree(false);
     },
     [catalogMap, offeringsMap, offeringContext, startYear, availableCatalogYears],
   );
@@ -959,6 +965,12 @@ export function DegreePlannerClient({
       ) {
         setPlansMenuOpen(false);
       }
+      if (
+        degreeEditContainerRef.current &&
+        !degreeEditContainerRef.current.contains(target)
+      ) {
+        setEditingPlanDegree(false);
+      }
     };
     document.addEventListener("mousedown", onPointerDown);
     return () => document.removeEventListener("mousedown", onPointerDown);
@@ -987,6 +999,21 @@ export function DegreePlannerClient({
       )
       .slice(0, 60);
   }, [bootstrap.programs, catalogYear, programQuery]);
+
+  const filteredDegreeEditPrograms = useMemo(() => {
+    const q = planDegreeQuery.trim().toLowerCase();
+    return bootstrap.programs
+      .filter(
+        (p) =>
+          p.catalog_year === catalogYear &&
+          p.credential !== "Minor" &&
+          (!q ||
+            `${p.name} ${p.credential ?? ""} ${p.degree_abbrev ?? ""} ${p.faculty ?? ""}`
+              .toLowerCase()
+              .includes(q)),
+      )
+      .slice(0, 60);
+  }, [bootstrap.programs, catalogYear, planDegreeQuery]);
 
   const minorOptions = useMemo(() => {
     const activeCatYear = program?.catalog_year ?? catalogYear;
@@ -1340,6 +1367,150 @@ export function DegreePlannerClient({
       startYear,
       gapYears,
       showToast,
+    ],
+  );
+
+  const handleChangePlanDegree = useCallback(
+    async (target: ProgramSummary) => {
+      const currentProg = programRef.current;
+      if (!currentProg || !isCurrentProgramSaved || changingPlanDegree) return;
+      if (target.program_id === currentProg.program_id) {
+        setEditingPlanDegree(false);
+        setPlanDegreeQuery("");
+        return;
+      }
+      if (
+        savedPlansRef.current.some((p) => p.program_id === target.program_id)
+      ) {
+        showToast("That degree is already saved as another plan");
+        return;
+      }
+
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+      pendingSaveRef.current = null;
+
+      setChangingPlanDegree(true);
+      setLoadingProgram(true);
+      try {
+        const detail = await loadProgramDetail(target.program_id);
+        const carriedTerms = terms.map((t) => ({
+          ...t,
+          slots: normalizeTermSlots(t.slots),
+        }));
+        const carriedCustoms = new Map(customs);
+        const carriedGapYears = [...gapYears];
+
+        const prevModel = buildModel(currentProg);
+        const nextModel = buildModel(detail);
+        const prevFixed = new Set(prevModel.required.map((r) => r.code));
+        for (const g of prevModel.chooseGroups) {
+          for (const c of g.options) prevFixed.add(c);
+        }
+        const nextFixed = new Set(nextModel.required.map((r) => r.code));
+        for (const g of nextModel.chooseGroups) {
+          for (const c of g.options) nextFixed.add(c);
+        }
+
+        const nextMismatches = new Map<string, string>();
+        for (const code of placedCodes(carriedTerms)) {
+          if (carriedCustoms.has(code)) continue;
+          if (findEquivalentInSet(code, nextFixed, equivMap)) continue;
+          if (prevFixed.has(code) || planMismatches.has(code)) {
+            nextMismatches.set(
+              code,
+              `Not required in ${detail.name}`,
+            );
+          }
+        }
+
+        const hasCustomName = Boolean(planName && planName !== currentProg.name);
+        const nextPlanName = hasCustomName ? planName : detail.name;
+        const activeMinorId = minorRef.current?.program_id ?? null;
+
+        if (typeof window !== "undefined") {
+          const url = new URL(window.location.href);
+          url.searchParams.set("program", detail.program_id);
+          window.history.replaceState(null, "", url.toString());
+          window.localStorage.removeItem(STORE_PREFIX + currentProg.program_id);
+        }
+
+        persistPlan(
+          detail.program_id,
+          carriedTerms,
+          carriedCustoms,
+          startYear,
+          carriedGapYears,
+          nextPlanName,
+          activeMinorId,
+        );
+
+        if (user?.email) {
+          const savedRecord = await updateDegreePlanProgram(supabase, {
+            userId: user.id,
+            userEmail: user.email,
+            previousProgramId: currentProg.program_id,
+            newProgramId: detail.program_id,
+            degreeName: nextPlanName,
+            startYear,
+            catalogYear: detail.catalog_year,
+            minorProgramId: activeMinorId,
+            terms: carriedTerms,
+            customs: [...carriedCustoms.values()],
+          });
+          setSavedPlans((prev) => {
+            const exists = prev.some(
+              (p) => p.program_id === currentProg.program_id,
+            );
+            const next = exists
+              ? prev.map((p) =>
+                  p.program_id === currentProg.program_id ? savedRecord : p,
+                )
+              : [savedRecord, ...prev];
+            savedPlansRef.current = next;
+            return next;
+          });
+        }
+
+        setPreviousPlan(null);
+        setResetConfirmOpen(false);
+        setProgram(detail);
+        setCatalogYear(detail.catalog_year);
+        setPlanName(nextPlanName);
+        setPlanMismatches(nextMismatches);
+        setEditingPlanName(false);
+        setEditingPlanDegree(false);
+        setPlanDegreeQuery("");
+
+        const mismatchCount = nextMismatches.size;
+        showToast(
+          mismatchCount > 0
+            ? `Updated plan degree to ${detail.name} (${mismatchCount} ${mismatchCount === 1 ? "course" : "courses"} flagged)`
+            : `Updated plan degree to ${detail.name}`,
+        );
+      } catch {
+        showToast("Could not change degree for this plan");
+      } finally {
+        setChangingPlanDegree(false);
+        setLoadingProgram(false);
+      }
+    },
+    [
+      changingPlanDegree,
+      customs,
+      equivMap,
+      gapYears,
+      isCurrentProgramSaved,
+      loadProgramDetail,
+      planMismatches,
+      planName,
+      showToast,
+      startYear,
+      supabase,
+      terms,
+      user,
     ],
   );
 
@@ -2492,11 +2663,105 @@ export function DegreePlannerClient({
                         Cancel
                       </button>
                     </form>
+                  ) : editingPlanDegree ? (
+                    <div
+                      ref={degreeEditContainerRef}
+                      className="relative flex flex-wrap items-center gap-1.5"
+                    >
+                      <input
+                        type="text"
+                        autoFocus
+                        disabled={changingPlanDegree}
+                        value={planDegreeQuery}
+                        onChange={(e) => setPlanDegreeQuery(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Escape") {
+                            setEditingPlanDegree(false);
+                            setPlanDegreeQuery("");
+                          }
+                        }}
+                        placeholder={`Change degree (${program.name})…`}
+                        aria-label="Search new degree for this plan"
+                        autoComplete="off"
+                        className="w-60 rounded-lg border border-accent bg-surface px-2.5 py-1 text-sm font-medium text-ink placeholder:text-ink-muted focus:ring-2 focus:ring-focus focus:outline-none disabled:opacity-60 sm:w-80"
+                      />
+                      <button
+                        type="button"
+                        disabled={changingPlanDegree}
+                        onClick={() => {
+                          setEditingPlanDegree(false);
+                          setPlanDegreeQuery("");
+                        }}
+                        className="rounded-lg border border-line px-2 py-1 text-xs font-medium text-ink-secondary transition-colors hover:bg-surface-subtle hover:text-ink disabled:opacity-50"
+                      >
+                        Cancel
+                      </button>
+
+                      <div className="absolute top-9 left-0 z-50 max-h-64 w-[min(420px,calc(100vw-2rem))] overflow-auto rounded-xl border border-line bg-surface shadow-[var(--shadow-lg)]">
+                        {filteredDegreeEditPrograms.length === 0 ? (
+                          <div className="p-4 text-center text-xs text-ink-muted">
+                            No degrees match in {catalogYear}
+                          </div>
+                        ) : (
+                          filteredDegreeEditPrograms.map((p) => {
+                            const isCurrent = p.program_id === program.program_id;
+                            const usedByOtherPlan =
+                              !isCurrent &&
+                              savedPlans.some(
+                                (s) => s.program_id === p.program_id,
+                              );
+                            return (
+                              <button
+                                key={p.program_id}
+                                type="button"
+                                disabled={usedByOtherPlan || changingPlanDegree}
+                                title={p.name}
+                                onClick={() => void handleChangePlanDegree(p)}
+                                className={`flex w-full items-center justify-between gap-2 border-b border-line-subtle px-3.5 py-2 text-left transition-colors last:border-b-0 ${
+                                  isCurrent
+                                    ? "bg-accent-soft text-accent-ink"
+                                    : usedByOtherPlan
+                                      ? "cursor-not-allowed opacity-50"
+                                      : "hover:bg-surface-subtle"
+                                }`}
+                              >
+                                <div className="min-w-0">
+                                  <span className="block truncate text-sm font-medium text-ink">
+                                    {p.name}
+                                  </span>
+                                  <span className="text-xs text-ink-muted">
+                                    {[
+                                      p.credential,
+                                      p.degree_abbrev,
+                                      p.total_credit_hours
+                                        ? `${p.total_credit_hours} cr`
+                                        : null,
+                                    ]
+                                      .filter(Boolean)
+                                      .join(" · ")}
+                                  </span>
+                                </div>
+                                {isCurrent ? (
+                                  <span className="shrink-0 rounded-md bg-accent-soft px-1.5 py-0.5 text-[10px] font-medium text-accent-ink ring-1 ring-inset ring-accent-line">
+                                    Current
+                                  </span>
+                                ) : usedByOtherPlan ? (
+                                  <span className="shrink-0 rounded-md bg-surface-subtle px-1.5 py-0.5 text-[10px] font-medium text-ink-muted">
+                                    In Plans
+                                  </span>
+                                ) : null}
+                              </button>
+                            );
+                          })
+                        )}
+                      </div>
+                    </div>
                   ) : (
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex flex-wrap items-center gap-1.5">
                       <button
                         type="button"
                         onClick={() => {
+                          setEditingPlanDegree(false);
                           setPlanNameDraft(planName || program.name);
                           setEditingPlanName(true);
                         }}
@@ -2510,10 +2775,38 @@ export function DegreePlannerClient({
                           ✎
                         </span>
                       </button>
-                      {planName && planName !== program.name && (
-                        <span className="text-xs text-ink-muted">
-                          ({program.name})
-                        </span>
+                      {planName && planName !== program.name ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingPlanName(false);
+                            setPlanDegreeQuery("");
+                            setEditingPlanDegree(true);
+                          }}
+                          title="Click to change the degree for this plan"
+                          className="group inline-flex items-center gap-1 rounded-lg px-1.5 py-0.5 text-left text-xs text-ink-muted transition-colors hover:bg-surface-subtle hover:text-ink"
+                        >
+                          <span>({program.name})</span>
+                          <span className="text-xs text-ink-muted transition-colors group-hover:text-accent-ink">
+                            ✎
+                          </span>
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingPlanName(false);
+                            setPlanDegreeQuery("");
+                            setEditingPlanDegree(true);
+                          }}
+                          title="Change the degree for this saved plan"
+                          className="group inline-flex items-center gap-1 rounded-lg border border-line bg-surface-subtle/70 px-2 py-0.5 text-xs font-medium text-ink-secondary transition-colors hover:border-line-strong hover:bg-surface-subtle hover:text-ink"
+                        >
+                          <span>Change degree</span>
+                          <span className="text-[11px] text-ink-muted transition-colors group-hover:text-accent-ink">
+                            ✎
+                          </span>
+                        </button>
                       )}
                     </div>
                   )}
