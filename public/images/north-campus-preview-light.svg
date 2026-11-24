@@ -1,0 +1,123 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 200" width="640" height="200" fill="none">
+  <defs>
+    <filter id="bldgShadowLight" x="-10%" y="-10%" width="125%" height="130%">
+      <feDropShadow dx="0" dy="1.5" stdDeviation="1.5" flood-color="#1f2545" flood-opacity="0.12" />
+    </filter>
+    <linearGradient id="groundLight" x1="0" y1="0" x2="640" y2="200" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#eef3f7" />
+      <stop offset="100%" stop-color="#e5edf3" />
+    </linearGradient>
+    <radialGradient id="quadLight" cx="50%" cy="50%" r="55%">
+      <stop offset="0%" stop-color="#bbf7d0" stop-opacity="0.85" />
+      <stop offset="100%" stop-color="#dcfce7" stop-opacity="0.6" />
+    </radialGradient>
+  </defs>
+
+  <!-- Map canvas -->
+  <rect width="640" height="200" fill="url(#groundLight)" />
+
+  <!-- Subtle architectural grid lines -->
+  <g stroke="#1f2545" stroke-opacity="0.035" stroke-width="1">
+    <path d="M0 50 H640 M0 100 H640 M0 150 H640" />
+    <path d="M100 0 V200 M200 0 V200 M300 0 V200 M400 0 V200 M500 0 V200 M600 0 V200" />
+  </g>
+
+  <!-- Campus greenspaces & creek/park corridors -->
+  <path d="M0 32 Q115 24 162 84 Q180 132 142 192 L0 192 Z" fill="#dcfce7" fill-opacity="0.72" />
+  <path d="M556 34 L640 34 L640 192 L556 192 Z" fill="#dcfce7" fill-opacity="0.52" />
+  <!-- Polonsky Commons central oval quad -->
+  <ellipse cx="352" cy="105" rx="88" ry="42" fill="url(#quadLight)" stroke="#86efac" stroke-opacity="0.65" stroke-width="1.2" />
+
+  <!-- Tree canopies -->
+  <g fill="#4ade80" fill-opacity="0.28">
+    <circle cx="52" cy="72" r="14" />
+    <circle cx="74" cy="86" r="11" />
+    <circle cx="44" cy="144" r="15" />
+    <circle cx="88" cy="158" r="12" />
+    <circle cx="318" cy="104" r="9" />
+    <circle cx="388" cy="100" r="10" />
+    <circle cx="596" cy="56" r="13" />
+    <circle cx="612" cy="154" r="14" />
+  </g>
+
+  <!-- Road outer casings -->
+  <g stroke="#c6d4e0" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <!-- Conlin Rd W -->
+    <path d="M0 28 H640" stroke-width="14" />
+    <!-- Simcoe St N -->
+    <path d="M538 0 V200" stroke-width="16" />
+    <!-- Founders Dr Loop -->
+    <path d="M538 50 L372 50 C248 50 186 72 186 112 C186 150 248 172 372 172 L538 172" stroke-width="11" />
+    <!-- Commencement Dr -->
+    <path d="M186 112 H0" stroke-width="9" />
+  </g>
+
+  <!-- Road surfaces -->
+  <g stroke="#ffffff" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path d="M0 28 H640" stroke-width="11" />
+    <path d="M538 0 V200" stroke-width="13" />
+    <path d="M538 50 L372 50 C248 50 186 72 186 112 C186 150 248 172 372 172 L538 172" stroke-width="8.5" />
+    <path d="M186 112 H0" stroke-width="6.5" />
+  </g>
+
+  <!-- Pedestrian pathways across Polonsky Commons -->
+  <g stroke="#94a3b8" stroke-opacity="0.55" stroke-width="2" stroke-dasharray="4 4" fill="none" stroke-linecap="round">
+    <path d="M276 76 Q352 106 426 84" />
+    <path d="M282 134 Q354 106 432 130" />
+    <path d="M352 62 V146" />
+    <path d="M262 105 H442" />
+  </g>
+
+  <!-- Road labels -->
+  <g fill="#64748b" font-family="ui-sans-serif, system-ui, -apple-system, sans-serif" font-size="8.5" font-weight="600" letter-spacing="0.06em">
+    <text x="108" y="31">CONLIN RD W</text>
+    <text x="535" y="128" transform="rotate(-90 535 128)" text-anchor="middle">SIMCOE ST N</text>
+  </g>
+
+  <!-- Building footprints -->
+  <g filter="url(#bldgShadowLight)">
+    <!-- SIR (Software & Informatics Research Centre - West) -->
+    <rect x="96" y="56" width="66" height="36" rx="6" fill="#ffffff" stroke="#b9c8d6" stroke-width="1.4" />
+    <!-- SCI (Science Building - NW of quad) -->
+    <path d="M222 58 H292 V90 H252 V82 H222 Z" rx="5" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="1.5" />
+    <!-- ERC (Energy Systems Research Centre - North-Center) -->
+    <rect x="308" y="57" width="76" height="30" rx="6" fill="#ffffff" stroke="#b9c8d6" stroke-width="1.4" />
+    <!-- SHA (Shawenjigewining Hall - NE of quad) -->
+    <path d="M402 58 H488 V90 H414 V82 H402 Z" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="1.5" />
+    <!-- BIT / UA (Business & IT - SW of quad) -->
+    <rect x="224" y="120" width="80" height="34" rx="6" fill="#ffffff" stroke="#b9c8d6" stroke-width="1.4" />
+    <!-- LIB (North Oshawa Library - Center-South) -->
+    <rect x="322" y="118" width="72" height="38" rx="9" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="1.6" />
+    <!-- ENG (Engineering / UB - SE of quad) -->
+    <rect x="412" y="118" width="78" height="36" rx="6" fill="#ffffff" stroke="#b9c8d6" stroke-width="1.4" />
+    <!-- U5 / Simcoe East -->
+    <rect x="562" y="68" width="46" height="54" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.3" />
+  </g>
+
+  <!-- Building code labels -->
+  <g fill="#334155" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="11.5" font-weight="700" text-anchor="middle">
+    <text x="129" y="78">SIR</text>
+    <text x="257" y="76" fill="#15803d">SCI</text>
+    <text x="346" y="76">ERC</text>
+    <text x="446" y="77" fill="#15803d">SHA</text>
+    <text x="264" y="141">BIT</text>
+    <text x="358" y="141" fill="#15803d">LIB</text>
+    <text x="451" y="140">ENG</text>
+    <text x="585" y="99" font-size="10.5" fill="#64748b">U5</text>
+  </g>
+
+  <!-- Live availability green pins -->
+  <g>
+    <circle cx="286" cy="64" r="8" fill="#15803d" fill-opacity="0.16" />
+    <circle cx="286" cy="64" r="3.8" fill="#15803d" stroke="#ffffff" stroke-width="1.4" />
+
+    <circle cx="480" cy="65" r="8" fill="#15803d" fill-opacity="0.16" />
+    <circle cx="480" cy="65" r="3.8" fill="#15803d" stroke="#ffffff" stroke-width="1.4" />
+
+    <circle cx="386" cy="124" r="9" fill="#15803d" fill-opacity="0.2" />
+    <circle cx="386" cy="124" r="4.2" fill="#15803d" stroke="#ffffff" stroke-width="1.4" />
+
+    <circle cx="482" cy="126" r="7" fill="#187f9e" fill-opacity="0.18" />
+    <circle cx="482" cy="126" r="3.4" fill="#187f9e" stroke="#ffffff" stroke-width="1.3" />
+  </g>
+</svg>

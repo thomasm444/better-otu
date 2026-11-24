@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import {
   GoogleLogoIcon,
@@ -258,194 +259,28 @@ function CampusMiniMapPreview() {
       aria-hidden="true"
       className="pointer-events-none relative mt-4 h-[76px] w-full overflow-hidden rounded-xl border border-line-subtle bg-surface-subtle select-none"
     >
-      <svg
-        viewBox="0 0 320 100"
-        preserveAspectRatio="xMidYMid slice"
-        className="h-full w-full transition-transform duration-500 ease-[var(--ease-standard)] group-hover:scale-[1.04]"
-      >
-        {/* Subtle campus grounds & greenspaces (Polonsky Commons + perimeter lawns) */}
-        <rect width="320" height="100" className="fill-surface-subtle" />
-        <path
-          d="M 10 14 Q 68 8 92 42 Q 100 68 78 92 L 10 92 Z"
-          className="fill-positive/[0.08] dark:fill-positive/[0.09]"
-        />
-        <ellipse
-          cx="176"
-          cy="52"
-          rx="42"
-          ry="21"
-          className="fill-positive/[0.13] dark:fill-positive/[0.14]"
-        />
-        <path
-          d="M 276 18 L 318 18 L 318 92 L 276 92 Z"
-          className="fill-positive/[0.06] dark:fill-positive/[0.07]"
-        />
+      <Image
+        src="/images/north-campus-preview-light.svg"
+        alt=""
+        width={640}
+        height={200}
+        priority
+        className="block h-full w-full object-cover object-center transition-transform duration-500 ease-[var(--ease-standard)] group-hover:scale-[1.04] dark:hidden"
+      />
+      <Image
+        src="/images/north-campus-preview-dark.svg"
+        alt=""
+        width={640}
+        height={200}
+        priority
+        className="hidden h-full w-full object-cover object-center transition-transform duration-500 ease-[var(--ease-standard)] group-hover:scale-[1.04] dark:block"
+      />
 
-        {/* Road casing (outer hairline) */}
-        <g
-          fill="none"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="stroke-line"
-        >
-          <path d="M 0 14 L 320 14" strokeWidth="7" />
-          <path d="M 268 0 L 268 100" strokeWidth="8" />
-          <path
-            d="M 268 25 L 184 25 C 122 25 94 36 94 56 C 94 76 122 86 184 86 L 268 86"
-            strokeWidth="5.5"
-          />
-          <path d="M 94 56 L 0 56" strokeWidth="4.5" />
-        </g>
-
-        {/* Road surface (Simcoe St N, Conlin Rd W, Founders Dr loop) */}
-        <g
-          fill="none"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="stroke-surface dark:stroke-[#1d2a3d]"
-        >
-          <path d="M 0 14 L 320 14" strokeWidth="5.5" />
-          <path d="M 268 0 L 268 100" strokeWidth="6.5" />
-          <path
-            d="M 268 25 L 184 25 C 122 25 94 36 94 56 C 94 76 122 86 184 86 L 268 86"
-            strokeWidth="4"
-          />
-          <path d="M 94 56 L 0 56" strokeWidth="3" />
-        </g>
-
-        {/* Inner campus walkways across Polonsky Commons */}
-        <g
-          fill="none"
-          strokeDasharray="2 3"
-          className="stroke-line-strong/60"
-          strokeWidth="1"
-        >
-          <path d="M 146 38 Q 176 52 210 42" />
-          <path d="M 150 67 Q 180 54 214 66" />
-          <path d="M 176 31 L 176 74" />
-        </g>
-
-        {/* North Campus building footprints */}
-        {/* SIR (west) */}
-        <rect
-          x="52"
-          y="30"
-          width="32"
-          height="18"
-          rx="3"
-          className="fill-surface stroke-line-strong/75 dark:fill-[#1d2b3e]"
-          strokeWidth="1"
-        />
-        {/* SCI (north-west of quad) */}
-        <rect
-          x="114"
-          y="30"
-          width="34"
-          height="16"
-          rx="3"
-          className="fill-positive-soft stroke-positive-line"
-          strokeWidth="1"
-        />
-        {/* ERC (north-center) */}
-        <rect
-          x="156"
-          y="29"
-          width="34"
-          height="15"
-          rx="3"
-          className="fill-surface stroke-line-strong/75 dark:fill-[#1d2b3e]"
-          strokeWidth="1"
-        />
-        {/* SHA (north-east) */}
-        <rect
-          x="200"
-          y="30"
-          width="42"
-          height="16"
-          rx="3"
-          className="fill-positive-soft stroke-positive-line"
-          strokeWidth="1"
-        />
-        {/* LIB (center-south, rounded library wing) */}
-        <rect
-          x="162"
-          y="58"
-          width="34"
-          height="19"
-          rx="4.5"
-          className="fill-positive-soft stroke-positive-line"
-          strokeWidth="1"
-        />
-        {/* BIT / UA (south-west) */}
-        <rect
-          x="114"
-          y="60"
-          width="38"
-          height="17"
-          rx="3"
-          className="fill-surface stroke-line-strong/75 dark:fill-[#1d2b3e]"
-          strokeWidth="1"
-        />
-        {/* ENG (south-east) */}
-        <rect
-          x="206"
-          y="58"
-          width="38"
-          height="19"
-          rx="3"
-          className="fill-surface stroke-line-strong/75 dark:fill-[#1d2b3e]"
-          strokeWidth="1"
-        />
-        {/* East-side Simcoe Hall / U5 */}
-        <rect
-          x="282"
-          y="34"
-          width="24"
-          height="26"
-          rx="3"
-          className="fill-surface stroke-line-strong/60 dark:fill-[#1d2b3e]"
-          strokeWidth="1"
-        />
-
-        {/* Subtle building code labels */}
-        <g className="fill-ink-muted font-mono text-[6.5px] font-semibold">
-          <text x="131" y="40.5" textAnchor="middle">
-            SCI
-          </text>
-          <text x="173" y="39" textAnchor="middle">
-            ERC
-          </text>
-          <text x="221" y="40.5" textAnchor="middle">
-            SHA
-          </text>
-          <text x="179" y="70" textAnchor="middle">
-            LIB
-          </text>
-          <text x="225" y="70" textAnchor="middle">
-            ENG
-          </text>
-        </g>
-
-        {/* Live free-room availability indicators */}
-        <g>
-          <circle cx="145" cy="33" r="4.5" className="fill-positive/20" />
-          <circle cx="145" cy="33" r="2.2" className="fill-positive" />
-
-          <circle cx="239" cy="33" r="4.5" className="fill-positive/20" />
-          <circle cx="239" cy="33" r="2.2" className="fill-positive" />
-
-          <circle cx="193" cy="61" r="5" className="fill-positive/25" />
-          <circle cx="193" cy="61" r="2.4" className="fill-positive" />
-        </g>
-      </svg>
-
-      {/* Subtle campus overlay badge */}
-      <div className="absolute bottom-1.5 left-2 inline-flex items-center gap-1 rounded-md border border-line/75 bg-surface/88 px-2 py-0.5 text-[10px] font-medium text-ink-secondary shadow-[var(--shadow-sm)] backdrop-blur-[2px]">
-        <span>North</span>
+      {/* Subtle campus preview overlay badge */}
+      <div className="absolute bottom-1.5 left-2 inline-flex items-center gap-1 rounded-md border border-line/75 bg-surface/90 px-2 py-0.5 text-[10px] font-medium text-ink-secondary shadow-[var(--shadow-sm)] backdrop-blur-[2px]">
+        <span>Preview</span>
         <span className="opacity-45">&bull;</span>
-        <span>Downtown</span>
-        <span className="opacity-45">&bull;</span>
-        <span>Whitby</span>
+        <span>North Campus</span>
       </div>
     </div>
   );
@@ -609,7 +444,7 @@ export function ClassicPortalView({
         {/* 2. Campus Map Card */}
         <Link
           href="/campus-map"
-          className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-line bg-surface p-5 shadow-[var(--shadow-sm)] transition-all duration-300 ease-[var(--ease-standard)] will-change-transform hover:-translate-y-2 hover:scale-[1.02] hover:border-positive-line hover:ring-2 hover:ring-positive/15 hover:shadow-[var(--shadow-lg)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+          className="group relative flex cursor-pointer flex-col justify-between overflow-hidden rounded-2xl border border-line bg-surface p-5 shadow-[var(--shadow-sm)] transition-all duration-300 ease-[var(--ease-standard)] will-change-transform hover:-translate-y-2 hover:scale-[1.02] hover:border-positive-line hover:ring-2 hover:ring-positive/15 hover:shadow-[var(--shadow-lg)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
         >
           <div
             aria-hidden="true"
