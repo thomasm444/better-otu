@@ -1,63 +1,80 @@
 # Better OTU
 
-An independent, student-built portal that brings Ontario Tech University course scheduling, degree planning, and live campus room availability into one connected web app.
+A student portal for Ontario Tech University that replaces the tools students actually use every day — course schedules, degree planning, and campus room finding — with one site that is faster to read and easier to use.
 
 > **Disclaimer:** Unofficial student project — not affiliated with, sponsored by, or endorsed by Ontario Tech University.
 
+The current student systems are split across several sites, and each one is harder to use than it needs to be. Better OTU pulls the same information into one place and presents it plainly.
+
 ---
-
-## Inspiration
-
-Ontario Tech students plan their degrees across several different systems, and none of them are pleasant to use. Checking your schedule, figuring out what courses you still need, and finding a free room to study in are three separate trips to three separate sites. We wanted one portal that does all three, with the information presented clearly.
-
-Our starting point was simple: software that is functional does not have to be ugly or hard to use.
 
 ## What It Does
 
-Better OTU is a student portal with four connected parts:
+### Home
+- Dashboard with your schedule, degree progress, and live campus room availability at a glance
+- One-click shortcuts to Canvas, MyOTU, the Library, and Google Workspace apps
+- Two layouts (**Classic** and **Stacked**) with the same content in both
+- Profile preferences for appearance (light and dark mode), layout, degree, year of study, and minor
 
-- **Home** — A dashboard with your schedule, degree progress, live room availability on campus, and one-click shortcuts to Canvas, MyOTU, the Library, and Google apps. It has two layouts, **Classic** and **Stacked**, with the same content in both.
-- **Course Schedules** — A weekly timetable of your planned courses with term switching, a course lookup with subject and level filters, calendar export, and an **Export to Add/Drop** modal that builds a Banner link containing all your CRNs at once. You can also import courses straight from your degree plan.
-- **Degree Planner** — Plans built from the university's published degree requirements. You can keep several plans at once (your actual degree, a specialization you are considering), preview any program before adding it, and see a requirements breakdown that shows what each course counts toward and how transfer credits fit into your total.
-- **Campus Map** — Live availability for rooms across campus. Search a room, filter to what is free, move forward in time to plan ahead, and open any of the 82 bookable rooms to see its capacity, its weekly schedule, and a direct link to book it on the campus booking system.
+### Course Schedules
+- Weekly timetable for your planned courses with term switching (Fall, Winter, Spring/Summer)
+- Course lookup with subject and level filters
+- Import courses directly from your degree plan
+- Calendar export and sync, plus an **Export to Add/Drop** tool that generates a Banner link with all your CRNs at once
+- Optional RateMyProf ratings on your courses
 
-The parts are connected: the planner feeds the schedule, and the schedule's rooms show up on the map.
+### Degree Planner
+- Degree plans built from Ontario Tech's published degree requirements
+- Save multiple plans (for example, your current degree and a specialization you are considering), switch between them, or change a plan's degree/specialization in place
+- Program explorer that previews any degree before you add it as a plan
+- Requirements sidebar showing what you still need, what each course counts toward, and how transfer credits fit into your total
+- Prerequisite-aware course picker for filling in each term, with support for gap years and added study years
 
-## How We Built It
+### Campus Map
+- Live room availability across North Campus and Downtown Campus, built from real course schedules and room booking data
+- Search any room (spaces in the room code are normalized), filter to free rooms, and scrub forward in time to see what opens up later
+- Bookable rooms list (82 rooms) sorted by building, showing seating capacity and how long each room stays free
+- Room details panel with capacity, configuration, and the room's full weekly schedule
+- Direct booking link for each bookable room straight to the campus booking page
 
-- **Stack:** Next.js 16 (App Router) with React 19 and Tailwind CSS 4.
-- **Database:** Supabase (Postgres) holds the course catalog, course meetings, degree requirements, and room booking data.
-- **Mapping:** Leaflet with OpenStreetMap.
+---
 
-Room availability was an interesting data problem. A room is busy if a class meets in it or if someone booked it, and those live in different data. We joined course meetings with room booking records so the map shows one true status per room, and each bookable room carries the identifier the campus booking system needs, which is how the direct booking links work.
+## Built With
 
-The degree planner models each program's requirements — major requirements, choice groups, electives, level rules, transfer credits — from the university's own degree descriptions, then tracks a student's plan against them.
+| Layer | Technology |
+|---|---|
+| **Framework** | Next.js 16 (App Router) & React 19 |
+| **Styling** | Tailwind CSS 4 |
+| **Database & Auth** | Supabase (Postgres) for course, schedule, degree, and room booking data, with Google sign-in |
+| **Mapping** | Leaflet & OpenStreetMap |
 
-We split the work by page: one person each on the home page, course schedules, and degree planner, and one on the campus map, with shared components (navigation, profile) owned centrally.
+---
 
-## Challenges We Ran Into
+## Data
 
-- **Room codes are inconsistent.** The same room appears with and without spaces and in different formats across sources. Search has to normalize them or `SCI 1350` finds nothing while `SCI1350` works.
-- **Credits are not always credits.** A 0-credit co-op course kept sneaking into credit totals as 3 credits, which made the home page, schedule, and planner disagree with each other until we traced it to that one course.
-- **Two kinds of busy.** Early versions of the map only knew about classes, so booked rooms showed as free. Combining bookings with meetings fixed it, but the data needed cleaning first.
-- **Requirements are worded for humans, not databases.** Turning degree descriptions into rules a planner can check (choice groups, level minimums, transfer credit) took several passes to get right.
+Course and meeting data comes from Ontario Tech's course schedules. Room availability combines course meetings with room booking records, so a room shows as in use whether a class or a booking is in it. Degree requirements are modelled from the university's published degree descriptions.
 
-## Accomplishments That We're Proud Of
+---
 
-- The planner, schedule, and map actually talk to each other — plan a degree, import it into your schedule, and find the rooms those classes are in.
-- The booking links are real. Picking a room on the map takes you to that room's actual booking page, not a search page.
-- The whole site works in light and dark mode and stays consistent across both home layouts.
+## Running Locally
 
-## What We Learned
+1. Copy `.env.example` to `.env.local` (or `.env`) and fill in your Supabase keys (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_KEY`).
+2. Install dependencies and start the development server:
 
-Most of the hard problems were data problems, not UI problems. Once the course, requirement, and room data was modelled properly, the pages on top of it got much simpler. We also learned to verify each other's work in the live site instead of trusting summaries — more than one "bug" turned out to be a misread, and more than one "done" was not.
+   ```bash
+   npm install
+   npm run dev
+   ```
 
-## What's Next for Better OTU
+3. Open [http://localhost:3000](http://localhost:3000) and sign in with a Google account. Supabase environment variables must be configured for data and sign-in to work.
 
-- Deploy it publicly so any Ontario Tech student can sign in and use it
-- When you start a plan for a different degree, automatically carry over the courses you have already completed
-- Add more terms of course data as new schedules are published
-- Let students save favourite rooms and get notified when one frees up
+---
+
+## What's Next
+
+- A public deployment so any Ontario Tech student can sign in and use it
+- Automatically carry over courses you have already completed when starting a plan for a different degree
+- More terms of course data as new schedules are published
 - Compare course schedules with peers by adding an add-friend feature
 
 ---
