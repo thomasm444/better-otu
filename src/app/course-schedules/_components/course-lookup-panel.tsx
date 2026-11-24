@@ -351,52 +351,140 @@ export function CourseLookupPanel({
 
   const renderCourseProfTrigger = (
     course: ScheduleCourseGroup | undefined,
-    entry: PlannedCourseEntry,
+    entry: PlannedCourseEntry | undefined,
     selectedRmp: SectionRmpInfo | null,
+    inline = false,
   ) => {
     if (!course) return null;
-    const lecCrn = entry.selectedCrns["LEC"];
-    const preferredCrn = lecCrn ?? Object.values(entry.selectedCrns)[0];
-    const sec = preferredCrn
-      ? course.sections.find((s) => s.crn === preferredCrn)
-      : undefined;
-    const profName = sec?.instructor?.trim();
-    if (!profName) return null;
+
+    let profSections: typeof course.sections = [];
+    if (entry) {
+      const lecCrn = entry.selectedCrns["LEC"];
+      const preferredCrn = lecCrn ?? Object.values(entry.selectedCrns)[0];
+      const sec = preferredCrn
+        ? course.sections.find((s) => s.crn === preferredCrn)
+        : undefined;
+      if (sec?.instructor?.trim()) {
+        profSections = [sec];
+      }
+    }
+
+    if (profSections.length === 0) {
+      const lecWithProf = course.sections.filter(
+        (s) => s.component === "LEC" && Boolean(s.instructor?.trim()),
+      );
+      const pool =
+        lecWithProf.length > 0
+          ? lecWithProf
+          : course.sections.filter((s) => Boolean(s.instructor?.trim()));
+
+      const byProf = new Map<string, (typeof course.sections)[number]>();
+      for (const s of pool) {
+        const key = s.instructor!.trim().toLowerCase();
+        const existing = byProf.get(key);
+        if (!existing || (!existing.rmp && s.rmp)) {
+          byProf.set(key, s);
+        }
+      }
+      profSections = [...byProf.values()].sort((a, b) => {
+        const aMatchesCard =
+          selectedRmp && a.rmp && a.rmp.fullName === selectedRmp.fullName
+            ? 0
+            : 1;
+        const bMatchesCard =
+          selectedRmp && b.rmp && b.rmp.fullName === selectedRmp.fullName
+            ? 0
+            : 1;
+        if (aMatchesCard !== bMatchesCard) return aMatchesCard - bMatchesCard;
+        const aRated = a.rmp?.avgRating != null ? 0 : 1;
+        const bRated = b.rmp?.avgRating != null ? 0 : 1;
+        return aRated - bRated;
+      });
+    }
+
+    if (profSections.length === 0) return null;
+
+    const resolveSalaries = (sec: (typeof course.sections)[number]) => {
+      if (sec.salaries) return sec.salaries;
+      const rmp = sec.rmp ?? (entry ? selectedRmp : null);
+      if (!rmp) return [];
+      return (
+        catalog.salariesByRmpId?.[String(rmp.legacyId ?? rmp.fullName)] ?? []
+      );
+    };
+
+    const marginClass = inline ? "" : "mt-0.5 ";
 
     if (!showRmp) {
+      const names = profSections.map((s) => s.instructor!.trim()).join(" · ");
       return (
-        <p className="mt-0.5 truncate text-[11px] text-slate-500 dark:text-slate-400">
-          Prof: {profName}
+        <p
+          className={`${marginClass}truncate text-[11px] text-slate-500 dark:text-slate-400`}
+        >
+          Prof: {names}
         </p>
       );
     }
 
+    if (profSections.length === 1) {
+      const sec = profSections[0];
+      const profName = sec.instructor!.trim();
+      const secRmp = sec.rmp ?? (entry ? selectedRmp : null) ?? null;
+      return (
+        <button
+          type="button"
+          onClick={(e) =>
+            openProfProfile(
+              e,
+              profName,
+              course.courseCode,
+              secRmp,
+              resolveSalaries(sec),
+            )
+          }
+          className={`${marginClass}inline-flex max-w-full cursor-pointer items-center gap-1 truncate text-[11px] font-medium text-sky-700 hover:underline dark:text-sky-400`}
+          title={`View ${profName}'s profile`}
+        >
+          <span className="truncate">Prof: {profName}</span>
+        </button>
+      );
+    }
+
     return (
-      <button
-        type="button"
-        onClick={(e) =>
-          openProfProfile(
-            e,
-            profName,
-            entry.courseCode,
-            sec?.rmp ?? selectedRmp ?? null,
-            sec?.salaries ??
-              (() => {
-                const rmp = sec?.rmp ?? selectedRmp;
-                if (!rmp) return [];
-                return (
-                  catalog.salariesByRmpId?.[
-                    String(rmp.legacyId ?? rmp.fullName)
-                  ] ?? []
-                );
-              })(),
-          )
-        }
-        className="mt-0.5 inline-flex max-w-full cursor-pointer items-center gap-1 truncate text-[11px] font-medium text-sky-700 hover:underline dark:text-sky-400"
-        title={`View ${profName}'s profile`}
+      <div
+        className={`${marginClass}flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[11px]`}
       >
-        <span className="truncate">Prof: {profName}</span>
-      </button>
+        <span className="font-medium text-slate-500 dark:text-slate-400">
+          Prof:
+        </span>
+        {profSections.map((sec, idx) => {
+          const profName = sec.instructor!.trim();
+          const secRmp = sec.rmp ?? null;
+          return (
+            <React.Fragment key={sec.crn}>
+              {idx > 0 && (
+                <span className="text-slate-400 dark:text-slate-500">·</span>
+              )}
+              <button
+                type="button"
+                onClick={(e) =>
+                  openProfProfile(
+                    e,
+                    profName,
+                    course.courseCode,
+                    secRmp,
+                    resolveSalaries(sec),
+                  )
+                }
+                className="inline-flex max-w-full cursor-pointer items-center truncate font-medium text-sky-700 hover:underline dark:text-sky-400"
+                title={`View ${profName}'s profile`}
+              >
+                <span className="truncate">{profName}</span>
+              </button>
+            </React.Fragment>
+          );
+        })}
+      </div>
     );
   };
 
@@ -1613,6 +1701,14 @@ export function CourseLookupPanel({
                     const isDescExpanded = expandedDescriptions.has(
                       course.courseCode,
                     );
+                    const cardRmp = getCourseCardRmp(course, entry, true);
+                    const hasLeftActionControls = isEditMode || Boolean(entry);
+                    const profTrigger = renderCourseProfTrigger(
+                      course,
+                      entry,
+                      cardRmp,
+                      !hasLeftActionControls,
+                    );
 
                     return (
                       <div
@@ -1728,9 +1824,14 @@ export function CourseLookupPanel({
                           );
                         })()}
 
+                        {/* Instructor */}
+                        {hasLeftActionControls && profTrigger && (
+                          <div className="mt-2 min-w-0">{profTrigger}</div>
+                        )}
+
                         {/* Action Buttons */}
                         <div className="mt-2.5 flex flex-wrap items-center justify-between gap-1.5">
-                          <div className="flex flex-wrap items-center gap-1.5">
+                          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
                             {isEditMode ? (
                               !entry ? (
                                 <>
@@ -1805,7 +1906,9 @@ export function CourseLookupPanel({
                                   ? "In Schedule"
                                   : "Exploring"}
                               </span>
-                            ) : null}
+                            ) : (
+                              profTrigger
+                            )}
                           </div>
 
                           <div className="ml-auto flex items-center gap-1.5">
@@ -1820,11 +1923,7 @@ export function CourseLookupPanel({
                                 ? "Hide Sections ▲"
                                 : `Sections (${course.sections.length}) ▾`}
                             </button>
-                            {showRmp && (
-                              <RmpStarBadge
-                                rmp={getCourseCardRmp(course, entry, true)}
-                              />
-                            )}
+                            {showRmp && <RmpStarBadge rmp={cardRmp} />}
                           </div>
                         </div>
 
