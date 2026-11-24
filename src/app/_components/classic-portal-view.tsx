@@ -580,25 +580,21 @@ export function ClassicPortalView({
         className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-12"
       >
         {/* Left: Campus Pulse & Live Room Finder (branded navy/teal moment) */}
-        <div className="group/pulse relative flex flex-col justify-between overflow-hidden rounded-2xl border border-[#1f2545] bg-[#1f2545] p-6 text-[#edf3f7] shadow-[var(--shadow-sm)] transition-all duration-300 ease-[var(--ease-standard)] will-change-transform hover:-translate-y-1.5 hover:scale-[1.015] hover:border-accent-line hover:ring-2 hover:ring-accent/25 hover:shadow-[var(--shadow-lg)] dark:border-line-strong dark:bg-surface dark:text-ink lg:col-span-7">
+        <div className="group/pulse relative flex flex-col justify-between overflow-hidden rounded-2xl border border-[#1f2545] bg-[#1f2545] p-6 text-[#edf3f7] shadow-[var(--shadow-sm)] transition-all duration-300 ease-[var(--ease-standard)] will-change-transform hover:-translate-y-1.5 hover:scale-[1.015] hover:border-accent-line hover:ring-2 hover:ring-accent/25 hover:shadow-[var(--shadow-lg)] dark:border-line-strong dark:bg-surface dark:text-ink lg:col-span-7 lg:self-start">
           <div
             aria-hidden="true"
             className="pointer-events-none absolute inset-0 bg-gradient-to-br from-accent/[0.12] via-transparent to-transparent opacity-0 transition-opacity duration-300 group-hover/pulse:opacity-100"
           />
           <div className="relative space-y-4">
             <div className="flex flex-wrap items-center gap-2">
-              <div className="inline-flex items-center gap-2 rounded-md border border-white/15 bg-white/10 px-2.5 py-1 text-xs font-medium text-[#bfd5e2] dark:border-line dark:bg-surface-subtle dark:text-ink-secondary">
-                <span className="h-1.5 w-1.5 rounded-full bg-positive" />
-                <span>Campus Pulse</span>
-                {liveTimeLabel && (
-                  <>
-                    <span className="opacity-45">&bull;</span>
-                    <span className="font-mono tabular-nums text-white dark:text-ink">
-                      {liveTimeLabel}
-                    </span>
-                  </>
-                )}
-              </div>
+              {liveTimeLabel && (
+                <div className="inline-flex items-center gap-2 rounded-md border border-white/15 bg-white/10 px-2.5 py-1 text-xs font-medium text-[#bfd5e2] dark:border-line dark:bg-surface-subtle dark:text-ink-secondary">
+                  <span className="h-1.5 w-1.5 rounded-full bg-positive" />
+                  <span className="font-mono tabular-nums text-white dark:text-ink">
+                    {liveTimeLabel}
+                  </span>
+                </div>
+              )}
 
               {freeRoomsTotal !== null && (
                 <span className="inline-flex items-center rounded-md border border-white/15 bg-white/10 px-2.5 py-1 font-mono text-xs font-medium text-[#edf3f7] tabular-nums dark:border-positive-line dark:bg-positive-soft dark:text-positive">
