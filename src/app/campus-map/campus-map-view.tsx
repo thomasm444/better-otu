@@ -30,7 +30,9 @@ import { RoomDetailsDrawer } from "./_components/room-details-drawer";
 import { TimeScrubber } from "./_components/time-scrubber";
 import {
   assignOverlapLanes,
+  CAMPUS_FALLBACK_BOUNDS,
   CAMPUS_SWITCH_OPTIONS,
+  computeCampusGeoBounds,
   escapeHtml,
   FLOOR_LABELS,
   formatFloor,
@@ -204,6 +206,7 @@ export function CampusMapView() {
   const [floorControlEl, setFloorControlEl] = useState<HTMLDivElement | null>(null);
   const [mapReady, setMapReady] = useState<boolean>(false);
   const [pendingBuildingZoom, setPendingBuildingZoom] = useState<string | null>(null);
+  const [isAtDefaultView, setIsAtDefaultView] = useState<boolean>(true);
 
   // Map & Cache references
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
@@ -214,6 +217,15 @@ export function CampusMapView() {
   const featureLayerMapRef = useRef<Map<string, LeafletType.Path>>(new Map());
   const selectedFeatureIdRef = useRef<string | null>(null);
   const prevSelectedIdRef = useRef<string | null>(null);
+  const defaultCampusViewRef = useRef<{
+    campus: CampusSwitchKey;
+    lat: number;
+    lng: number;
+    zoom: number;
+  } | null>(null);
+  const initialBoundsAppliedRef = useRef<boolean>(false);
+  const dataRef = useRef<CampusMapData | null>(null);
+  dataRef.current = data;
   const weekCacheRef = useRef<Map<string, { data: CampusMapWeekData; fetchedAt: number }>>(
     new Map(),
   );
@@ -396,16 +408,45 @@ export function CampusMapView() {
         : "north";
     setActiveCampus(inferredCampus);
 
-    const targetVenue =
-      venueParam === "downtown" || venueParam === "whitby"
-        ? VENUES[venueParam]
-        : VENUES[inferredCampus];
+    const targetVenue = VENUES[inferredCampus];
     if (!buildingParam && mapInstanceRef.current) {
-      mapInstanceRef.current.setView(
-        [targetVenue.lat, targetVenue.lng],
-        Math.min(targetVenue.zoom, MAP_MAX_ZOOM - 1),
-        { animate: false },
-      );
+      const map = mapInstanceRef.current;
+      const L = leafletRef.current;
+      if (L) {
+        const latestData = dataRef.current;
+        const rawBounds = latestData?.features
+          ? computeCampusGeoBounds(latestData.features, inferredCampus)
+          : CAMPUS_FALLBACK_BOUNDS[inferredCampus];
+        const latLngBounds = L.latLngBounds(rawBounds[0], rawBounds[1]);
+        const isMobile = window.innerWidth < 1024;
+        const padTL: [number, number] = isMobile ? [20, 28] : [32, 32];
+        const padBR: [number, number] = isMobile ? [20, 76] : [32, 76];
+        const fitZoom = Math.max(
+          14,
+          Math.min(
+            MAP_MAX_ZOOM - 1,
+            map.getBoundsZoom(latLngBounds, false, L.point(padTL[0] + padBR[0], padTL[1] + padBR[1])),
+          ),
+        );
+        const center = latLngBounds.getCenter();
+        map.setMaxBounds(null as unknown as LeafletType.LatLngBoundsExpression);
+        map.setMinZoom(fitZoom);
+        map.setMaxBounds(latLngBounds.pad(0.35));
+        defaultCampusViewRef.current = {
+          campus: inferredCampus,
+          lat: center.lat,
+          lng: center.lng,
+          zoom: fitZoom,
+        };
+        map.setView([center.lat, center.lng], fitZoom, { animate: false });
+        setIsAtDefaultView(true);
+      } else {
+        map.setView(
+          [targetVenue.lat, targetVenue.lng],
+          Math.min(targetVenue.zoom, MAP_MAX_ZOOM - 1),
+          { animate: false },
+        );
+      }
     }
   }, []);
 
@@ -551,20 +592,40 @@ export function CampusMapView() {
       const initialVenueParam = new URLSearchParams(window.location.search)
         .get("venue")
         ?.toLowerCase();
-      const initialVenue =
-        initialVenueParam === "downtown" || initialVenueParam === "whitby"
-          ? VENUES[initialVenueParam]
-          : VENUES.north;
+      const initialCampus: CampusSwitchKey =
+        initialVenueParam === "downtown" ? "downtown" : "north";
+      const initialVenue = VENUES[initialCampus];
+      const fallbackRaw = CAMPUS_FALLBACK_BOUNDS[initialCampus];
+      const fallbackBounds = L.latLngBounds(fallbackRaw[0], fallbackRaw[1]);
 
       const map = L.map(mapContainerRef.current, {
         center: [initialVenue.lat, initialVenue.lng],
         zoom: Math.min(initialVenue.zoom, MAP_MAX_ZOOM - 1),
         minZoom: MAP_MIN_ZOOM,
         maxZoom: MAP_MAX_ZOOM,
+        maxBounds: fallbackBounds.pad(0.35),
+        maxBoundsViscosity: 0.9,
+        zoomSnap: 0.25,
+        zoomDelta: 0.5,
         layers: [osm],
         preferCanvas: true,
         zoomControl: false,
       });
+
+      const updateDefaultViewFlag = () => {
+        const def = defaultCampusViewRef.current;
+        if (!def) {
+          setIsAtDefaultView(true);
+          return;
+        }
+        const curCenter = map.getCenter();
+        const curZoom = map.getZoom();
+        const distMeters = curCenter.distanceTo(L.latLng(def.lat, def.lng));
+        const zoomDiff = Math.abs(curZoom - def.zoom);
+        setIsAtDefaultView(distMeters <= 18 && zoomDiff <= 0.15);
+      };
+      map.on("moveend", updateDefaultViewFlag);
+      map.on("zoomend", updateDefaultViewFlag);
 
       baseLayersRef.current = {
         osm,
@@ -909,44 +970,109 @@ export function CampusMapView() {
     );
   }, [campusBuildings, otherBuildings, buildingSearchQuery, buildingNameMap]);
 
-  // Switch active campus, recenter map, and clear cross-campus selections
-  const handleSwitchCampus = useCallback((nextCampus: CampusSwitchKey) => {
-    setActiveCampus(nextCampus);
-    setFocusedBuilding("ALL");
-    setBuildingSearchQuery("");
-    setIsMoreBuildingsOpen(false);
-    setSelectedFeature((prev) => {
-      if (prev && getFeatureCampus(prev) !== nextCampus) {
-        setSelectedDrawerSubRoom(null);
-        setIsDrawerMinimized(false);
-        return null;
+  // Apply campus bounds, zoom-out floor (so all bookings stay visible), and optional camera move
+  const applyCampusViewport = useCallback(
+    (
+      campus: CampusSwitchKey,
+      options: { moveCamera: boolean; animate: boolean } = {
+        moveCamera: true,
+        animate: true,
+      },
+    ) => {
+      const map = mapInstanceRef.current;
+      const L = leafletRef.current;
+      if (!map || !L) return;
+
+      const rawBounds = data?.features
+        ? computeCampusGeoBounds(data.features, campus)
+        : CAMPUS_FALLBACK_BOUNDS[campus];
+      const latLngBounds = L.latLngBounds(rawBounds[0], rawBounds[1]);
+      const isMobile = window.innerWidth < 1024;
+      const totalPadX = isMobile ? 40 : 64;
+      const totalPadY = isMobile ? 104 : 108;
+
+      const fitZoom = Math.max(
+        14,
+        Math.min(
+          MAP_MAX_ZOOM - 1,
+          map.getBoundsZoom(latLngBounds, false, L.point(totalPadX, totalPadY)),
+        ),
+      );
+      const center = latLngBounds.getCenter();
+
+      // Clear old bounds first so cross-campus flyTo is never clamped to the previous campus
+      map.setMaxBounds(undefined as unknown as LeafletType.LatLngBoundsExpression);
+      map.setMinZoom(fitZoom);
+      map.setMaxBounds(latLngBounds.pad(0.35));
+
+      defaultCampusViewRef.current = {
+        campus,
+        lat: center.lat,
+        lng: center.lng,
+        zoom: fitZoom,
+      };
+
+      if (options.moveCamera) {
+        if (options.animate) {
+          map.flyTo([center.lat, center.lng], fitZoom, { duration: 0.65 });
+        } else {
+          map.setView([center.lat, center.lng], fitZoom, { animate: false });
+        }
+        setIsAtDefaultView(true);
+      } else {
+        const curCenter = map.getCenter();
+        const distMeters = curCenter.distanceTo(center);
+        const zoomDiff = Math.abs(map.getZoom() - fitZoom);
+        setIsAtDefaultView(distMeters <= 18 && zoomDiff <= 0.15);
       }
-      return prev;
-    });
+    },
+    [data],
+  );
 
-    const target = VENUES[nextCampus];
-    const map = mapInstanceRef.current;
-    if (map) {
-      map.flyTo(
-        [target.lat, target.lng],
-        Math.min(target.zoom, MAP_MAX_ZOOM - 1),
-        { duration: 0.75 },
-      );
+  // When map & GeoJSON data finish loading, lock bounds & fit initial campus view so all bookings are visible
+  useEffect(() => {
+    if (!mapReady || !data) return;
+    if (!initialBoundsAppliedRef.current) {
+      initialBoundsAppliedRef.current = true;
+      const hasBuildingParam = Boolean(pendingBuildingZoom) || focusedBuilding !== "ALL";
+      applyCampusViewport(activeCampus, {
+        moveCamera: !hasBuildingParam,
+        animate: false,
+      });
+    } else {
+      applyCampusViewport(activeCampus, {
+        moveCamera: false,
+        animate: false,
+      });
     }
-  }, []);
+  }, [mapReady, data, activeCampus, pendingBuildingZoom, focusedBuilding, applyCampusViewport]);
 
-  // Recenter map to the currently active campus default center & zoom
+  // Switch active campus, recenter map, and clear cross-campus selections
+  const handleSwitchCampus = useCallback(
+    (nextCampus: CampusSwitchKey) => {
+      setActiveCampus(nextCampus);
+      setFocusedBuilding("ALL");
+      setBuildingSearchQuery("");
+      setIsMoreBuildingsOpen(false);
+      setSelectedFeature((prev) => {
+        if (prev && getFeatureCampus(prev) !== nextCampus) {
+          setSelectedDrawerSubRoom(null);
+          setIsDrawerMinimized(false);
+          return null;
+        }
+        return prev;
+      });
+
+      applyCampusViewport(nextCampus, { moveCamera: true, animate: true });
+    },
+    [applyCampusViewport],
+  );
+
+  // Recenter map to the currently active campus default center & zoom (all bookings visible)
   const handleRecenterMap = useCallback(() => {
-    const target = VENUES[activeCampus];
-    const map = mapInstanceRef.current;
-    if (map) {
-      map.flyTo(
-        [target.lat, target.lng],
-        Math.min(target.zoom, MAP_MAX_ZOOM - 1),
-        { duration: 0.65 },
-      );
-    }
-  }, [activeCampus]);
+    setFocusedBuilding("ALL");
+    applyCampusViewport(activeCampus, { moveCamera: true, animate: true });
+  }, [activeCampus, applyCampusViewport]);
 
   // Zoom to ?building=CODE once map and features are ready
   useEffect(() => {
@@ -1422,8 +1548,8 @@ export function CampusMapView() {
           </h1>
 
           <div
-            role="radiogroup"
-            aria-label="Select campus"
+            role="tablist"
+            aria-label="Campus views"
             className="inline-flex shrink-0 items-center rounded-xl border border-line bg-surface-subtle p-0.5"
           >
             {CAMPUS_SWITCH_OPTIONS.map((opt) => {
@@ -1432,13 +1558,13 @@ export function CampusMapView() {
                 <button
                   key={opt.key}
                   type="button"
-                  role="radio"
-                  aria-checked={isSelected}
+                  role="tab"
+                  aria-selected={isSelected}
                   onClick={() => handleSwitchCampus(opt.key)}
-                  className={`cursor-pointer whitespace-nowrap rounded-lg px-2.5 py-1 text-[11px] font-medium transition-all duration-150 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent sm:text-xs ${
+                  className={`cursor-pointer whitespace-nowrap rounded-lg px-2.5 py-1 text-[11px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent sm:text-xs ${
                     isSelected
-                      ? "bg-surface text-ink shadow-[var(--shadow-sm)] ring-1 ring-line-subtle"
-                      : "text-ink-secondary hover:text-ink"
+                      ? "bg-brand text-brand-fg shadow-[var(--shadow-sm)]"
+                      : "text-ink-secondary hover:bg-surface-hover/60 hover:text-ink"
                   }`}
                 >
                   <span className="sm:hidden">{opt.shortLabel}</span>
@@ -1862,34 +1988,36 @@ export function CampusMapView() {
                 </select>
               </div>
 
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleRecenterMap();
-                }}
-                aria-label={`Recenter map on ${activeCampus === "downtown" ? "Downtown Oshawa" : "North Campus"}`}
-                title={`Recenter on ${activeCampus === "downtown" ? "Downtown Oshawa" : "North Campus"}`}
-                className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-line bg-surface/95 px-2.5 py-1.5 text-xs font-medium text-ink shadow-[var(--shadow-md)] backdrop-blur-md transition-colors hover:border-accent-line hover:text-accent-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-              >
-                <svg
-                  className="h-3.5 w-3.5 shrink-0"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.9"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
+              {!isAtDefaultView && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleRecenterMap();
+                  }}
+                  aria-label={`Recenter map on ${activeCampus === "downtown" ? "Downtown Campus" : "North Campus"}`}
+                  title={`Recenter on ${activeCampus === "downtown" ? "Downtown Campus" : "North Campus"}`}
+                  className="inline-flex cursor-pointer items-center gap-1.5 rounded-xl border border-line bg-surface/95 px-2.5 py-1.5 text-xs font-medium text-ink shadow-[var(--shadow-md)] backdrop-blur-md transition-colors hover:border-accent-line hover:text-accent-ink focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
                 >
-                  <circle cx="12" cy="12" r="4" />
-                  <path d="M12 2v3" />
-                  <path d="M12 19v3" />
-                  <path d="M2 12h3" />
-                  <path d="M19 12h3" />
-                </svg>
-                <span>Recenter</span>
-              </button>
+                  <svg
+                    className="h-3.5 w-3.5 shrink-0"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.9"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
+                    <circle cx="12" cy="12" r="4" />
+                    <path d="M12 2v3" />
+                    <path d="M12 19v3" />
+                    <path d="M2 12h3" />
+                    <path d="M19 12h3" />
+                  </svg>
+                  <span>Recenter</span>
+                </button>
+              )}
             </div>,
             floorControlEl,
           )}

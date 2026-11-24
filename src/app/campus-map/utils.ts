@@ -69,18 +69,17 @@ export const FLOOR_LABELS: Record<string, string> = {
 /** Ordered top-to-bottom like an indoor map / elevator floor picker, with All at top. */
 export const VERTICAL_FLOOR_KEYS = ["ALL", "40", "30", "20", "0", "-10"] as const;
 
-export const MAP_MIN_ZOOM = 3;
+export const MAP_MIN_ZOOM = 15;
 export const MAP_MAX_ZOOM = 22;
 
 export const VENUES = {
-  north: { lat: 43.9454, lng: -78.8968, zoom: 17, label: "North" },
-  downtown: { lat: 43.8978, lng: -78.8608, zoom: 17, label: "Downtown" },
-  whitby: { lat: 43.8723, lng: -78.9016, zoom: 17, label: "Whitby" },
+  north: { lat: 43.9456, lng: -78.8968, zoom: 16.5, label: "North" },
+  downtown: { lat: 43.8978, lng: -78.8608, zoom: 16.5, label: "Downtown" },
 } as const;
 
-export type VenueKey = keyof typeof VENUES;
+export type VenueKey = "north" | "downtown" | "whitby";
 
-export type CampusSwitchKey = "north" | "downtown";
+export type CampusSwitchKey = keyof typeof VENUES;
 
 export const CAMPUS_SWITCH_OPTIONS: ReadonlyArray<{
   key: CampusSwitchKey;
@@ -88,8 +87,22 @@ export const CAMPUS_SWITCH_OPTIONS: ReadonlyArray<{
   shortLabel: string;
 }> = [
   { key: "north", label: "North Campus", shortLabel: "North" },
-  { key: "downtown", label: "Downtown Oshawa", shortLabel: "Downtown" },
+  { key: "downtown", label: "Downtown Campus", shortLabel: "Downtown" },
 ];
+
+export const CAMPUS_FALLBACK_BOUNDS: Record<
+  CampusSwitchKey,
+  [[number, number], [number, number]]
+> = {
+  north: [
+    [43.9424, -78.9018],
+    [43.9494, -78.8934],
+  ],
+  downtown: [
+    [43.8954, -78.8644],
+    [43.9004, -78.8574],
+  ],
+};
 
 export const MAIN_NORTH_BUILDINGS = ["SCI", "ENG", "SIR", "SHA", "ERC", "BIT", "LIB"] as const;
 export const MAIN_DOWNTOWN_BUILDINGS = ["REG", "CHA"] as const;
@@ -135,6 +148,74 @@ export function getFeatureCampus(feature: CampusMapFeature): VenueKey {
   }
 
   return "north";
+}
+
+function extendBoundsFromCoords(
+  coords: unknown,
+  acc: { minLat: number; minLng: number; maxLat: number; maxLng: number },
+) {
+  if (!Array.isArray(coords) || coords.length === 0) return;
+  if (typeof coords[0] === "number" && typeof coords[1] === "number") {
+    const [lng, lat] = coords as [number, number];
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      if (lat < acc.minLat) acc.minLat = lat;
+      if (lat > acc.maxLat) acc.maxLat = lat;
+      if (lng < acc.minLng) acc.minLng = lng;
+      if (lng > acc.maxLng) acc.maxLng = lng;
+    }
+    return;
+  }
+  for (const item of coords) {
+    extendBoundsFromCoords(item, acc);
+  }
+}
+
+/**
+ * Computes tight geographic bounds covering all scheduled/bookable buildings on a campus
+ * (falling back to all non-point features on that campus, then static campus bounds).
+ */
+export function computeCampusGeoBounds(
+  features: CampusMapFeature[],
+  campus: CampusSwitchKey,
+): [[number, number], [number, number]] {
+  const campusPolygons = features.filter(
+    (f) =>
+      f.geometry &&
+      (f.geometry.type as string) !== "Point" &&
+      getFeatureCampus(f) === campus,
+  );
+  const scheduled = campusPolygons.filter(
+    (f) => f.properties?.hasSchedule || f.properties?.isBuildingContainer,
+  );
+  const targetFeatures = scheduled.length > 0 ? scheduled : campusPolygons;
+
+  const acc = {
+    minLat: Infinity,
+    minLng: Infinity,
+    maxLat: -Infinity,
+    maxLng: -Infinity,
+  };
+
+  for (const f of targetFeatures) {
+    const geom = f.geometry as { coordinates?: unknown } | null | undefined;
+    if (geom?.coordinates) {
+      extendBoundsFromCoords(geom.coordinates, acc);
+    }
+  }
+
+  if (
+    !Number.isFinite(acc.minLat) ||
+    !Number.isFinite(acc.maxLat) ||
+    !Number.isFinite(acc.minLng) ||
+    !Number.isFinite(acc.maxLng)
+  ) {
+    return CAMPUS_FALLBACK_BOUNDS[campus];
+  }
+
+  return [
+    [acc.minLat, acc.minLng],
+    [acc.maxLat, acc.maxLng],
+  ];
 }
 
 /** Verified non-DB building names already established in app copy (e.g. "Find a Library Room"). */
