@@ -686,7 +686,7 @@ export function PortalDashboard({
   return (
     <main className="relative flex min-h-[calc(100dvh-var(--site-nav-height,2.75rem))] flex-1 flex-col overflow-x-clip bg-canvas font-sans text-ink">
       <div className="relative z-10 flex flex-1 flex-col">
-        <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-6 py-8 sm:px-8 sm:py-10">
+        <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-6 pt-3 pb-8 sm:px-8 sm:pt-4 sm:pb-10">
           {/* Top Header: Brand Logo, Greeting & Academic Summary */}
           <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
             <div className="flex min-w-0 flex-1 items-center gap-4">
