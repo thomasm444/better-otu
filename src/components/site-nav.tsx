@@ -25,6 +25,31 @@ function NavChrome({
   rightSlot: React.ReactNode;
 }) {
   const isHome = pathname === "/";
+  const isLoginPage =
+    pathname !== null &&
+    (pathname === "/login" || pathname.startsWith("/login/"));
+
+  const brandContent = (
+    <>
+      <Image
+        src="/images/better-otu-logo-light.svg"
+        alt=""
+        width={24}
+        height={24}
+        priority
+        className="block h-6 w-6 shrink-0 object-contain dark:hidden"
+      />
+      <Image
+        src="/images/better-otu-logo-dark.svg"
+        alt=""
+        width={24}
+        height={24}
+        priority
+        className="hidden h-6 w-6 shrink-0 object-contain dark:block"
+      />
+      <span>Better OTU</span>
+    </>
+  );
 
   return (
     <header
@@ -37,56 +62,50 @@ function NavChrome({
       <div className="mx-auto flex h-full w-full max-w-[1600px] items-center justify-between gap-2 px-3 sm:px-6">
         {!isHome && (
           <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-6">
-            <Link
-              href="/"
-              className="inline-flex h-7 shrink-0 items-center gap-2 rounded-md text-xs font-medium leading-none tracking-tight text-ink transition-colors hover:text-accent-ink focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none sm:text-sm"
-            >
-              <Image
-                src="/images/better-otu-logo-light.svg"
-                alt=""
-                width={24}
-                height={24}
-                priority
-                className="block h-6 w-6 shrink-0 object-contain dark:hidden"
-              />
-              <Image
-                src="/images/better-otu-logo-dark.svg"
-                alt=""
-                width={24}
-                height={24}
-                priority
-                className="hidden h-6 w-6 shrink-0 object-contain dark:block"
-              />
-              <span>Better OTU</span>
-            </Link>
+            {isLoginPage ? (
+              <div className="inline-flex h-7 shrink-0 items-center gap-2 text-xs font-medium leading-none tracking-tight text-ink sm:text-sm">
+                {brandContent}
+              </div>
+            ) : (
+              <Link
+                href="/"
+                className="inline-flex h-7 shrink-0 items-center gap-2 rounded-md text-xs font-medium leading-none tracking-tight text-ink transition-colors hover:text-accent-ink focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none sm:text-sm"
+              >
+                {brandContent}
+              </Link>
+            )}
 
-            <nav
-              aria-label="Primary navigation"
-              className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-            >
-              {NAV_ITEMS.map((item) => {
-                const active =
-                  pathname !== null && isActivePath(pathname, item.href);
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    aria-current={active ? "page" : undefined}
-                    className={`inline-flex h-7 shrink-0 items-center rounded-md px-2 text-xs font-medium leading-none whitespace-nowrap transition-colors focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none sm:px-2.5 sm:text-[13px] ${
-                      active
-                        ? "bg-accent-soft text-accent-ink ring-1 ring-inset ring-accent-line"
-                        : "text-ink-secondary hover:bg-surface-subtle hover:text-ink"
-                    }`}
-                  >
-                    {item.label}
-                  </Link>
-                );
-              })}
-            </nav>
+            {!isLoginPage && (
+              <nav
+                aria-label="Primary navigation"
+                className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+              >
+                {NAV_ITEMS.map((item) => {
+                  const active =
+                    pathname !== null && isActivePath(pathname, item.href);
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      aria-current={active ? "page" : undefined}
+                      className={`inline-flex h-7 shrink-0 items-center rounded-md px-2 text-xs font-medium leading-none whitespace-nowrap transition-colors focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none sm:px-2.5 sm:text-[13px] ${
+                        active
+                          ? "bg-accent-soft text-accent-ink ring-1 ring-inset ring-accent-line"
+                          : "text-ink-secondary hover:bg-surface-subtle hover:text-ink"
+                      }`}
+                    >
+                      {item.label}
+                    </Link>
+                  );
+                })}
+              </nav>
+            )}
           </div>
         )}
 
-        <div className="ml-auto flex shrink-0 items-center">{rightSlot}</div>
+        {!isLoginPage && (
+          <div className="ml-auto flex shrink-0 items-center">{rightSlot}</div>
+        )}
       </div>
     </header>
   );

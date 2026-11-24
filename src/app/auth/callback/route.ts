@@ -1,6 +1,8 @@
+import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 
 import {
+  AUTH_NEXT_COOKIE_NAME,
   buildOnboardingCookieOptions,
   getSafeNextPath,
   hasResolvedOnboarding,
@@ -50,14 +52,28 @@ function buildLoginErrorRedirect(
   if (nextPath !== "/") {
     errorUrl.searchParams.set("next", nextPath);
   }
-  return NextResponse.redirect(errorUrl);
+  const response = NextResponse.redirect(errorUrl);
+  response.cookies.delete(AUTH_NEXT_COOKIE_NAME);
+  return response;
 }
 
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
   const oauthError = searchParams.get("error_description") ?? searchParams.get("error");
-  const nextPath = getSafeNextPath(searchParams.get("next"));
+  const cookieStore = await cookies();
+  const rawCookieNext = cookieStore.get(AUTH_NEXT_COOKIE_NAME)?.value;
+  let decodedCookieNext: string | undefined;
+  if (rawCookieNext) {
+    try {
+      decodedCookieNext = decodeURIComponent(rawCookieNext);
+    } catch {
+      decodedCookieNext = rawCookieNext;
+    }
+  }
+  const nextPath = getSafeNextPath(
+    searchParams.get("next") ?? decodedCookieNext,
+  );
 
   if (oauthError) {
     return buildLoginErrorRedirect(request, origin, oauthError, nextPath);
@@ -106,12 +122,14 @@ export async function GET(request: Request) {
       buildRedirectUrl(request, origin, onboardingPath),
     );
     response.cookies.delete(ONBOARDING_COOKIE_NAME);
+    response.cookies.delete(AUTH_NEXT_COOKIE_NAME);
     return response;
   }
 
   const response = NextResponse.redirect(
     buildRedirectUrl(request, origin, nextPath),
   );
+  response.cookies.delete(AUTH_NEXT_COOKIE_NAME);
   if (!profileError) {
     response.cookies.set(
       ONBOARDING_COOKIE_NAME,

@@ -120,6 +120,17 @@ export function sortMinorPrograms(
   });
 }
 
+function formatProgramTooltip(prog: ProgramSummary): string {
+  const details = [
+    prog.credential,
+    prog.degree_abbrev ?? prog.degree,
+    prog.faculty,
+  ].filter((part): part is string => Boolean(part && part.trim()));
+  return details.length > 0
+    ? `${prog.name} (${details.join(" · ")})`
+    : prog.name;
+}
+
 interface ProgramComboboxProps {
   options: ProgramSummary[];
   value: string | null;
@@ -311,6 +322,7 @@ export function ProgramCombobox({
           autoComplete="off"
           disabled={disabled}
           value={displayValue}
+          title={!isSearching && resolvedSelected ? formatProgramTooltip(resolvedSelected) : undefined}
           placeholder={placeholder}
           onFocus={openDropdown}
           onClick={openDropdown}
@@ -412,6 +424,7 @@ export function ProgramCombobox({
                   type="button"
                   role="option"
                   aria-selected={isSelected}
+                  title={formatProgramTooltip(prog)}
                   onMouseDown={(e) => {
                     e.preventDefault();
                     selectOption(prog);

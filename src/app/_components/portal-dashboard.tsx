@@ -684,7 +684,7 @@ export function PortalDashboard({
   };
 
   return (
-    <main className="relative flex min-h-[calc(100dvh-var(--site-nav-height,2.75rem))] flex-1 flex-col overflow-x-clip bg-canvas font-sans text-ink">
+    <main className="relative flex flex-1 flex-col overflow-x-clip bg-canvas font-sans text-ink">
       <div className="relative z-10 flex flex-1 flex-col">
         <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col px-6 pt-3 pb-8 sm:px-8 sm:pt-4 sm:pb-10">
           {/* Top Header: Brand Logo, Greeting & Academic Summary */}

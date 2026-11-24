@@ -1,6 +1,7 @@
 import { MAX_START_YEAR, MIN_START_YEAR } from "@/lib/degree-planner";
 
 export const ONBOARDING_COOKIE_NAME = "better_otu_onboarded";
+export const AUTH_NEXT_COOKIE_NAME = "better_otu_auth_next";
 
 export type YearOfStudy = 1 | 2 | 3 | 4;
 

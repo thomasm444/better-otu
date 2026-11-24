@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
@@ -42,25 +43,66 @@ export function LoginCard() {
   }
 
   return (
-    <div className="w-full max-w-md rounded-2xl border border-zinc-200/90 bg-white p-8 shadow-xl shadow-zinc-200/60 dark:border-zinc-800 dark:bg-zinc-900 dark:shadow-black/40">
+    <div className="w-full max-w-md rounded-2xl border border-line bg-surface p-7 shadow-[var(--shadow-md)] sm:p-8">
       {/* Brand / Header */}
-      <div className="mb-8 text-center">
-        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-blue-600 text-lg font-bold tracking-tight text-white shadow-sm">
-          OTU
+      <div className="mb-6 text-center">
+        <div className="mx-auto mb-3.5 flex justify-center">
+          <Image
+            src="/images/better-otu-logo-light.svg"
+            alt="Better OTU logo"
+            width={48}
+            height={48}
+            priority
+            className="block h-12 w-12 object-contain dark:hidden"
+          />
+          <Image
+            src="/images/better-otu-logo-dark.svg"
+            alt="Better OTU logo"
+            width={48}
+            height={48}
+            priority
+            className="hidden h-12 w-12 object-contain dark:block"
+          />
         </div>
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-100">
+        <h1 className="text-2xl font-semibold tracking-tight text-ink">
           Sign in to Better OTU
         </h1>
-        <p className="mt-1.5 text-sm text-zinc-500 dark:text-zinc-400">
-          Ontario Tech University Student Portal
+        <p className="mt-1.5 text-sm text-ink-muted">
+          Independent Ontario Tech Student Portal
         </p>
+      </div>
+
+      {/* Prominent Unofficial Project Disclaimer */}
+      <div
+        role="note"
+        className="mb-5 flex items-start gap-2.5 rounded-xl border border-accent-line bg-accent-soft px-3.5 py-2.5 text-left text-xs leading-relaxed text-ink-secondary"
+      >
+        <svg
+          className="mt-0.5 h-4 w-4 shrink-0 text-accent-ink"
+          viewBox="0 0 20 20"
+          fill="currentColor"
+          aria-hidden="true"
+        >
+          <path
+            fillRule="evenodd"
+            d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z"
+            clipRule="evenodd"
+          />
+        </svg>
+        <div>
+          <p className="font-semibold text-ink">Unofficial student project</p>
+          <p className="mt-0.5 text-ink-secondary">
+            Not affiliated with, sponsored by, or endorsed by Ontario Tech
+            University.
+          </p>
+        </div>
       </div>
 
       {/* Error Alert */}
       {errorMessage && (
         <div
           role="alert"
-          className="mb-6 flex items-start justify-between gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs leading-relaxed text-red-700 dark:border-red-900/50 dark:bg-red-950/50 dark:text-red-300"
+          className="mb-5 flex items-start justify-between gap-3 rounded-xl border border-danger-line bg-danger-soft px-4 py-3 text-xs leading-relaxed text-danger"
         >
           <span>{errorMessage}</span>
           <button
@@ -79,7 +121,7 @@ export function LoginCard() {
         type="button"
         onClick={handleGoogleSignIn}
         disabled={submitting}
-        className="flex w-full items-center justify-center gap-3 rounded-xl border border-zinc-300 bg-white px-4 py-3 text-sm font-medium text-zinc-900 shadow-xs transition-all hover:border-zinc-400 hover:bg-zinc-50 focus:ring-2 focus:ring-blue-500/30 focus:outline-none disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:hover:border-zinc-600 dark:hover:bg-zinc-800"
+        className="flex w-full items-center justify-center gap-3 rounded-xl border border-line bg-surface px-4 py-3 text-sm font-medium text-ink shadow-[var(--shadow-sm)] transition-colors hover:border-line-strong hover:bg-surface-subtle focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60"
       >
         <svg aria-hidden="true" className="h-5 w-5 shrink-0" viewBox="0 0 24 24">
           <path
@@ -107,19 +149,17 @@ export function LoginCard() {
       </button>
 
       {/* Info Divider */}
-      <div className="mt-6 border-t border-zinc-100 pt-5 text-center dark:border-zinc-800">
-        <p className="text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
+      <div className="mt-6 border-t border-line-subtle pt-5 text-center">
+        <p className="text-xs leading-relaxed text-ink-muted">
           Access is restricted to{" "}
-          <span className="font-medium text-zinc-700 dark:text-zinc-300">
-            @ontariotechu.net
-          </span>{" "}
+          <span className="font-medium text-ink">@ontariotechu.net</span>{" "}
           accounts. Your course schedules and degree plans are saved securely to
           your student profile.
         </p>
         <p className="mt-2.5">
           <Link
             href="/privacy-policy"
-            className="text-[11px] font-medium text-zinc-500 underline decoration-zinc-300 underline-offset-2 transition-colors hover:text-zinc-800 dark:text-zinc-400 dark:decoration-zinc-700 dark:hover:text-zinc-200"
+            className="text-[11px] font-medium text-ink-muted underline decoration-line-strong underline-offset-2 transition-colors hover:text-ink"
           >
             Privacy Policy
           </Link>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 
 import {
   mergeProgramsPreferringCatalogYear,
@@ -79,8 +79,6 @@ export function OnboardingFlow({
   const [submitting, setSubmitting] = useState(false);
   const [completed, setCompleted] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
-  const hasRedirectedRef = useRef(false);
 
   const programsById = useMemo(() => {
     const map = new Map<string, ProgramSummary>();
@@ -166,19 +164,13 @@ export function OnboardingFlow({
   useEffect(() => {
     if (!completed) return;
     const timer = window.setTimeout(() => {
-      hasRedirectedRef.current = true;
-      router.replace(nextPath);
-      router.refresh();
+      window.location.replace("/");
     }, 1450);
 
     return () => {
       window.clearTimeout(timer);
-      if (hasRedirectedRef.current) {
-        hasRedirectedRef.current = false;
-        queueMicrotask(() => setCompleted(false));
-      }
     };
-  }, [completed, nextPath, router]);
+  }, [completed]);
 
   function handleSelectYear(nextYear: YearOfStudy) {
     const toggledYear = yearOfStudy === nextYear ? null : nextYear;
