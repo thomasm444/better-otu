@@ -5,8 +5,16 @@ import Image from "next/image";
 import Link from "next/link";
 import React, { useEffect, useState } from "react";
 
-import { ClassicPortalView } from "@/app/_components/classic-portal-view";
+import {
+  ClassicPortalView,
+  type MiniScheduleBlock,
+} from "@/app/_components/classic-portal-view";
 import { StackedPortalView } from "@/app/_components/stacked-portal-view";
+import {
+  COURSE_COLOR_PALETTE,
+  type ColorTheme,
+  type ScheduleBlock,
+} from "@/app/course-schedules/types";
 import {
   GoogleLogoIcon,
   GoogleShortcutsModal,
@@ -126,6 +134,50 @@ function normalizeUrl(raw: string): string {
   return `https://${trimmed}`;
 }
 
+const WEEKDAY_KEY_TO_INDEX: Record<string, 1 | 2 | 3 | 4 | 5> = {
+  monday: 1,
+  tuesday: 2,
+  wednesday: 3,
+  thursday: 4,
+  friday: 5,
+};
+
+function parseMeetingTimeToMinutes(raw: string | null | undefined): number | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  if (trimmed.includes(":")) {
+    const [hStr, mStr] = trimmed.split(":");
+    const h = Number(hStr);
+    const m = Number(mStr);
+    if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+    return h * 60 + m;
+  }
+  const digits = trimmed.replace(/\D/g, "");
+  if (digits.length === 4) {
+    const h = Number(digits.slice(0, 2));
+    const m = Number(digits.slice(2, 4));
+    if (Number.isFinite(h) && Number.isFinite(m)) return h * 60 + m;
+  }
+  return null;
+}
+
+type MiniCourseMeetingRow = {
+  begin_time: string | null;
+  end_time: string | null;
+  monday: boolean;
+  tuesday: boolean;
+  wednesday: boolean;
+  thursday: boolean;
+  friday: boolean;
+};
+
+type MiniCourseWithMeetingsRow = {
+  crn: string;
+  subject: string | null;
+  course_number: string | null;
+  course_meetings: MiniCourseMeetingRow[] | null;
+};
+
 function computeDegreeProgress(
   plan: DegreePlanRecord | null,
   nonStandardCredits?: Record<string, number>,
@@ -177,11 +229,12 @@ export function PortalDashboard({
   const [firstName, setFirstName] = useState<string | null>(null);
   const [profile, setProfile] = useState<StudentProfileWithPrograms | null>(null);
   const [academicStartYear, setAcademicStartYear] = useState<number>(DEFAULT_START_YEAR);
-  const [savedCourseCodes, setSavedCourseCodes] = useState<string[]>([]);
+  const [miniScheduleBlocks, setMiniScheduleBlocks] = useState<MiniScheduleBlock[]>([]);
   const [latestPlan, setLatestPlan] = useState<DegreePlanRecord | null>(null);
 
   // Live Toronto clock & available rooms shared between Campus Map card and Campus Pulse
   const [liveTimeLabel, setLiveTimeLabel] = useState<string | null>(null);
+  const [todayDayIndex, setTodayDayIndex] = useState<number | null>(null);
   const [freeRoomsTotal, setFreeRoomsTotal] = useState<number | null>(null);
 
   // Custom shortcuts & Google Workspace shortcuts
@@ -229,6 +282,7 @@ export function PortalDashboard({
     const updateClock = () => {
       const { date, minutes } = getTorontoNowParts(new Date());
       const dayIdx = getDayOfWeekMon1(date);
+      setTodayDayIndex(dayIdx);
       setLiveTimeLabel(
         `${DAY_SHORT[dayIdx]}, ${formatShortIsoDate(date)} · ${formatMinutesToClock(minutes)}`,
       );
@@ -250,19 +304,119 @@ export function PortalDashboard({
     const supabase = createClient();
     let active = true;
 
+    const resolveF2026MiniBlocks = async (
+      crnToMeta: Map<string, { courseCode: string; color: ColorTheme }>,
+      customBlocks: ScheduleBlock[],
+    ): Promise<MiniScheduleBlock[]> => {
+      const blocks: MiniScheduleBlock[] = [];
+      const seen = new Set<string>();
+
+      for (const cb of customBlocks) {
+        const dayIndex = WEEKDAY_KEY_TO_INDEX[cb.day];
+        if (!dayIndex) continue;
+        const startMinutes = parseMeetingTimeToMinutes(cb.startTime);
+        const endMinutes = parseMeetingTimeToMinutes(cb.endTime);
+        if (
+          startMinutes === null ||
+          endMinutes === null ||
+          endMinutes <= startMinutes
+        ) {
+          continue;
+        }
+        const key = `${dayIndex}-${startMinutes}-${endMinutes}-${cb.courseCode}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        blocks.push({
+          id: cb.id || key,
+          dayIndex,
+          startMinutes,
+          endMinutes,
+          color: cb.color ?? "blue",
+          courseCode: cb.courseCode,
+        });
+      }
+
+      const crns = Array.from(crnToMeta.keys());
+      if (crns.length > 0) {
+        const { data } = await supabase
+          .from("courses")
+          .select(
+            "crn, subject, course_number, course_meetings(begin_time, end_time, monday, tuesday, wednesday, thursday, friday)",
+          )
+          .eq("term", "202609")
+          .in("crn", crns);
+
+        const rows = (data ?? []) as MiniCourseWithMeetingsRow[];
+        for (const row of rows) {
+          const meta = crnToMeta.get(row.crn);
+          if (!meta) continue;
+          const meetings = row.course_meetings ?? [];
+          for (const m of meetings) {
+            const startMinutes = parseMeetingTimeToMinutes(m.begin_time);
+            const endMinutes = parseMeetingTimeToMinutes(m.end_time);
+            if (
+              startMinutes === null ||
+              endMinutes === null ||
+              endMinutes <= startMinutes
+            ) {
+              continue;
+            }
+            const activeDays: Array<1 | 2 | 3 | 4 | 5> = [];
+            if (m.monday) activeDays.push(1);
+            if (m.tuesday) activeDays.push(2);
+            if (m.wednesday) activeDays.push(3);
+            if (m.thursday) activeDays.push(4);
+            if (m.friday) activeDays.push(5);
+
+            for (const dayIndex of activeDays) {
+              const key = `${dayIndex}-${startMinutes}-${endMinutes}-${meta.courseCode}`;
+              if (seen.has(key)) continue;
+              seen.add(key);
+              blocks.push({
+                id: `${row.crn}-${dayIndex}-${startMinutes}`,
+                dayIndex,
+                startMinutes,
+                endMinutes,
+                color: meta.color,
+                courseCode: meta.courseCode,
+              });
+            }
+          }
+        }
+      }
+
+      return blocks;
+    };
+
     const loadUserData = async (user: User | null) => {
       if (!active) return;
       setFirstName(extractFirstName(user));
 
-      const localFallback =
-        loadLocalTermSchedule("202609")?.plannedCourses
-          .map((p) => p.courseCode)
-          .filter(Boolean) ?? [];
+      const localSchedule = loadLocalTermSchedule("202609");
+      const localCrnMap = new Map<
+        string,
+        { courseCode: string; color: ColorTheme }
+      >();
+      for (const [idx, entry] of (localSchedule?.plannedCourses ?? []).entries()) {
+        const color =
+          entry.color ?? COURSE_COLOR_PALETTE[idx % COURSE_COLOR_PALETTE.length];
+        for (const crn of Object.values(entry.selectedCrns ?? {})) {
+          const trimmed = crn?.trim();
+          if (trimmed) {
+            localCrnMap.set(trimmed, { courseCode: entry.courseCode, color });
+          }
+        }
+      }
+      const localCustomBlocks = localSchedule?.customBlocks ?? [];
 
       if (!user) {
         setProfile(null);
-        setSavedCourseCodes(localFallback);
         setLatestPlan(null);
+        const blocks = await resolveF2026MiniBlocks(
+          localCrnMap,
+          localCustomBlocks,
+        );
+        if (active) setMiniScheduleBlocks(blocks);
         return;
       }
 
@@ -273,22 +427,56 @@ export function PortalDashboard({
       ]);
 
       if (!active) return;
+      let crnMapToLoad = localCrnMap;
+      let customBlocksToLoad = localCustomBlocks;
+
       if (coursesRes.status === "fulfilled") {
-        const codes = Array.from(
-          new Set(
-            coursesRes.value
-              .map((c) => c.course_code)
-              .filter(
-                (code) =>
-                  Boolean(code) &&
-                  code !== "__BLOCKED__" &&
-                  code !== "__CUSTOM__",
-              ),
-          ),
+        const dbF2026Rows = coursesRes.value.filter(
+          (row) => row.semester === "202609" && row.status !== "dropped",
         );
-        setSavedCourseCodes(codes.length > 0 ? codes : localFallback);
-      } else {
-        setSavedCourseCodes(localFallback);
+        if (dbF2026Rows.length > 0) {
+          const dbCrnMap = new Map<
+            string,
+            { courseCode: string; color: ColorTheme }
+          >();
+          let dbCustomBlocks: ScheduleBlock[] = [];
+          let colorIdx = 0;
+
+          for (const row of dbF2026Rows) {
+            if (row.course_code === "__BLOCKED__") continue;
+            if (row.course_code === "__CUSTOM__") {
+              if (row.selected_crn) {
+                try {
+                  const parsed = JSON.parse(row.selected_crn);
+                  if (Array.isArray(parsed)) {
+                    dbCustomBlocks = parsed as ScheduleBlock[];
+                  }
+                } catch {
+                  // Ignore malformed custom blocks JSON
+                }
+              }
+              continue;
+            }
+            const color =
+              COURSE_COLOR_PALETTE[colorIdx % COURSE_COLOR_PALETTE.length];
+            colorIdx++;
+            const crns = (row.selected_crn ?? "")
+              .split(",")
+              .map((s) => s.trim())
+              .filter(Boolean);
+            for (const crn of crns) {
+              dbCrnMap.set(crn, {
+                courseCode: row.course_code.trim().toUpperCase(),
+                color,
+              });
+            }
+          }
+
+          if (dbCrnMap.size > 0 || dbCustomBlocks.length > 0) {
+            crnMapToLoad = dbCrnMap;
+            customBlocksToLoad = dbCustomBlocks;
+          }
+        }
       }
 
       const loadedProfile =
@@ -306,6 +494,12 @@ export function PortalDashboard({
           : undefined;
         setLatestPlan(profilePlan ?? allPlans[0] ?? null);
       }
+
+      const blocks = await resolveF2026MiniBlocks(
+        crnMapToLoad,
+        customBlocksToLoad,
+      );
+      if (active) setMiniScheduleBlocks(blocks);
     };
 
     supabase.auth.getUser().then(({ data }) => {
@@ -455,7 +649,6 @@ export function PortalDashboard({
   }, []);
 
   const degreeProgress = computeDegreeProgress(latestPlan, nonStandardCredits);
-  const visibleCourseCodes = savedCourseCodes.slice(0, 4);
   const yearLabel = formatYearOfStudy(profile?.year_of_study);
   const profileDegreeName = profile?.degree_program?.name ?? null;
   const profileMinorName =
@@ -477,6 +670,8 @@ export function PortalDashboard({
     degreeProgress,
     latestPlan,
     liveTimeLabel,
+    todayDayIndex,
+    miniScheduleBlocks,
     freeRoomsTotal,
     quickBuildings: QUICK_BUILDINGS,
     defaultShortcuts: DEFAULT_SHORTCUTS,

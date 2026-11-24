@@ -112,7 +112,7 @@ export function AuthButton({
                 type="button"
                 onClick={() => setProfileOpen(true)}
                 aria-expanded={profileOpen}
-                className={`whitespace-nowrap rounded-md border px-2 py-1 text-xs font-medium transition-colors focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none ${
+                className={`inline-flex h-7 cursor-pointer items-center whitespace-nowrap rounded-md border px-2 text-xs font-medium leading-none transition-colors focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none ${
                   profileOpen || isProfileActive
                     ? "border-accent-line bg-accent-soft text-accent-ink"
                     : "border-line bg-surface text-ink-secondary hover:bg-surface-subtle hover:text-ink"
@@ -124,7 +124,7 @@ export function AuthButton({
                 type="button"
                 onClick={handleSignOut}
                 disabled={submitting}
-                className="whitespace-nowrap rounded-md border border-line bg-surface px-2 py-1 text-xs font-medium text-ink-secondary transition-colors hover:bg-surface-subtle hover:text-ink focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none disabled:opacity-50"
+                className="inline-flex h-7 cursor-pointer items-center whitespace-nowrap rounded-md border border-line bg-surface px-2 text-xs font-medium leading-none text-ink-secondary transition-colors hover:bg-surface-subtle hover:text-ink focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none disabled:opacity-50"
               >
                 {submitting ? "Signing out..." : "Sign out"}
               </button>

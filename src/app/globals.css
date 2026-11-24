@@ -151,6 +151,11 @@ html.dark {
   color-scheme: dark;
 }
 
+html {
+  scrollbar-gutter: stable;
+  overflow-y: scroll;
+}
+
 body {
   background: var(--bg-canvas);
   color: var(--text-primary);

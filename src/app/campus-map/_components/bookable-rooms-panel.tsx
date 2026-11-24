@@ -4,7 +4,9 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import type { CampusMapData, CampusMapFeature } from "@/lib/queries";
 import {
   formatMinutesShort,
+  getFeatureCampus,
   getRoomDisplayCode,
+  type CampusSwitchKey,
   type RoomStatus,
 } from "../utils";
 
@@ -22,6 +24,7 @@ interface BookableRoomEntry {
 interface BookableRoomsPanelProps {
   isOpen: boolean;
   data: CampusMapData | null;
+  activeCampus: CampusSwitchKey;
   currentDay: number;
   currentSlotStart: number;
   currentDuration: number;
@@ -47,6 +50,7 @@ function formatCapacity(minCapacity: number | null | undefined, capacity: number
 export function BookableRoomsPanel({
   isOpen,
   data,
+  activeCampus,
   currentDay,
   currentSlotStart,
   currentDuration,
@@ -56,6 +60,8 @@ export function BookableRoomsPanel({
 }: BookableRoomsPanelProps) {
   const [onlyFree, setOnlyFree] = useState(true);
   const onCloseRef = useRef(onClose);
+  const campusLabel =
+    activeCampus === "downtown" ? "Downtown Oshawa" : "North Campus";
 
   useEffect(() => {
     onCloseRef.current = onClose;
@@ -79,6 +85,9 @@ export function BookableRoomsPanel({
 
     for (const feature of data.features) {
       if (!feature.geometry || (feature.geometry.type as string) === "Point") {
+        continue;
+      }
+      if (getFeatureCampus(feature) !== activeCampus) {
         continue;
       }
       const p = feature.properties;
@@ -160,7 +169,7 @@ export function BookableRoomsPanel({
         a.roomCode.localeCompare(b.roomCode, "en", { numeric: true }),
     );
     return list;
-  }, [isOpen, data, currentDay, currentSlotStart, currentDuration, getRoomStatus]);
+  }, [isOpen, data, activeCampus, currentDay, currentSlotStart, currentDuration, getRoomStatus]);
 
   const totalCount = entries.length;
   const freeCount = useMemo(
@@ -188,7 +197,7 @@ export function BookableRoomsPanel({
             Bookable Rooms
           </h2>
           <p className="text-[11px] font-medium tabular-nums text-ink-muted">
-            {freeCount} free now &middot; {totalCount} total
+            {campusLabel} &middot; {freeCount} free now &middot; {totalCount} total
           </p>
         </div>
 
@@ -234,7 +243,9 @@ export function BookableRoomsPanel({
       <div className="flex-1 overflow-y-auto">
         {filteredEntries.length === 0 ? (
           <div className="px-4 py-6 text-center text-xs text-ink-muted">
-            No free bookable rooms for this time window.
+            {totalCount === 0
+              ? `No bookable rooms listed for ${campusLabel}.`
+              : `No free bookable rooms in ${campusLabel} for this time window.`}
           </div>
         ) : (
           <ul className="divide-y divide-line-subtle">

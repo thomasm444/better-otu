@@ -6,6 +6,7 @@ import {
   GoogleMeetIcon,
   GoogleServiceIcon,
 } from "@/app/_components/google-shortcuts-modal";
+import type { ColorTheme } from "@/app/course-schedules/types";
 import type { DegreePlanRecord } from "@/lib/degree-plan-storage";
 import {
   GOOGLE_SERVICES,
@@ -38,6 +39,15 @@ export interface DegreeProgressSummary {
   percent: number;
 }
 
+export interface MiniScheduleBlock {
+  id: string;
+  dayIndex: 1 | 2 | 3 | 4 | 5;
+  startMinutes: number;
+  endMinutes: number;
+  color: ColorTheme;
+  courseCode: string;
+}
+
 interface ClassicPortalViewProps {
   termLabel: string;
   profile: StudentProfileWithPrograms | null;
@@ -47,6 +57,8 @@ interface ClassicPortalViewProps {
   degreeProgress: DegreeProgressSummary | null;
   latestPlan: DegreePlanRecord | null;
   liveTimeLabel: string | null;
+  todayDayIndex: number | null;
+  miniScheduleBlocks: MiniScheduleBlock[];
   freeRoomsTotal: number | null;
   quickBuildings: readonly string[];
   defaultShortcuts: readonly DefaultShortcutItem[];
@@ -66,17 +78,137 @@ const SHORTCUT_RING_CLASSES: Record<ShortcutTone, string> = {
   blue: "border-line",
 };
 
-const SCHEDULE_TERM_LINKS = [
-  { code: "202609", label: "Fall 2026", shortLabel: "F2026" },
-  { code: "202701", label: "Winter 2027", shortLabel: "W2027" },
-  { code: "202705", label: "Spring/Summer 2027", shortLabel: "S2027" },
-] as const;
+const MINI_WEEKDAYS: ReadonlyArray<{ index: 1 | 2 | 3 | 4 | 5; label: string }> = [
+  { index: 1, label: "Mon" },
+  { index: 2, label: "Tue" },
+  { index: 3, label: "Wed" },
+  { index: 4, label: "Thu" },
+  { index: 5, label: "Fri" },
+];
 
-const CAMPUS_VENUE_LINKS = [
-  { key: "north", label: "North" },
-  { key: "downtown", label: "Downtown" },
-  { key: "whitby", label: "Whitby" },
-] as const;
+const MINI_BLOCK_COLOR_CLASSES: Record<ColorTheme, string> = {
+  blue: "bg-accent/85 dark:bg-accent/80",
+  emerald: "bg-positive/85 dark:bg-positive/80",
+  purple: "bg-violet-500/80 dark:bg-violet-400/80",
+  amber: "bg-amber-500/80 dark:bg-amber-400/80",
+  indigo: "bg-indigo-500/80 dark:bg-indigo-400/80",
+  cyan: "bg-cyan-500/85 dark:bg-cyan-400/80",
+  teal: "bg-teal-500/85 dark:bg-teal-400/80",
+  orange: "bg-orange-500/80 dark:bg-orange-400/80",
+  rose: "bg-rose-500/80 dark:bg-rose-400/80",
+};
+
+const FALLBACK_PREVIEW_BLOCKS: ReadonlyArray<{
+  id: string;
+  dayIndex: 1 | 2 | 3 | 4 | 5;
+  topPct: number;
+  heightPct: number;
+  toneClass: string;
+}> = [
+  { id: "p-m1", dayIndex: 1, topPct: 12, heightPct: 24, toneClass: "bg-accent/30" },
+  { id: "p-m2", dayIndex: 1, topPct: 50, heightPct: 22, toneClass: "bg-positive/30" },
+  { id: "p-t1", dayIndex: 2, topPct: 24, heightPct: 28, toneClass: "bg-secondary-brand/35" },
+  { id: "p-w1", dayIndex: 3, topPct: 12, heightPct: 24, toneClass: "bg-accent/30" },
+  { id: "p-w2", dayIndex: 3, topPct: 56, heightPct: 26, toneClass: "bg-accent/22" },
+  { id: "p-th1", dayIndex: 4, topPct: 24, heightPct: 28, toneClass: "bg-secondary-brand/35" },
+  { id: "p-th2", dayIndex: 4, topPct: 62, heightPct: 20, toneClass: "bg-positive/30" },
+  { id: "p-f1", dayIndex: 5, topPct: 18, heightPct: 26, toneClass: "bg-accent/30" },
+];
+
+const TIMELINE_START_MINUTES = 8 * 60; // 8:00 AM
+const TIMELINE_SPAN_MINUTES = 12 * 60; // 8:00 AM – 8:00 PM
+
+function MiniScheduleCalendarPreview({
+  blocks,
+  todayDayIndex,
+}: {
+  blocks: MiniScheduleBlock[];
+  todayDayIndex: number | null;
+}) {
+  const hasRealSchedule = blocks.length > 0;
+
+  return (
+    <div
+      aria-hidden="true"
+      className="pointer-events-none relative mt-4 h-[76px] w-full overflow-hidden rounded-xl border border-line-subtle bg-surface-subtle p-1.5 select-none"
+    >
+      <div className="grid h-full grid-cols-5 gap-1">
+        {MINI_WEEKDAYS.map((day) => {
+          const isToday = todayDayIndex === day.index;
+          const dayBlocks = hasRealSchedule
+            ? blocks.filter((b) => b.dayIndex === day.index)
+            : [];
+          const fallbackBlocks = hasRealSchedule
+            ? []
+            : FALLBACK_PREVIEW_BLOCKS.filter((b) => b.dayIndex === day.index);
+
+          return (
+            <div
+              key={day.index}
+              className={`flex min-w-0 flex-col rounded-lg px-1 py-0.5 transition-colors ${
+                isToday
+                  ? "bg-accent-soft ring-1 ring-accent-line"
+                  : "bg-surface/55 dark:bg-surface/35"
+              }`}
+            >
+              <div className="flex items-center justify-center gap-0.5 leading-none">
+                <span
+                  className={`text-[9.5px] font-medium tracking-tight ${
+                    isToday ? "font-semibold text-accent-ink" : "text-ink-muted"
+                  }`}
+                >
+                  {day.label}
+                </span>
+                {isToday && (
+                  <span className="h-1 w-1 shrink-0 rounded-full bg-accent" />
+                )}
+              </div>
+
+              <div className="relative mt-1 flex-1 overflow-hidden rounded-[4px]">
+                {hasRealSchedule
+                  ? dayBlocks.map((block) => {
+                      const rawTop =
+                        ((block.startMinutes - TIMELINE_START_MINUTES) /
+                          TIMELINE_SPAN_MINUTES) *
+                        100;
+                      const rawHeight =
+                        ((block.endMinutes - block.startMinutes) /
+                          TIMELINE_SPAN_MINUTES) *
+                        100;
+                      const topPct = Math.max(2, Math.min(82, rawTop));
+                      const heightPct = Math.max(
+                        16,
+                        Math.min(100 - topPct - 2, rawHeight),
+                      );
+                      return (
+                        <span
+                          key={block.id}
+                          style={{
+                            top: `${topPct}%`,
+                            height: `${heightPct}%`,
+                          }}
+                          className={`absolute inset-x-0.5 rounded-[3px] ${MINI_BLOCK_COLOR_CLASSES[block.color]}`}
+                        />
+                      );
+                    })
+                  : fallbackBlocks.map((block) => (
+                      <span
+                        key={block.id}
+                        style={{
+                          top: `${block.topPct}%`,
+                          height: `${block.heightPct}%`,
+                        }}
+                        className={`absolute inset-x-0.5 rounded-[3px] ${block.toneClass}`}
+                      />
+                    ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 interface ShortcutEntry {
   id: string;
@@ -120,6 +252,205 @@ function ArrowRightIcon({ className = "h-4 w-4" }: { className?: string }) {
   );
 }
 
+function CampusMiniMapPreview() {
+  return (
+    <div
+      aria-hidden="true"
+      className="pointer-events-none relative mt-4 h-[76px] w-full overflow-hidden rounded-xl border border-line-subtle bg-surface-subtle select-none"
+    >
+      <svg
+        viewBox="0 0 320 100"
+        preserveAspectRatio="xMidYMid slice"
+        className="h-full w-full transition-transform duration-500 ease-[var(--ease-standard)] group-hover:scale-[1.04]"
+      >
+        {/* Subtle campus grounds & greenspaces (Polonsky Commons + perimeter lawns) */}
+        <rect width="320" height="100" className="fill-surface-subtle" />
+        <path
+          d="M 10 14 Q 68 8 92 42 Q 100 68 78 92 L 10 92 Z"
+          className="fill-positive/[0.08] dark:fill-positive/[0.09]"
+        />
+        <ellipse
+          cx="176"
+          cy="52"
+          rx="42"
+          ry="21"
+          className="fill-positive/[0.13] dark:fill-positive/[0.14]"
+        />
+        <path
+          d="M 276 18 L 318 18 L 318 92 L 276 92 Z"
+          className="fill-positive/[0.06] dark:fill-positive/[0.07]"
+        />
+
+        {/* Road casing (outer hairline) */}
+        <g
+          fill="none"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="stroke-line"
+        >
+          <path d="M 0 14 L 320 14" strokeWidth="7" />
+          <path d="M 268 0 L 268 100" strokeWidth="8" />
+          <path
+            d="M 268 25 L 184 25 C 122 25 94 36 94 56 C 94 76 122 86 184 86 L 268 86"
+            strokeWidth="5.5"
+          />
+          <path d="M 94 56 L 0 56" strokeWidth="4.5" />
+        </g>
+
+        {/* Road surface (Simcoe St N, Conlin Rd W, Founders Dr loop) */}
+        <g
+          fill="none"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          className="stroke-surface dark:stroke-[#1d2a3d]"
+        >
+          <path d="M 0 14 L 320 14" strokeWidth="5.5" />
+          <path d="M 268 0 L 268 100" strokeWidth="6.5" />
+          <path
+            d="M 268 25 L 184 25 C 122 25 94 36 94 56 C 94 76 122 86 184 86 L 268 86"
+            strokeWidth="4"
+          />
+          <path d="M 94 56 L 0 56" strokeWidth="3" />
+        </g>
+
+        {/* Inner campus walkways across Polonsky Commons */}
+        <g
+          fill="none"
+          strokeDasharray="2 3"
+          className="stroke-line-strong/60"
+          strokeWidth="1"
+        >
+          <path d="M 146 38 Q 176 52 210 42" />
+          <path d="M 150 67 Q 180 54 214 66" />
+          <path d="M 176 31 L 176 74" />
+        </g>
+
+        {/* North Campus building footprints */}
+        {/* SIR (west) */}
+        <rect
+          x="52"
+          y="30"
+          width="32"
+          height="18"
+          rx="3"
+          className="fill-surface stroke-line-strong/75 dark:fill-[#1d2b3e]"
+          strokeWidth="1"
+        />
+        {/* SCI (north-west of quad) */}
+        <rect
+          x="114"
+          y="30"
+          width="34"
+          height="16"
+          rx="3"
+          className="fill-positive-soft stroke-positive-line"
+          strokeWidth="1"
+        />
+        {/* ERC (north-center) */}
+        <rect
+          x="156"
+          y="29"
+          width="34"
+          height="15"
+          rx="3"
+          className="fill-surface stroke-line-strong/75 dark:fill-[#1d2b3e]"
+          strokeWidth="1"
+        />
+        {/* SHA (north-east) */}
+        <rect
+          x="200"
+          y="30"
+          width="42"
+          height="16"
+          rx="3"
+          className="fill-positive-soft stroke-positive-line"
+          strokeWidth="1"
+        />
+        {/* LIB (center-south, rounded library wing) */}
+        <rect
+          x="162"
+          y="58"
+          width="34"
+          height="19"
+          rx="4.5"
+          className="fill-positive-soft stroke-positive-line"
+          strokeWidth="1"
+        />
+        {/* BIT / UA (south-west) */}
+        <rect
+          x="114"
+          y="60"
+          width="38"
+          height="17"
+          rx="3"
+          className="fill-surface stroke-line-strong/75 dark:fill-[#1d2b3e]"
+          strokeWidth="1"
+        />
+        {/* ENG (south-east) */}
+        <rect
+          x="206"
+          y="58"
+          width="38"
+          height="19"
+          rx="3"
+          className="fill-surface stroke-line-strong/75 dark:fill-[#1d2b3e]"
+          strokeWidth="1"
+        />
+        {/* East-side Simcoe Hall / U5 */}
+        <rect
+          x="282"
+          y="34"
+          width="24"
+          height="26"
+          rx="3"
+          className="fill-surface stroke-line-strong/60 dark:fill-[#1d2b3e]"
+          strokeWidth="1"
+        />
+
+        {/* Subtle building code labels */}
+        <g className="fill-ink-muted font-mono text-[6.5px] font-semibold">
+          <text x="131" y="40.5" textAnchor="middle">
+            SCI
+          </text>
+          <text x="173" y="39" textAnchor="middle">
+            ERC
+          </text>
+          <text x="221" y="40.5" textAnchor="middle">
+            SHA
+          </text>
+          <text x="179" y="70" textAnchor="middle">
+            LIB
+          </text>
+          <text x="225" y="70" textAnchor="middle">
+            ENG
+          </text>
+        </g>
+
+        {/* Live free-room availability indicators */}
+        <g>
+          <circle cx="145" cy="33" r="4.5" className="fill-positive/20" />
+          <circle cx="145" cy="33" r="2.2" className="fill-positive" />
+
+          <circle cx="239" cy="33" r="4.5" className="fill-positive/20" />
+          <circle cx="239" cy="33" r="2.2" className="fill-positive" />
+
+          <circle cx="193" cy="61" r="5" className="fill-positive/25" />
+          <circle cx="193" cy="61" r="2.4" className="fill-positive" />
+        </g>
+      </svg>
+
+      {/* Subtle campus overlay badge */}
+      <div className="absolute bottom-1.5 left-2 inline-flex items-center gap-1 rounded-md border border-line/75 bg-surface/88 px-2 py-0.5 text-[10px] font-medium text-ink-secondary shadow-[var(--shadow-sm)] backdrop-blur-[2px]">
+        <span>North</span>
+        <span className="opacity-45">&bull;</span>
+        <span>Downtown</span>
+        <span className="opacity-45">&bull;</span>
+        <span>Whitby</span>
+      </div>
+    </div>
+  );
+}
+
 export function ClassicPortalView({
   termLabel,
   profile,
@@ -129,6 +460,8 @@ export function ClassicPortalView({
   degreeProgress,
   latestPlan,
   liveTimeLabel,
+  todayDayIndex,
+  miniScheduleBlocks,
   freeRoomsTotal,
   quickBuildings,
   defaultShortcuts,
@@ -220,7 +553,10 @@ export function ClassicPortalView({
         className="grid grid-cols-1 gap-4 md:grid-cols-3"
       >
         {/* 1. Course Schedules Card */}
-        <div className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-line bg-surface p-5 shadow-[var(--shadow-sm)] transition-all duration-300 ease-[var(--ease-standard)] will-change-transform hover:-translate-y-2 hover:scale-[1.02] hover:border-accent-line hover:ring-2 hover:ring-accent/15 hover:shadow-[var(--shadow-lg)]">
+        <Link
+          href="/course-schedules"
+          className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-line bg-surface p-5 shadow-[var(--shadow-sm)] transition-all duration-300 ease-[var(--ease-standard)] will-change-transform hover:-translate-y-2 hover:scale-[1.02] hover:border-accent-line hover:ring-2 hover:ring-accent/15 hover:shadow-[var(--shadow-lg)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        >
           <div
             aria-hidden="true"
             className="pointer-events-none absolute inset-0 bg-gradient-to-br from-accent/[0.07] via-transparent to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100"
@@ -257,46 +593,24 @@ export function ClassicPortalView({
             </div>
 
             <div className="mt-4 flex items-center justify-between gap-2">
-              <Link
-                href="/course-schedules"
-                className="rounded-md after:absolute after:inset-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-              >
-                <h2 className="text-base font-semibold tracking-tight text-ink transition-colors group-hover:text-accent-ink">
-                  Course Schedules
-                </h2>
-              </Link>
+              <h2 className="text-base font-semibold tracking-tight text-ink transition-colors group-hover:text-accent-ink">
+                Course Schedules
+              </h2>
               <ArrowRightIcon className="h-4 w-4 text-ink-muted transition-all duration-300 group-hover:translate-x-1.5 group-hover:text-accent-ink" />
             </div>
           </div>
 
-          <div className="relative mt-4 rounded-xl bg-surface-subtle p-3">
-            <div className="flex items-center justify-between gap-2 text-xs text-ink-muted">
-              <span>Schedules</span>
-            </div>
-            <div className="relative z-10 mt-2 flex items-center gap-1.5">
-              {SCHEDULE_TERM_LINKS.map((term) => {
-                const isActive = term.label === termLabel;
-                return (
-                  <Link
-                    key={term.code}
-                    href={`/course-schedules?term=${term.code}`}
-                    title={term.label}
-                    className={`whitespace-nowrap rounded-md border px-2 py-0.5 font-mono text-xs font-medium transition-all duration-200 hover:-translate-y-0.5 hover:scale-105 hover:shadow-[var(--shadow-sm)] ${
-                      isActive
-                        ? "border-accent-line bg-accent-soft text-accent-ink hover:bg-accent hover:text-accent-fg"
-                        : "border-line bg-surface text-ink-secondary hover:border-accent-line hover:text-ink"
-                    }`}
-                  >
-                    {term.shortLabel}
-                  </Link>
-                );
-              })}
-            </div>
-          </div>
-        </div>
+          <MiniScheduleCalendarPreview
+            blocks={miniScheduleBlocks}
+            todayDayIndex={todayDayIndex}
+          />
+        </Link>
 
         {/* 2. Campus Map Card */}
-        <div className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-line bg-surface p-5 shadow-[var(--shadow-sm)] transition-all duration-300 ease-[var(--ease-standard)] will-change-transform hover:-translate-y-2 hover:scale-[1.02] hover:border-positive-line hover:ring-2 hover:ring-positive/15 hover:shadow-[var(--shadow-lg)]">
+        <Link
+          href="/campus-map"
+          className="group relative flex flex-col justify-between overflow-hidden rounded-2xl border border-line bg-surface p-5 shadow-[var(--shadow-sm)] transition-all duration-300 ease-[var(--ease-standard)] will-change-transform hover:-translate-y-2 hover:scale-[1.02] hover:border-positive-line hover:ring-2 hover:ring-positive/15 hover:shadow-[var(--shadow-lg)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        >
           <div
             aria-hidden="true"
             className="pointer-events-none absolute inset-0 bg-gradient-to-br from-positive/[0.07] via-transparent to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100"
@@ -330,38 +644,15 @@ export function ClassicPortalView({
             </div>
 
             <div className="mt-4 flex items-center justify-between gap-2">
-              <Link
-                href="/campus-map?venue=north"
-                className="rounded-md after:absolute after:inset-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-              >
-                <h2 className="text-base font-semibold tracking-tight text-ink transition-colors group-hover:text-positive">
-                  Campus Map
-                </h2>
-              </Link>
+              <h2 className="text-base font-semibold tracking-tight text-ink transition-colors group-hover:text-positive">
+                Campus Map
+              </h2>
               <ArrowRightIcon className="h-4 w-4 text-ink-muted transition-all duration-300 group-hover:translate-x-1.5 group-hover:text-positive" />
             </div>
           </div>
 
-          <div className="relative mt-4 rounded-xl bg-surface-subtle p-3">
-            <div className="flex items-center justify-between gap-2 text-xs text-ink-muted">
-              <span>Campuses</span>
-              <span className="font-mono text-[11px] tabular-nums text-ink-secondary">
-                {liveTimeLabel ?? "B – Fl 4"}
-              </span>
-            </div>
-            <div className="relative z-10 mt-2 flex flex-wrap items-center gap-1.5">
-              {CAMPUS_VENUE_LINKS.map((venue) => (
-                <Link
-                  key={venue.key}
-                  href={`/campus-map?venue=${venue.key}`}
-                  className="rounded-md border border-line bg-surface px-2 py-0.5 text-xs font-medium text-ink-secondary transition-all duration-200 hover:-translate-y-0.5 hover:scale-105 hover:border-positive-line hover:bg-positive-soft hover:text-positive hover:shadow-[var(--shadow-sm)]"
-                >
-                  {venue.label}
-                </Link>
-              ))}
-            </div>
-          </div>
-        </div>
+          <CampusMiniMapPreview />
+        </Link>
 
         {/* 3. Degree Planner Card */}
         <Link

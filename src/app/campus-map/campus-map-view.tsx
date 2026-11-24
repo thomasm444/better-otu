@@ -30,11 +30,13 @@ import { RoomDetailsDrawer } from "./_components/room-details-drawer";
 import { TimeScrubber } from "./_components/time-scrubber";
 import {
   assignOverlapLanes,
+  CAMPUS_SWITCH_OPTIONS,
   escapeHtml,
   FLOOR_LABELS,
   formatFloor,
   formatMinutesToTime,
   getContainerColor,
+  getFeatureCampus,
   getLiveTorontoMapState,
   getRoomDisplayCode,
   MAIN_BUILDING_SET,
@@ -47,6 +49,7 @@ import {
   VENUES,
   VERIFIED_APP_BUILDING_NAMES,
   VERTICAL_FLOOR_KEYS,
+  type CampusSwitchKey,
   type PositionedEvent,
   type RoomStatus,
   type SubRoomStatus,
@@ -151,6 +154,7 @@ export function CampusMapView() {
   const [weekReloadNonce, setWeekReloadNonce] = useState(0);
 
   // Main map filters & time state
+  const [activeCampus, setActiveCampus] = useState<CampusSwitchKey>("north");
   const [currentWeekStart, setCurrentWeekStart] = useState<string | null>(null);
   const [currentFloor, setCurrentFloor] = useState<string>("ALL");
   const [focusedBuilding, setFocusedBuilding] = useState<string>("ALL");
@@ -385,10 +389,17 @@ export function CampusMapView() {
     setActiveModalSubRoom(null);
 
     const venueParam = params.get("venue")?.toLowerCase();
+    const inferredCampus: CampusSwitchKey =
+      venueParam === "downtown" ||
+      (MAIN_DOWNTOWN_BUILDINGS as readonly string[]).includes(buildingParam)
+        ? "downtown"
+        : "north";
+    setActiveCampus(inferredCampus);
+
     const targetVenue =
       venueParam === "downtown" || venueParam === "whitby"
         ? VENUES[venueParam]
-        : VENUES.north;
+        : VENUES[inferredCampus];
     if (!buildingParam && mapInstanceRef.current) {
       mapInstanceRef.current.setView(
         [targetVenue.lat, targetVenue.lng],
@@ -861,31 +872,65 @@ export function CampusMapView() {
     };
   }, [data?.buildingNames]);
 
-  // All distinct building codes for Menu ("More buildings...")
-  const allBuildings = useMemo(() => {
-    const found = new Set<string>(MAIN_BUILDING_SET);
+  const primaryCampusBuildings = useMemo<readonly string[]>(() => {
+    return activeCampus === "downtown"
+      ? MAIN_DOWNTOWN_BUILDINGS
+      : MAIN_NORTH_BUILDINGS;
+  }, [activeCampus]);
+
+  // Distinct building codes for the currently selected campus
+  const campusBuildings = useMemo(() => {
+    const found = new Set<string>(primaryCampusBuildings);
     if (data?.features) {
       for (const f of data.features) {
+        if (getFeatureCampus(f) !== activeCampus) continue;
         const b = f.properties?.building?.trim().toUpperCase();
         if (b) found.add(b);
       }
     }
     return Array.from(found).sort((a, b) => a.localeCompare(b, "en"));
-  }, [data]);
+  }, [data, activeCampus, primaryCampusBuildings]);
 
   const otherBuildings = useMemo(() => {
-    return allBuildings.filter((b) => !MAIN_BUILDING_SET.has(b));
-  }, [allBuildings]);
+    const primarySet = new Set<string>(primaryCampusBuildings);
+    return campusBuildings.filter((b) => !primarySet.has(b) && !MAIN_BUILDING_SET.has(b));
+  }, [campusBuildings, primaryCampusBuildings]);
 
   const filteredMoreBuildings = useMemo(() => {
     const norm = normalizeSearchCode(buildingSearchQuery);
     if (!norm) return otherBuildings;
-    return allBuildings.filter(
+    return campusBuildings.filter(
       (b) =>
         normalizeSearchCode(b).includes(norm) ||
         normalizeSearchCode(buildingNameMap[b]).includes(norm),
     );
-  }, [allBuildings, otherBuildings, buildingSearchQuery, buildingNameMap]);
+  }, [campusBuildings, otherBuildings, buildingSearchQuery, buildingNameMap]);
+
+  // Switch active campus, recenter map, and clear cross-campus selections
+  const handleSwitchCampus = useCallback((nextCampus: CampusSwitchKey) => {
+    setActiveCampus(nextCampus);
+    setFocusedBuilding("ALL");
+    setBuildingSearchQuery("");
+    setIsMoreBuildingsOpen(false);
+    setSelectedFeature((prev) => {
+      if (prev && getFeatureCampus(prev) !== nextCampus) {
+        setSelectedDrawerSubRoom(null);
+        setIsDrawerMinimized(false);
+        return null;
+      }
+      return prev;
+    });
+
+    const target = VENUES[nextCampus];
+    const map = mapInstanceRef.current;
+    if (map) {
+      map.flyTo(
+        [target.lat, target.lng],
+        Math.min(target.zoom, MAP_MAX_ZOOM - 1),
+        { duration: 0.75 },
+      );
+    }
+  }, []);
 
   // Zoom to ?building=CODE once map and features are ready
   useEffect(() => {
@@ -976,6 +1021,7 @@ export function CampusMapView() {
 
     for (const feature of data.features) {
       if (!feature.geometry || (feature.geometry.type as string) === "Point") continue;
+      if (getFeatureCampus(feature) !== activeCampus) continue;
       if (!matchesNormalizedSearch(feature, normSearchQuery, weekData)) continue;
 
       const p = feature.properties || {};
@@ -1013,7 +1059,7 @@ export function CampusMapView() {
 
     matches.sort((a, b) => b.score - a.score);
     return matches.slice(0, 10);
-  }, [normSearchQuery, data, weekData]);
+  }, [normSearchQuery, data, weekData, activeCampus]);
 
   // Shared select/focus handler used by search suggestions & Bookable Rooms panel
   const handleSelectRoom = useCallback(
@@ -1101,6 +1147,7 @@ export function CampusMapView() {
     if (normSearchQuery) {
       applySearchFilter = data.features.some((feature) => {
         if (!feature.geometry || (feature.geometry.type as string) === "Point") return false;
+        if (getFeatureCampus(feature) !== activeCampus) return false;
         const fl = String(feature.properties?.floor || "");
         if (currentFloor !== "ALL" && fl !== currentFloor) return false;
         const status = getRoomStatus(feature, currentDay, currentSlotStart);
@@ -1115,6 +1162,7 @@ export function CampusMapView() {
       filter: (geoFeature) => {
         const feature = geoFeature as unknown as CampusMapFeature;
         if (!feature.geometry || (feature.geometry.type as string) === "Point") return false;
+        if (getFeatureCampus(feature) !== activeCampus) return false;
 
         const props = feature.properties || {};
         const fl = String(props.floor || "");
@@ -1266,6 +1314,7 @@ export function CampusMapView() {
     mapReady,
     data,
     weekData,
+    activeCampus,
     currentFloor,
     focusedBuilding,
     currentDay,
@@ -1350,11 +1399,38 @@ export function CampusMapView() {
     <div className="relative flex h-[calc(100dvh-var(--site-nav-height,2.75rem))] w-full flex-col overflow-hidden bg-canvas font-sans text-ink lg:h-[calc(100vh-var(--site-nav-height,2.75rem))]">
       {/* Compact Top Navigation Bar */}
       <header className="relative z-30 flex w-full flex-wrap items-center gap-x-3 gap-y-2 border-b border-line-subtle bg-surface px-3 py-2 sm:px-4 md:flex-nowrap">
-        {/* Left: Title */}
-        <div className="order-1 flex min-w-0 items-center gap-2">
+        {/* Left: Title + Campus Switcher Pill Toggle */}
+        <div className="order-1 flex min-w-0 items-center gap-2.5">
           <h1 className="truncate whitespace-nowrap text-sm font-semibold tracking-tight text-ink sm:text-base">
             Campus Map
           </h1>
+
+          <div
+            role="radiogroup"
+            aria-label="Select campus"
+            className="inline-flex shrink-0 items-center rounded-xl border border-line bg-surface-subtle p-0.5"
+          >
+            {CAMPUS_SWITCH_OPTIONS.map((opt) => {
+              const isSelected = activeCampus === opt.key;
+              return (
+                <button
+                  key={opt.key}
+                  type="button"
+                  role="radio"
+                  aria-checked={isSelected}
+                  onClick={() => handleSwitchCampus(opt.key)}
+                  className={`cursor-pointer whitespace-nowrap rounded-lg px-2.5 py-1 text-[11px] font-medium transition-all duration-150 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent sm:text-xs ${
+                    isSelected
+                      ? "bg-surface text-ink shadow-[var(--shadow-sm)] ring-1 ring-line-subtle"
+                      : "text-ink-secondary hover:text-ink"
+                  }`}
+                >
+                  <span className="sm:hidden">{opt.shortLabel}</span>
+                  <span className="hidden sm:inline">{opt.label}</span>
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         {/* Center (Row 2 on mobile, inline on md+): Search Input + Book a Room Button */}
@@ -1364,7 +1440,11 @@ export function CampusMapView() {
               type="text"
               name="campus-room-search"
               autoComplete="off"
-              placeholder="Search room, building, course"
+              placeholder={
+                activeCampus === "downtown"
+                  ? "Search Downtown rooms, buildings…"
+                  : "Search North rooms, buildings, courses…"
+              }
               value={searchQuery}
               onFocus={() => setIsSearchOpen(true)}
               onChange={(e) => {
@@ -1545,10 +1625,10 @@ export function CampusMapView() {
                   <div className="space-y-2">
                     <div>
                       <div className="mb-1 text-[11px] font-medium text-ink-secondary">
-                        North
+                        {activeCampus === "downtown" ? "Downtown Oshawa" : "North Campus"}
                       </div>
                       <div className="flex flex-col gap-1">
-                        {MAIN_NORTH_BUILDINGS.map((bldg) => {
+                        {primaryCampusBuildings.map((bldg) => {
                           const fullName = buildingNameMap[bldg];
                           const isSelected = focusedBuilding === bldg;
                           return (
@@ -1580,43 +1660,7 @@ export function CampusMapView() {
                       </div>
                     </div>
 
-                    <div>
-                      <div className="mb-1 text-[11px] font-medium text-ink-secondary">
-                        Downtown
-                      </div>
-                      <div className="flex flex-col gap-1">
-                        {MAIN_DOWNTOWN_BUILDINGS.map((bldg) => {
-                          const fullName = buildingNameMap[bldg];
-                          const isSelected = focusedBuilding === bldg;
-                          return (
-                            <button
-                              key={bldg}
-                              type="button"
-                              onClick={() => selectBuildingFromMenu(bldg)}
-                              className={`flex w-full items-baseline gap-1.5 rounded-md border px-2.5 py-1 text-left text-[11px] transition-colors ${
-                                isSelected
-                                  ? "border-brand bg-brand text-brand-fg"
-                                  : "border-line-subtle bg-surface-subtle text-ink hover:bg-surface-hover"
-                              }`}
-                            >
-                              <span className="shrink-0 font-mono font-semibold">{bldg}</span>
-                              {fullName && (
-                                <span
-                                  className={`min-w-0 truncate font-normal ${
-                                    isSelected
-                                      ? "opacity-85"
-                                      : "text-ink-muted"
-                                  }`}
-                                >
-                                  &mdash; {fullName}
-                                </span>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-
+                    {otherBuildings.length > 0 && (
                     <div>
                       <button
                         type="button"
@@ -1679,6 +1723,7 @@ export function CampusMapView() {
                         </div>
                       )}
                     </div>
+                    )}
                   </div>
                 </div>
 
@@ -1805,6 +1850,7 @@ export function CampusMapView() {
         <BookableRoomsPanel
           isOpen={isBookableOpen}
           data={data}
+          activeCampus={activeCampus}
           currentDay={currentDay}
           currentSlotStart={currentSlotStart}
           currentDuration={currentDuration}

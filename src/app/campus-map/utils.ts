@@ -80,12 +80,62 @@ export const VENUES = {
 
 export type VenueKey = keyof typeof VENUES;
 
+export type CampusSwitchKey = "north" | "downtown";
+
+export const CAMPUS_SWITCH_OPTIONS: ReadonlyArray<{
+  key: CampusSwitchKey;
+  label: string;
+  shortLabel: string;
+}> = [
+  { key: "north", label: "North Campus", shortLabel: "North" },
+  { key: "downtown", label: "Downtown Oshawa", shortLabel: "Downtown" },
+];
+
 export const MAIN_NORTH_BUILDINGS = ["SCI", "ENG", "SIR", "SHA", "ERC", "BIT", "LIB"] as const;
 export const MAIN_DOWNTOWN_BUILDINGS = ["REG", "CHA"] as const;
+const MAIN_NORTH_BUILDING_SET = new Set<string>(MAIN_NORTH_BUILDINGS);
+const MAIN_DOWNTOWN_BUILDING_SET = new Set<string>(MAIN_DOWNTOWN_BUILDINGS);
 export const MAIN_BUILDING_SET = new Set<string>([
   ...MAIN_NORTH_BUILDINGS,
   ...MAIN_DOWNTOWN_BUILDINGS,
 ]);
+
+function extractFirstLngLat(coords: unknown): [number, number] | null {
+  if (!Array.isArray(coords) || coords.length === 0) return null;
+  if (typeof coords[0] === "number" && typeof coords[1] === "number") {
+    return [coords[0], coords[1]];
+  }
+  for (const item of coords) {
+    const found = extractFirstLngLat(item);
+    if (found) return found;
+  }
+  return null;
+}
+
+/**
+ * Classifies a campus map feature into its campus ("north", "downtown", or "whitby")
+ * using venue metadata, known building codes, and geographic coordinate bounds.
+ */
+export function getFeatureCampus(feature: CampusMapFeature): VenueKey {
+  const venueRaw = feature.properties?.venue?.trim().toUpperCase() ?? "";
+  if (venueRaw.includes("DOWNTOWN")) return "downtown";
+  if (venueRaw.includes("WHITBY")) return "whitby";
+
+  const bldg = feature.properties?.building?.trim().toUpperCase() ?? "";
+  if (MAIN_DOWNTOWN_BUILDING_SET.has(bldg)) return "downtown";
+  if (MAIN_NORTH_BUILDING_SET.has(bldg)) return "north";
+
+  const geom = feature.geometry as { coordinates?: unknown } | null | undefined;
+  const lngLat = geom ? extractFirstLngLat(geom.coordinates) : null;
+  if (lngLat) {
+    const [lng, lat] = lngLat;
+    if (lat >= 43.92) return "north";
+    if (lat >= 43.885 && lng > -78.885) return "downtown";
+    if (lat < 43.885) return "whitby";
+  }
+
+  return "north";
+}
 
 /** Verified non-DB building names already established in app copy (e.g. "Find a Library Room"). */
 export const VERIFIED_APP_BUILDING_NAMES: Record<string, string> = {
