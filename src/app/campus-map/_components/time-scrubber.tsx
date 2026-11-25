@@ -184,7 +184,9 @@ export function TimeScrubber({
       onTouchStart={(e) => e.stopPropagation()}
       onWheel={(e) => e.stopPropagation()}
       className={`absolute bottom-[max(0.75rem,env(safe-area-inset-bottom))] left-1/2 z-[1060] -translate-x-1/2 lg:bottom-4 ${
-        isDrawerOpen ? "lg:left-[calc(50%+180px)]" : ""
+        isDrawerOpen
+          ? "phone-landscape:left-[calc(50%+min(25%,190px))] lg:left-[calc(50%+180px)]"
+          : ""
       }`}
     >
       {isOpen && (
@@ -193,8 +195,8 @@ export function TimeScrubber({
           aria-label="Select date, time, and duration"
           className={`absolute left-1/2 w-[320px] max-w-[calc(100vw-1.5rem)] -translate-x-1/2 overflow-y-auto rounded-2xl border border-line bg-surface/98 p-3 text-xs shadow-[var(--shadow-lg)] backdrop-blur-md ${
             isDrawerOpen
-              ? "bottom-[calc(100%+5.75rem)] max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-var(--site-footer-height,2rem)-14.5rem)] lg:bottom-full lg:mb-2 lg:max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-var(--site-footer-height,2rem)-7.5rem)]"
-              : "bottom-full mb-2 max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-var(--site-footer-height,2rem)-9.5rem)] lg:max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-var(--site-footer-height,2rem)-7.5rem)]"
+              ? "bottom-[calc(100%+5.75rem)] max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-var(--site-footer-height,2rem)-14.5rem)] phone-landscape:bottom-full! phone-landscape:mb-2! phone-landscape:max-w-[calc(50vw-1rem)] phone-landscape:max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-var(--site-footer-height,2rem)-6.5rem)] lg:bottom-full lg:mb-2 lg:max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-var(--site-footer-height,2rem)-7.5rem)]"
+              : "bottom-full mb-2 max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-var(--site-footer-height,2rem)-9.5rem)] phone-landscape:max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-var(--site-footer-height,2rem)-6.5rem)] lg:max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-var(--site-footer-height,2rem)-7.5rem)]"
           }`}
         >
           {/* Upward-expanding custom calendar (sits at top of bottom-anchored popover) */}

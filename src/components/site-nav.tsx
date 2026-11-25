@@ -56,7 +56,7 @@ function NavChrome({
       className={
         isHome
           ? "relative z-[1200] h-[var(--site-nav-height,2.75rem)] min-h-[var(--site-nav-height,2.75rem)] w-full shrink-0 bg-canvas font-sans"
-          : "sticky top-0 z-[1200] h-[var(--site-nav-height,2.75rem)] min-h-[var(--site-nav-height,2.75rem)] w-full shrink-0 border-b border-line-subtle bg-surface/95 font-sans backdrop-blur-sm"
+          : "sticky top-0 z-[1200] h-[var(--site-nav-height,2.75rem)] min-h-[var(--site-nav-height,2.75rem)] w-full shrink-0 border-b border-line-subtle bg-surface font-sans sm:bg-surface/95 sm:backdrop-blur-sm"
       }
     >
       <div className="mx-auto flex h-full w-full max-w-[1600px] items-center justify-between gap-2 px-3 sm:px-6">

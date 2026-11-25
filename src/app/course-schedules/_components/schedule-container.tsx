@@ -4,6 +4,7 @@ import type { User } from "@supabase/supabase-js";
 import React, {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -131,7 +132,31 @@ export function ScheduleContainer({
   const [viewMode, setViewMode] = useState<ScheduleViewMode>("combined");
   const [showRmp, setShowRmp] = useState(false);
   const [mobileTab, setMobileTab] = useState<"schedule" | "lookup">("schedule");
+  const mobileTabScrollRef = useRef<{
+    schedule: number | null;
+    lookup: number | null;
+  }>({ schedule: null, lookup: null });
+  const pendingMobileScrollRef = useRef<number | null>(null);
   const [lookupTabTrigger, setLookupTabTrigger] = useState(0);
+
+  const handleSwitchMobileTab = (nextTab: "schedule" | "lookup") => {
+    if (nextTab === "lookup") {
+      setLookupTabTrigger((n) => n + 1);
+    }
+    if (nextTab === mobileTab) return;
+    if (typeof window !== "undefined") {
+      mobileTabScrollRef.current[mobileTab] = window.scrollY;
+      pendingMobileScrollRef.current = mobileTabScrollRef.current[nextTab] ?? 0;
+    }
+    setMobileTab(nextTab);
+  };
+
+  useLayoutEffect(() => {
+    if (pendingMobileScrollRef.current === null) return;
+    const targetY = pendingMobileScrollRef.current;
+    pendingMobileScrollRef.current = null;
+    window.scrollTo({ top: targetY, behavior: "instant" });
+  }, [mobileTab]);
   const [isEditMode, setIsEditMode] = useState(false);
 
   const [plannedCourses, setPlannedCourses] = useState<PlannedCourseEntry[]>(
@@ -227,6 +252,29 @@ export function ScheduleContainer({
   const [blkStart, setBlkStart] = useState("12:00");
   const [blkEnd, setBlkEnd] = useState("13:30");
   const [blkLabel, setBlkLabel] = useState("Blocked");
+
+  // Reset transient edit/blocking modes when navigating away or hiding the scheduler.
+  useEffect(() => {
+    const exitEdit = () => {
+      setIsEditMode(false);
+      setIsBlockingMode(false);
+      setIsCustomBlockDragMode(false);
+      setBlockMenuOpen(false);
+      setImportMenuOpen(false);
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        exitEdit();
+      }
+    };
+    window.addEventListener("pagehide", exitEdit);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.removeEventListener("pagehide", exitEdit);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      exitEdit();
+    };
+  }, []);
 
   const [isCalendarModalOpen, setIsCalendarModalOpen] = useState(false);
   const [isBannerModalOpen, setIsBannerModalOpen] = useState(false);
@@ -1512,33 +1560,32 @@ export function ScheduleContainer({
 
   return (
     <div className="space-y-4">
-      {/* Mobile 2-Tab Bar (< lg) */}
-      <div className="grid grid-cols-2 rounded-xl border border-line bg-surface p-1 text-xs font-medium shadow-[var(--shadow-sm)] lg:hidden">
-        <button
-          type="button"
-          onClick={() => setMobileTab("schedule")}
-          className={`rounded-lg py-2 transition-colors ${
-            mobileTab === "schedule"
-              ? "bg-brand text-brand-fg"
-              : "text-ink-muted hover:text-ink"
-          }`}
-        >
-          Schedule ({plannedCourses.length})
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setMobileTab("lookup");
-            setLookupTabTrigger((n) => n + 1);
-          }}
-          className={`rounded-lg py-2 transition-colors ${
-            mobileTab === "lookup"
-              ? "bg-brand text-brand-fg"
-              : "text-ink-muted hover:text-ink"
-          }`}
-        >
-          Courses
-        </button>
+      {/* Sticky Mobile 2-Tab Header (< lg) */}
+      <div className="sticky top-[var(--site-nav-height,2.75rem)] z-20 -mx-4 -mt-5 border-b border-line-subtle bg-canvas px-4 py-2 sm:-mx-6 sm:px-6 lg:hidden">
+        <div className="grid grid-cols-2 rounded-xl border border-line bg-surface p-1 text-xs font-medium shadow-[var(--shadow-sm)]">
+          <button
+            type="button"
+            onClick={() => handleSwitchMobileTab("schedule")}
+            className={`rounded-lg py-2 transition-colors ${
+              mobileTab === "schedule"
+                ? "bg-brand text-brand-fg"
+                : "text-ink-muted hover:text-ink"
+            }`}
+          >
+            Schedule ({plannedCourses.length})
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSwitchMobileTab("lookup")}
+            className={`rounded-lg py-2 transition-colors ${
+              mobileTab === "lookup"
+                ? "bg-brand text-brand-fg"
+                : "text-ink-muted hover:text-ink"
+            }`}
+          >
+            Courses
+          </button>
+        </div>
       </div>
 
       {/* Main 2/3 Left Schedule + 1/3 Right Course Lookup Grid */}
@@ -2263,7 +2310,7 @@ export function ScheduleContainer({
 
       {/* Toast Notification */}
       {toastMsg && (
-        <div className="fixed bottom-5 right-5 z-50 rounded-xl border border-sky-700/80 bg-slate-900 px-4 py-2.5 text-xs font-medium text-white shadow-xl ring-1 ring-sky-400/20 dark:border-sky-800 dark:bg-slate-800">
+        <div className="fixed right-5 bottom-[calc(var(--site-footer-height,2.5rem)+0.75rem)] z-50 rounded-xl border border-sky-700/80 bg-slate-900 px-4 py-2.5 text-xs font-medium text-white shadow-xl ring-1 ring-sky-400/20 dark:border-sky-800 dark:bg-slate-800">
           {toastMsg}
         </div>
       )}

@@ -3,7 +3,7 @@
 import type { User } from "@supabase/supabase-js";
 import Image from "next/image";
 import Link from "next/link";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useSyncExternalStore } from "react";
 
 import {
   ClassicPortalView,
@@ -53,6 +53,8 @@ import {
   HOME_VIEW_CHANGE_EVENT,
   HOME_VIEW_STORAGE_KEY,
   getStoredHomeView,
+  isPhoneViewport,
+  subscribePhoneViewport,
 } from "@/lib/preferences";
 import { createClient } from "@/lib/supabase/client";
 
@@ -226,6 +228,12 @@ export function PortalDashboard({
   nonStandardCredits,
 }: PortalDashboardProps) {
   const [homeView, setHomeView] = useState<HomeView>("classic");
+  const isPhone = useSyncExternalStore(
+    subscribePhoneViewport,
+    isPhoneViewport,
+    () => false,
+  );
+  const effectiveHomeView: HomeView = isPhone ? "classic" : homeView;
   const [firstName, setFirstName] = useState<string | null>(null);
   const [profile, setProfile] = useState<StudentProfileWithPrograms | null>(null);
   const [academicStartYear, setAcademicStartYear] = useState<number>(DEFAULT_START_YEAR);
@@ -749,7 +757,7 @@ export function PortalDashboard({
             </div>
           </header>
 
-          {homeView === "stacked" ? (
+          {effectiveHomeView === "stacked" ? (
             <StackedPortalView {...sharedProps} />
           ) : (
             <ClassicPortalView {...sharedProps} />

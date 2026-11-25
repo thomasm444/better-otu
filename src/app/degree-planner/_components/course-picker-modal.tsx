@@ -199,10 +199,49 @@ export function CoursePickerModal({
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (!initialTransferMode) searchInputRef.current?.focus();
+      if (
+        !initialTransferMode &&
+        typeof window !== "undefined" &&
+        window.innerWidth >= 640
+      ) {
+        searchInputRef.current?.focus();
+      }
     }, 30);
     return () => clearTimeout(timer);
   }, [initialTransferMode]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const scrollY = window.scrollY;
+    const html = document.documentElement;
+    const body = document.body;
+    const prevHtmlOverflow = html.style.overflow;
+    const prevBodyOverflow = body.style.overflow;
+    const prevBodyPosition = body.style.position;
+    const prevBodyTop = body.style.top;
+    const prevBodyLeft = body.style.left;
+    const prevBodyRight = body.style.right;
+    const prevBodyWidth = body.style.width;
+
+    html.style.overflow = "hidden";
+    body.style.overflow = "hidden";
+    body.style.position = "fixed";
+    body.style.top = `-${scrollY}px`;
+    body.style.left = "0";
+    body.style.right = "0";
+    body.style.width = "100%";
+
+    return () => {
+      html.style.overflow = prevHtmlOverflow;
+      body.style.overflow = prevBodyOverflow;
+      body.style.position = prevBodyPosition;
+      body.style.top = prevBodyTop;
+      body.style.left = prevBodyLeft;
+      body.style.right = prevBodyRight;
+      body.style.width = prevBodyWidth;
+      window.scrollTo({ top: scrollY, behavior: "instant" });
+    };
+  }, []);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -259,6 +298,7 @@ export function CoursePickerModal({
     const cleanPrefill = /[a-z]/i.test(prefill)
       ? prefill.toUpperCase().trim()
       : "";
+    setMobilePane("picker");
     setCxSubject(subjectFilter || "");
     setCxLevel("1000");
     setCxCode(cleanPrefill);
@@ -619,9 +659,19 @@ export function CoursePickerModal({
   if (!term) return null;
 
   const handleAddCourse = (code: string) => {
+    const alreadyPlaced = placed.has(code);
     onPlaceCourse(selectedTermIndex, activeSlotIndex, code);
+    if (activeSlotIndex < MAX_SLOTS_PER_TERM) {
+      onToast(
+        alreadyPlaced
+          ? `Moved ${code} to Year ${term.year} ${term.season}`
+          : `Added ${code} to Year ${term.year} ${term.season}`,
+      );
+    }
     setQuery("");
-    setTimeout(() => searchInputRef.current?.focus(), 0);
+    if (typeof window !== "undefined" && window.innerWidth >= 640) {
+      setTimeout(() => searchInputRef.current?.focus(), 0);
+    }
   };
 
   const handleSaveCustom = () => {
@@ -672,20 +722,32 @@ export function CoursePickerModal({
   const pickerCardContent = (
     <>
         {/* Header */}
-        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-line-subtle bg-surface-subtle/60 px-5 py-3.5">
-          <div className="min-w-0 flex-1">
-            <h3 className="text-[15px] font-semibold text-ink">
-              {titleText}
-            </h3>
-            <p className="mt-0.5 text-xs text-ink-muted">
-              {subText}
-            </p>
+        <div className="flex shrink-0 flex-col gap-2 border-b border-line-subtle bg-surface-subtle/60 px-3.5 py-2.5 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between sm:gap-3 sm:px-5 sm:py-3.5">
+          <div className="flex items-start justify-between gap-2 sm:min-w-0 sm:flex-1">
+            <div className="min-w-0 flex-1">
+              <h3 className="text-sm font-semibold text-ink sm:text-[15px]">
+                {titleText}
+              </h3>
+              <p className="mt-0.5 text-[11px] leading-snug text-ink-muted sm:text-xs">
+                {subText}
+              </p>
+            </div>
+            {!sidebarSlot && (
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close"
+                className="shrink-0 rounded-lg px-2 py-1 text-base leading-none text-ink-muted transition-colors hover:bg-surface-subtle hover:text-ink sm:hidden"
+              >
+                ×
+              </button>
+            )}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center justify-between gap-2 sm:justify-start">
             {!initialTransferMode && terms.length > 0 && (
-              <label className="flex items-center gap-1.5 text-xs text-ink-secondary">
-                <span>Add to:</span>
-                <span className="relative inline-flex items-center">
+              <label className="flex min-w-0 flex-1 items-center gap-1.5 text-xs text-ink-secondary sm:flex-initial">
+                <span className="shrink-0">Add to:</span>
+                <span className="relative inline-flex min-w-0 flex-1 items-center sm:flex-initial">
                   <select
                     value={selectedTermIndex}
                     onChange={(e) => {
@@ -694,7 +756,7 @@ export function CoursePickerModal({
                       onSelectedTermChange?.(nextIdx);
                     }}
                     aria-label="Target year and term"
-                    className="appearance-none rounded-lg border border-line bg-surface py-1.5 pr-8 pl-3 text-xs font-medium text-ink focus:border-accent focus:ring-2 focus:ring-focus focus:outline-none"
+                    className="w-full appearance-none rounded-lg border border-line bg-surface py-1.5 pr-8 pl-2.5 text-xs font-medium text-ink focus:border-accent focus:ring-2 focus:ring-focus focus:outline-none sm:w-auto sm:pl-3"
                   >
                     {terms.map((t, idx) => {
                       const usedCount = t.slots.filter(Boolean).length;
@@ -736,7 +798,9 @@ export function CoursePickerModal({
               type="button"
               onClick={onClose}
               aria-label="Close"
-              className="rounded-lg px-2 py-1 text-base text-ink-muted transition-colors hover:bg-surface-subtle hover:text-ink"
+              className={`hidden rounded-lg px-2 py-1 text-base text-ink-muted transition-colors hover:bg-surface-subtle hover:text-ink ${
+                sidebarSlot ? "lg:inline-flex" : "sm:inline-flex"
+              }`}
             >
               ×
             </button>
@@ -744,9 +808,9 @@ export function CoursePickerModal({
         </div>
 
         {/* Search, Subject Box & Filter Chips */}
-        {!initialTransferMode && (
-          <div className="space-y-2.5 border-b border-line-subtle px-5 py-3">
-            <div className="flex flex-wrap items-center gap-2">
+        {!initialTransferMode && !customOpen && (
+          <div className="shrink-0 space-y-2 border-b border-line-subtle px-3.5 py-2 sm:space-y-2.5 sm:px-5 sm:py-3">
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
               <input
                 ref={searchInputRef}
                 type="search"
@@ -764,7 +828,7 @@ export function CoursePickerModal({
                 }}
                 placeholder="Search code or title"
                 autoComplete="off"
-                className="min-w-[200px] flex-1 rounded-lg border border-line bg-surface-subtle px-3 py-1.5 text-sm text-ink placeholder:text-ink-muted focus:border-accent focus:bg-surface focus:ring-2 focus:ring-focus focus:outline-none"
+                className="min-w-0 w-full rounded-lg border border-line bg-surface-subtle px-3 py-1.5 text-base text-ink placeholder:text-ink-muted focus:border-accent focus:bg-surface focus:ring-2 focus:ring-focus focus:outline-none sm:w-auto sm:min-w-[200px] sm:flex-1 sm:text-sm"
               />
               {[
                 {
@@ -788,7 +852,7 @@ export function CoursePickerModal({
                   type="button"
                   aria-pressed={chip.active}
                   onClick={chip.onClick}
-                  className={`rounded-md border px-2.5 py-1 text-xs transition-colors ${
+                  className={`rounded-md border px-2 py-1 text-[11px] transition-colors sm:px-2.5 sm:text-xs ${
                     chip.active
                       ? "border-accent-line bg-accent-soft font-medium text-accent-ink"
                       : "border-line bg-surface text-ink-secondary hover:border-line-strong hover:text-ink"
@@ -802,7 +866,7 @@ export function CoursePickerModal({
                   type="button"
                   aria-pressed={filterBucket}
                   onClick={() => setFilterBucket((v) => !v)}
-                  className={`rounded-md border px-2.5 py-1 text-xs transition-colors ${
+                  className={`rounded-md border px-2 py-1 text-[11px] transition-colors sm:px-2.5 sm:text-xs ${
                     filterBucket
                       ? "border-accent-line bg-accent-soft font-medium text-accent-ink"
                       : "border-line bg-surface text-ink-secondary hover:border-line-strong hover:text-ink"
@@ -815,17 +879,26 @@ export function CoursePickerModal({
                 type="button"
                 onClick={() => openCustomForm(query)}
                 title="A course not listed in the timetable"
-                className="rounded-md border border-line bg-surface px-2.5 py-1 text-xs font-medium text-ink-secondary transition-colors hover:border-accent-line hover:text-accent-ink"
+                className="rounded-md border border-line bg-surface px-2 py-1 text-[11px] font-medium text-ink-secondary transition-colors hover:border-accent-line hover:text-accent-ink sm:px-2.5 sm:text-xs"
               >
                 + Custom course
               </button>
             </div>
 
             {/* Dedicated Subject / Department Filter Box */}
-            <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200/80 bg-slate-50/75 px-3 py-2 dark:border-slate-800 dark:bg-slate-950/60">
-              <label className="flex min-w-0 flex-1 flex-wrap items-center gap-2 text-xs font-medium text-slate-600 dark:text-slate-300">
-                <span className="shrink-0">Only show subject:</span>
-                <span className="relative inline-flex min-w-[220px] flex-1 items-center sm:max-w-xs">
+            <div className="flex flex-col gap-1.5 rounded-xl border border-slate-200/80 bg-slate-50/75 px-2.5 py-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2 sm:px-3 dark:border-slate-800 dark:bg-slate-950/60">
+              <div className="flex items-center justify-between gap-2 sm:contents">
+                <span className="shrink-0 text-xs font-medium text-slate-600 dark:text-slate-300">
+                  Only show subject:
+                </span>
+                <span className="text-[11px] text-slate-500 tabular-nums sm:order-3 sm:ml-auto dark:text-slate-400">
+                  {filteredRows.length === totalMatchingCount
+                    ? `${totalMatchingCount} ${totalMatchingCount === 1 ? "course" : "courses"} shown`
+                    : `Showing ${filteredRows.length} of ${totalMatchingCount} courses`}
+                </span>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 sm:contents">
+                <span className="relative inline-flex min-w-0 flex-1 items-center sm:min-w-[220px] sm:max-w-xs">
                   <select
                     value={subjectFilter}
                     onChange={(e) => setSubjectFilter(e.target.value)}
@@ -866,30 +939,24 @@ export function CoursePickerModal({
                     />
                   </svg>
                 </span>
-              </label>
 
-              {subjectFilter && (
-                <button
-                  type="button"
-                  onClick={() => setSubjectFilter("")}
-                  className="rounded-lg border border-sky-200 bg-white px-2.5 py-1 text-[11.5px] font-medium text-sky-700 transition-colors hover:bg-sky-50 dark:border-sky-800 dark:bg-slate-900 dark:text-sky-300 dark:hover:bg-sky-950/50"
-                >
-                  Show all subjects ×
-                </button>
-              )}
-
-              <span className="ml-auto text-[11px] text-slate-500 tabular-nums dark:text-slate-400">
-                {filteredRows.length === totalMatchingCount
-                  ? `${totalMatchingCount} ${totalMatchingCount === 1 ? "course" : "courses"} shown`
-                  : `Showing ${filteredRows.length} of ${totalMatchingCount} courses`}
-              </span>
+                {subjectFilter && (
+                  <button
+                    type="button"
+                    onClick={() => setSubjectFilter("")}
+                    className="shrink-0 rounded-lg border border-sky-200 bg-white px-2.5 py-1 text-[11.5px] font-medium text-sky-700 transition-colors hover:bg-sky-50 dark:border-sky-800 dark:bg-slate-900 dark:text-sky-300 dark:hover:bg-sky-950/50"
+                  >
+                    Show all subjects ×
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         )}
 
         {/* Dedicated Transfer Credit panel */}
         {initialTransferMode && (
-          <div className="flex flex-1 flex-col overflow-auto px-5 py-4">
+          <div className="flex flex-1 flex-col overflow-auto overscroll-contain px-3.5 py-3 phone-landscape:flex-none! phone-landscape:overflow-visible! sm:px-5 sm:py-4">
             <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
               <button
                 type="button"
@@ -1115,12 +1182,21 @@ export function CoursePickerModal({
 
         {/* Custom course panel */}
         {!initialTransferMode && customOpen && (
-          <div className="border-b border-zinc-200 bg-zinc-50/70 px-5 py-4 dark:border-zinc-800 dark:bg-zinc-950/60">
-            <h4 className="mb-2.5 text-[11.5px] font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
-              Custom course
-            </h4>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <label className="flex flex-col gap-1 text-[11.5px] text-zinc-600 dark:text-zinc-400">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-zinc-50/70 px-3.5 py-3 phone-landscape:flex-none! phone-landscape:overflow-visible! sm:px-5 sm:py-4 dark:bg-zinc-950/60">
+            <div className="mb-2.5 flex items-center justify-between gap-2">
+              <h4 className="text-[11.5px] font-semibold tracking-wider text-zinc-500 uppercase dark:text-zinc-400">
+                Custom course
+              </h4>
+              <button
+                type="button"
+                onClick={() => setCustomOpen(false)}
+                className="rounded-md border border-zinc-200 bg-white px-2 py-1 text-[11px] font-medium text-zinc-600 transition-colors hover:border-zinc-300 hover:text-zinc-900 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
+              >
+                ← Back to list
+              </button>
+            </div>
+            <div className="grid grid-cols-2 gap-2.5 sm:gap-3">
+              <label className="col-span-2 flex flex-col gap-1 text-[11.5px] text-zinc-600 sm:col-span-1 dark:text-zinc-400">
                 Course code
                 <input
                   ref={codeInputRef}
@@ -1133,17 +1209,17 @@ export function CoursePickerModal({
                   placeholder="CSCI 4150U"
                   autoComplete="off"
                   spellCheck={false}
-                  className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-[13px] text-zinc-900 focus:border-blue-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                  className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-base text-zinc-900 focus:border-blue-500 focus:outline-none sm:text-[13px] dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
                 />
               </label>
-              <label className="flex flex-col gap-1 text-[11.5px] text-zinc-600 dark:text-zinc-400">
+              <label className="col-span-2 flex flex-col gap-1 text-[11.5px] text-zinc-600 sm:col-span-1 dark:text-zinc-400">
                 Title
                 <input
                   value={cxTitle}
                   onChange={(e) => setCxTitle(e.target.value)}
                   placeholder="Machine Learning II"
                   autoComplete="off"
-                  className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-[13px] text-zinc-900 focus:border-blue-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                  className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-base text-zinc-900 focus:border-blue-500 focus:outline-none sm:text-[13px] dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
                 />
               </label>
               <label className="flex flex-col gap-1 text-[11.5px] text-zinc-600 dark:text-zinc-400">
@@ -1155,15 +1231,28 @@ export function CoursePickerModal({
                   step={0.5}
                   value={cxCredits}
                   onChange={(e) => setCxCredits(e.target.value)}
-                  className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-[13px] text-zinc-900 focus:border-blue-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                  className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-base text-zinc-900 focus:border-blue-500 focus:outline-none sm:text-[13px] dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
                 />
               </label>
-              <label className="flex flex-col gap-1 text-[11.5px] text-zinc-600 dark:text-zinc-400">
+              <label className="flex flex-col gap-1 text-[11.5px] text-zinc-600 sm:order-5 dark:text-zinc-400">
+                Level
+                <select
+                  value={cxLevel}
+                  onChange={(e) => setCxLevel(e.target.value)}
+                  className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-base text-zinc-900 focus:border-blue-500 focus:outline-none sm:text-[13px] dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                >
+                  <option value="1000">1000</option>
+                  <option value="2000">2000</option>
+                  <option value="3000">3000</option>
+                  <option value="4000">4000</option>
+                </select>
+              </label>
+              <label className="col-span-2 flex flex-col gap-1 text-[11.5px] text-zinc-600 sm:order-4 sm:col-span-1 dark:text-zinc-400">
                 Subject (drives what it counts for)
                 <select
                   value={cxSubject}
                   onChange={(e) => setCxSubject(e.target.value)}
-                  className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-[13px] text-zinc-900 focus:border-blue-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+                  className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-base text-zinc-900 focus:border-blue-500 focus:outline-none sm:text-[13px] dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
                 >
                   <option value="">— pick a subject —</option>
                   {subjects.map((s) => (
@@ -1173,26 +1262,13 @@ export function CoursePickerModal({
                   ))}
                 </select>
               </label>
-              <label className="flex flex-col gap-1 text-[11.5px] text-zinc-600 dark:text-zinc-400">
-                Level
-                <select
-                  value={cxLevel}
-                  onChange={(e) => setCxLevel(e.target.value)}
-                  className="rounded-lg border border-zinc-200 bg-white px-2.5 py-1.5 text-[13px] text-zinc-900 focus:border-blue-500 focus:outline-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
-                >
-                  <option value="1000">1000</option>
-                  <option value="2000">2000</option>
-                  <option value="3000">3000</option>
-                  <option value="4000">4000</option>
-                </select>
-              </label>
-              <label className="flex flex-col gap-1 text-[11.5px] text-zinc-600 dark:text-zinc-400">
+              <label className="col-span-2 flex flex-col gap-1 text-[11.5px] text-zinc-600 sm:order-6 sm:col-span-1 dark:text-zinc-400">
                 Faculty (from subject)
                 <input
                   readOnly
                   tabIndex={-1}
                   value={customDraft.faculty || "—"}
-                  className="rounded-lg border border-zinc-200 bg-zinc-100 px-2.5 py-1.5 text-[13px] text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400"
+                  className="rounded-lg border border-zinc-200 bg-zinc-100 px-2.5 py-1.5 text-sm text-zinc-500 sm:text-[13px] dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400"
                 />
               </label>
             </div>
@@ -1215,14 +1291,14 @@ export function CoursePickerModal({
               <button
                 type="button"
                 onClick={handleSaveCustom}
-                className="rounded-lg bg-blue-600 px-4 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-700"
+                className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-medium text-white transition-colors hover:bg-blue-700 sm:py-1.5"
               >
                 Add to this term
               </button>
               <button
                 type="button"
                 onClick={() => setCustomOpen(false)}
-                className="rounded-lg border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-600 hover:border-zinc-300 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
+                className="rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-600 hover:border-zinc-300 sm:py-1.5 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
               >
                 Cancel
               </button>
@@ -1231,8 +1307,8 @@ export function CoursePickerModal({
         )}
 
         {/* Course list */}
-        {!initialTransferMode && (
-          <div className="flex-1 overflow-auto p-2 pb-3">
+        {!initialTransferMode && !customOpen && (
+          <div className="min-h-0 flex-1 overflow-auto overscroll-contain p-1.5 pb-3 phone-landscape:flex-none! phone-landscape:overflow-visible! sm:p-2 sm:pb-3">
             {term.slots.map((code, sIdx) => {
               if (!code) return null;
               const cat = catalogMap.get(code);
@@ -1254,9 +1330,9 @@ export function CoursePickerModal({
               return (
                 <div
                   key={`added:${sIdx}:${code}`}
-                  className="flex items-center gap-2.5 rounded-lg bg-blue-50/45 px-2.5 py-2 hover:bg-blue-50/80 dark:bg-blue-950/20 dark:hover:bg-blue-950/35"
+                  className="flex items-center gap-2 rounded-lg bg-blue-50/45 px-2 py-1.5 hover:bg-blue-50/80 sm:gap-2.5 sm:px-2.5 sm:py-2 dark:bg-blue-950/20 dark:hover:bg-blue-950/35"
                 >
-                  <span className="w-24 shrink-0 font-mono text-xs font-medium text-blue-800 dark:text-blue-300">
+                  <span className="w-20 shrink-0 font-mono text-xs font-medium text-blue-800 sm:w-24 dark:text-blue-300">
                     {code}
                   </span>
                   <div className="min-w-0 flex-1">
@@ -1362,11 +1438,11 @@ export function CoursePickerModal({
                     return (
                       <div
                         key={course.code}
-                        className={`flex items-center gap-2.5 rounded-lg px-2.5 py-2 hover:bg-zinc-50 dark:hover:bg-zinc-800/60 ${
+                        className={`flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-zinc-50 sm:gap-2.5 sm:px-2.5 sm:py-2 dark:hover:bg-zinc-800/60 ${
                           used ? "opacity-55" : ""
                         }`}
                       >
-                        <span className="w-24 shrink-0 font-mono text-xs text-blue-800 dark:text-blue-300">
+                        <span className="w-20 shrink-0 font-mono text-xs text-blue-800 sm:w-24 dark:text-blue-300">
                           {course.code}
                         </span>
                         <div className="min-w-0 flex-1">
@@ -1379,7 +1455,7 @@ export function CoursePickerModal({
                           >
                             {displayTitle}
                           </div>
-                          <div className="text-[11.5px] text-zinc-500 dark:text-zinc-400">
+                          <div className="text-[11px] text-zinc-500 sm:text-[11.5px] dark:text-zinc-400">
                             {course.credit_hours} cr · {offered}{" "}
                             {check === false && (
                               <span className="text-amber-700 dark:text-amber-400">
@@ -1403,8 +1479,8 @@ export function CoursePickerModal({
                   })
                 )}
 
-                <div className="mt-1 flex items-center gap-2.5 rounded-lg px-2.5 py-2 hover:bg-zinc-50 dark:hover:bg-zinc-800/60">
-                  <span className="w-24 shrink-0 font-mono text-xs text-zinc-400">
+                <div className="mt-1 flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-zinc-50 sm:gap-2.5 sm:px-2.5 sm:py-2 dark:hover:bg-zinc-800/60">
+                  <span className="w-20 shrink-0 font-mono text-xs text-zinc-400 sm:w-24">
                     —
                   </span>
                   <div className="min-w-0 flex-1">
@@ -1431,47 +1507,60 @@ export function CoursePickerModal({
 
   return (
     <div
-      className="fixed inset-0 z-[1300] flex items-start justify-center bg-[#0b1018]/55 px-3 pt-[calc(var(--site-nav-height,2.75rem)+3vh)] pb-[3vh] backdrop-blur-sm sm:px-5"
+      className="fixed inset-0 z-[1300] flex items-start justify-center overscroll-contain bg-[#0b1018]/55 px-2 pt-[calc(var(--site-nav-height,2.75rem)+0.5rem)] pb-[calc(var(--site-footer-height,2.5rem)+0.5rem)] backdrop-blur-sm phone-landscape:px-2.5! phone-landscape:pt-[calc(var(--site-nav-height,2.75rem)+0.35rem)]! phone-landscape:pb-[0.35rem]! sm:px-5 sm:pt-[calc(var(--site-nav-height,2.75rem)+3vh)] sm:pb-[3vh]"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
       {sidebarSlot ? (
         <div
-          className="flex h-[calc(100dvh-var(--site-nav-height,2.75rem)-6vh)] w-full max-w-[1240px] flex-col gap-3 lg:flex-row lg:items-stretch lg:gap-4"
+          className="flex h-[calc(100dvh-var(--site-nav-height,2.75rem)-var(--site-footer-height,2.5rem)-1rem)] w-full max-w-[1240px] flex-col gap-2 phone-landscape:h-[calc(100dvh-var(--site-nav-height,2.75rem)-0.75rem)]! phone-landscape:gap-1.5! sm:h-[calc(100dvh-var(--site-nav-height,2.75rem)-6vh)] sm:gap-3 lg:flex-row lg:items-stretch lg:gap-4"
           onClick={(e) => {
             if (e.target === e.currentTarget) onClose();
           }}
         >
-          <div className="grid shrink-0 grid-cols-2 gap-1 rounded-xl border border-line bg-surface/95 p-1 shadow-[var(--shadow-sm)] lg:hidden">
+          <div className="flex shrink-0 items-center gap-1.5 lg:hidden">
+            <div className="grid flex-1 grid-cols-2 gap-1 rounded-xl border border-line bg-surface/95 p-1 shadow-[var(--shadow-sm)]">
+              <button
+                type="button"
+                onClick={() => {
+                  setMobilePane("picker");
+                  setCustomOpen(false);
+                }}
+                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                  mobilePane === "picker"
+                    ? "bg-brand text-brand-fg shadow-2xs"
+                    : "text-ink-muted hover:text-ink"
+                }`}
+              >
+                Add course
+              </button>
+              <button
+                type="button"
+                onClick={() => setMobilePane("requirements")}
+                className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                  mobilePane === "requirements"
+                    ? "bg-brand text-brand-fg shadow-2xs"
+                    : "text-ink-muted hover:text-ink"
+                }`}
+              >
+                What you need
+              </button>
+            </div>
             <button
               type="button"
-              onClick={() => setMobilePane("picker")}
-              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                mobilePane === "picker"
-                  ? "bg-brand text-brand-fg shadow-2xs"
-                  : "text-ink-muted hover:text-ink"
-              }`}
+              onClick={onClose}
+              aria-label="Close"
+              className="inline-flex w-10 shrink-0 self-stretch items-center justify-center rounded-xl border border-line bg-surface/95 text-lg leading-none text-ink-muted shadow-[var(--shadow-sm)] transition-colors hover:bg-surface-subtle hover:text-ink focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none"
             >
-              Add course
-            </button>
-            <button
-              type="button"
-              onClick={() => setMobilePane("requirements")}
-              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                mobilePane === "requirements"
-                  ? "bg-brand text-brand-fg shadow-2xs"
-                  : "text-ink-muted hover:text-ink"
-              }`}
-            >
-              What you need
+              ×
             </button>
           </div>
 
           <div
             className={`${
               mobilePane === "picker" ? "flex" : "hidden lg:flex"
-            } min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-[var(--shadow-lg)]`}
+            } min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-[var(--shadow-lg)] phone-landscape:overflow-y-auto! phone-landscape:overscroll-contain`}
           >
             {pickerCardContent}
           </div>
@@ -1486,7 +1575,7 @@ export function CoursePickerModal({
           </div>
         </div>
       ) : (
-        <div className="flex max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-6vh)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-[var(--shadow-lg)]">
+        <div className="flex max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-var(--site-footer-height,2.5rem)-1rem)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-line bg-surface shadow-[var(--shadow-lg)] phone-landscape:max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-0.75rem)]! phone-landscape:overflow-y-auto! phone-landscape:overscroll-contain sm:max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-6vh)]">
           {pickerCardContent}
         </div>
       )}

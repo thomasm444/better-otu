@@ -18,7 +18,7 @@ export default function CampusMapPage() {
       />
       <Suspense
         fallback={
-          <div className="flex h-[calc(100dvh-var(--site-nav-height,2.75rem)-var(--site-footer-height,2rem))] w-full items-center justify-center bg-canvas text-sm font-medium text-ink-secondary">
+          <div className="flex h-[calc(100dvh-var(--site-nav-height,2.75rem)-var(--site-footer-height,2.5rem))] w-full items-center justify-center bg-canvas text-sm font-medium text-ink-secondary">
             Loading campus map...
           </div>
         }

@@ -4,6 +4,7 @@ import type { User } from "@supabase/supabase-js";
 import React, {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -367,6 +368,7 @@ export function DegreePlannerClient({
 
   const [picker, setPicker] = useState<PickerState | null>(null);
   const [pickerTransferMode, setPickerTransferMode] = useState(false);
+  const [pickerOpenSeq, setPickerOpenSeq] = useState(0);
   const [selectedCourse, setSelectedCourse] = useState<{
     code: string;
     termIndex: number;
@@ -440,6 +442,43 @@ export function DegreePlannerClient({
   const pendingSaveRef = useRef<Parameters<typeof upsertDegreePlan>[1] | null>(
     null,
   );
+
+  const mobileTabScrollRef = useRef<{
+    plan: number | null;
+    requirements: number | null;
+  }>({ plan: null, requirements: null });
+  const pendingMobileScrollRef = useRef<number | null>(null);
+
+  const handleSwitchMobileTab = useCallback(
+    (nextTab: "plan" | "requirements") => {
+      if (nextTab === mobileTab) return;
+      if (typeof window !== "undefined") {
+        mobileTabScrollRef.current[mobileTab] = window.scrollY;
+        const headerBottomY = headerRef.current?.offsetHeight ?? 0;
+        const savedTarget = mobileTabScrollRef.current[nextTab];
+        if (savedTarget !== null) {
+          pendingMobileScrollRef.current = savedTarget;
+        } else if (window.scrollY > headerBottomY) {
+          pendingMobileScrollRef.current = headerBottomY;
+        } else {
+          pendingMobileScrollRef.current = window.scrollY;
+        }
+      }
+      setMobileTab(nextTab);
+    },
+    [mobileTab],
+  );
+
+  useLayoutEffect(() => {
+    if (pendingMobileScrollRef.current === null) return;
+    const targetY = pendingMobileScrollRef.current;
+    pendingMobileScrollRef.current = null;
+    window.scrollTo({ top: targetY, behavior: "instant" });
+  }, [mobileTab]);
+
+  useEffect(() => {
+    mobileTabScrollRef.current = { plan: null, requirements: null };
+  }, [program?.program_id]);
 
   useEffect(() => {
     programRef.current = program;
@@ -2508,6 +2547,7 @@ export function DegreePlannerClient({
         onPickBucket={(bucketKey) => {
           const target = resolveTargetSlot(true);
           setPickerTransferMode(false);
+          setPickerOpenSeq((n) => n + 1);
           setPicker({
             termIndex: target.termIndex,
             slotIndex: target.slotIndex,
@@ -2518,6 +2558,7 @@ export function DegreePlannerClient({
         onOpenTransferPicker={() => {
           const free = firstFreeSlot(terms);
           setPickerTransferMode(true);
+          setPickerOpenSeq((n) => n + 1);
           setPicker({
             termIndex: free.termIndex,
             slotIndex: free.slotIndex,
@@ -2537,6 +2578,7 @@ export function DegreePlannerClient({
         onPickMinorBucket={(bucketKey) => {
           const target = resolveTargetSlot(false);
           setPickerTransferMode(false);
+          setPickerOpenSeq((n) => n + 1);
           setPicker({
             termIndex: target.termIndex,
             slotIndex: target.slotIndex,
@@ -2548,6 +2590,7 @@ export function DegreePlannerClient({
         onOpenMinorSearch={(initialQuery) => {
           const target = resolveTargetSlot(false);
           setPickerTransferMode(false);
+          setPickerOpenSeq((n) => n + 1);
           setPicker({
             termIndex: target.termIndex,
             slotIndex: target.slotIndex,
@@ -2571,7 +2614,7 @@ export function DegreePlannerClient({
       {/* Sticky Top Header */}
       <header
         ref={headerRef}
-        className="sticky top-[var(--site-nav-height,2.75rem)] z-40 border-b border-line-subtle bg-surface/95 px-4 py-3 backdrop-blur-sm"
+        className="relative z-40 border-b border-line-subtle bg-surface px-4 py-3 phone-landscape:relative! phone-landscape:top-auto! md:sticky md:top-[var(--site-nav-height,2.75rem)] md:bg-surface/95 md:backdrop-blur-sm"
       >
         <div className="mx-auto flex max-w-[1440px] flex-col gap-3 md:flex-row md:flex-wrap md:items-start md:justify-between lg:flex-nowrap">
           {/* Left Side: Plans + (+); Plan name; Start year */}
@@ -3485,29 +3528,31 @@ export function DegreePlannerClient({
       {/* Main Layout */}
       <main className="mx-auto max-w-[1440px] p-4">
         {program && model && (
-          <div className="mb-3 grid grid-cols-2 rounded-xl border border-line bg-surface p-1 text-xs font-medium shadow-[var(--shadow-sm)] md:hidden">
-            <button
-              type="button"
-              onClick={() => setMobileTab("plan")}
-              className={`rounded-lg py-2 transition-colors ${
-                mobileTab === "plan"
-                  ? "bg-brand text-brand-fg"
-                  : "text-ink-muted hover:text-ink"
-              }`}
-            >
-              Plan
-            </button>
-            <button
-              type="button"
-              onClick={() => setMobileTab("requirements")}
-              className={`rounded-lg py-2 transition-colors ${
-                mobileTab === "requirements"
-                  ? "bg-brand text-brand-fg"
-                  : "text-ink-muted hover:text-ink"
-              }`}
-            >
-              Requirements
-            </button>
+          <div className="sticky top-[var(--site-nav-height,2.75rem)] z-20 -mx-4 -mt-2 mb-3 border-b border-line-subtle bg-canvas px-4 py-2 md:hidden">
+            <div className="grid grid-cols-2 rounded-xl border border-line bg-surface p-1 text-xs font-medium shadow-[var(--shadow-sm)]">
+              <button
+                type="button"
+                onClick={() => handleSwitchMobileTab("plan")}
+                className={`rounded-lg py-2 transition-colors ${
+                  mobileTab === "plan"
+                    ? "bg-brand text-brand-fg"
+                    : "text-ink-muted hover:text-ink"
+                }`}
+              >
+                Plan
+              </button>
+              <button
+                type="button"
+                onClick={() => handleSwitchMobileTab("requirements")}
+                className={`rounded-lg py-2 transition-colors ${
+                  mobileTab === "requirements"
+                    ? "bg-brand text-brand-fg"
+                    : "text-ink-muted hover:text-ink"
+                }`}
+              >
+                Requirements
+              </button>
+            </div>
           </div>
         )}
 
@@ -4195,7 +4240,7 @@ export function DegreePlannerClient({
             <div
               className={
                 sidebarOpen
-                  ? `relative md:sticky md:top-[calc(var(--site-nav-height,2.75rem)+var(--planner-header-h,152px)+12px)] ${
+                  ? `relative phone-landscape:top-[calc(var(--site-nav-height,2.75rem)+0.5rem)]! md:sticky md:top-[calc(var(--site-nav-height,2.75rem)+var(--planner-header-h,152px)+12px)] ${
                       mobileTab === "requirements" ? "block" : "hidden md:block"
                     }`
                   : mobileTab === "requirements"
@@ -4206,7 +4251,7 @@ export function DegreePlannerClient({
               {renderRequirementsSidebar(false)}
             </div>
             {!sidebarOpen && (
-              <div className="hidden justify-end md:sticky md:top-[calc(var(--site-nav-height,2.75rem)+var(--planner-header-h,152px)+12px)] md:flex">
+              <div className="hidden justify-end phone-landscape:top-[calc(var(--site-nav-height,2.75rem)+0.5rem)]! md:sticky md:top-[calc(var(--site-nav-height,2.75rem)+var(--planner-header-h,152px)+12px)] md:flex">
                 <button
                   type="button"
                   aria-expanded={false}
@@ -4236,7 +4281,7 @@ export function DegreePlannerClient({
       {/* Course Picker Modal */}
       {picker && (
         <CoursePickerModal
-          key={`${picker.termIndex}:${picker.slotIndex}:${picker.bucketKey ?? ""}:${picker.modelSource ?? "major"}:${picker.initialQuery ?? ""}:${pickerTransferMode}`}
+          key={`${picker.termIndex}:${picker.slotIndex}:${picker.bucketKey ?? ""}:${picker.modelSource ?? "major"}:${picker.initialQuery ?? ""}:${pickerTransferMode}:${pickerOpenSeq}`}
           picker={picker}
           initialTransferMode={pickerTransferMode}
           program={picker.modelSource === "minor" ? minorProgram : program}
@@ -4389,7 +4434,7 @@ export function DegreePlannerClient({
 
       {/* Toast */}
       {toastMsg && (
-        <div className="fixed bottom-5 left-1/2 z-[1400] -translate-x-1/2 rounded-lg border border-line-strong bg-brand px-4 py-2 text-xs font-medium text-brand-fg shadow-[var(--shadow-lg)]">
+        <div className="fixed bottom-[calc(var(--site-footer-height,2.5rem)+0.75rem)] left-1/2 z-[1400] -translate-x-1/2 rounded-lg border border-line-strong bg-brand px-4 py-2 text-xs font-medium text-brand-fg shadow-[var(--shadow-lg)]">
           {toastMsg}
         </div>
       )}

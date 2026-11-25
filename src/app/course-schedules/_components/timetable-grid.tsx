@@ -550,6 +550,8 @@ export function WeekScheduleGrid({
   const [selectedCourse, setSelectedCourse] = useState<ScheduleBlock | null>(
     null,
   );
+  const ignoreNextModalClickRef = useRef(false);
+  const selectedModalBackdropDownRef = useRef(false);
   const [pendingRemoval, setPendingRemoval] = useState<
     | { kind: "block"; block: ScheduleBlock }
     | { kind: "blockedSlot"; slot: BlockedTimeSlot }
@@ -899,8 +901,13 @@ export function WeekScheduleGrid({
       return;
     if ((e.target as HTMLElement).closest("[data-no-drag='true']")) return;
 
+    const pointerId = e.pointerId;
+    const blockEl = e.currentTarget;
     const startX = e.clientX;
     const startY = e.clientY;
+    const startScrollX = window.scrollX;
+    const startScrollY = window.scrollY;
+    const moveThreshold = e.pointerType === "touch" ? 10 : 6;
     const comp =
       block.component ?? (block.type as CourseComponentType | undefined);
     const course = courseMap?.get(block.courseCode);
@@ -936,6 +943,7 @@ export function WeekScheduleGrid({
       }
     }
 
+    let hasMoved = false;
     let isDragging = false;
     let hasShownDragState = false;
     let currentHoveredCrn: string | null = null;
@@ -997,8 +1005,12 @@ export function WeekScheduleGrid({
     };
 
     const onMove = (ev: PointerEvent) => {
+      if (ev.pointerId !== pointerId) return;
+      if (Math.hypot(ev.clientX - startX, ev.clientY - startY) >= moveThreshold) {
+        hasMoved = true;
+      }
       if (!isDragging) {
-        if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < 6) return;
+        if (!hasMoved) return;
         if (!canDrag || ghosts.length === 0) return;
         isDragging = true;
       }
@@ -1025,15 +1037,39 @@ export function WeekScheduleGrid({
     const cleanup = () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("pointercancel", onUp);
+      window.removeEventListener("pointercancel", onCancel);
       window.removeEventListener("touchmove", preventTouchScroll);
       cleanupDragRef.current = null;
     };
 
-    const onUp = () => {
+    const onCancel = (ev: PointerEvent) => {
+      if (ev.pointerId !== pointerId) return;
+      cleanup();
+      if (isDragging) {
+        setDragCourse(null);
+      }
+    };
+
+    const onUp = (ev: PointerEvent) => {
+      if (ev.pointerId !== pointerId) return;
       cleanup();
       if (!isDragging) {
-        setSelectedCourse(block);
+        const scrolled =
+          Math.abs(window.scrollX - startScrollX) > 4 ||
+          Math.abs(window.scrollY - startScrollY) > 4;
+        const movedAtRelease =
+          Math.hypot(ev.clientX - startX, ev.clientY - startY) >= moveThreshold;
+        const rect = blockEl.getBoundingClientRect();
+        const stillOnBlock =
+          ev.clientX >= rect.left &&
+          ev.clientX <= rect.right &&
+          ev.clientY >= rect.top &&
+          ev.clientY <= rect.bottom;
+        if (!hasMoved && !movedAtRelease && !scrolled && stillOnBlock) {
+          ignoreNextModalClickRef.current = true;
+          selectedModalBackdropDownRef.current = false;
+          setSelectedCourse(block);
+        }
         return;
       }
       setDragCourse(null);
@@ -1051,7 +1087,7 @@ export function WeekScheduleGrid({
     cleanupDragRef.current = cleanup;
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
-    window.addEventListener("pointercancel", onUp);
+    window.addEventListener("pointercancel", onCancel);
     if (canDrag && ghosts.length > 0) {
       window.addEventListener("touchmove", preventTouchScroll, {
         passive: false,
@@ -1355,8 +1391,13 @@ export function WeekScheduleGrid({
     if ((e.target as HTMLElement).closest("[data-no-drag='true']")) return;
     e.stopPropagation();
 
+    const pointerId = e.pointerId;
+    const blockEl = e.currentTarget;
     const startX = e.clientX;
     const startY = e.clientY;
+    const startScrollX = window.scrollX;
+    const startScrollY = window.scrollY;
+    const moveThreshold = e.pointerType === "touch" ? 10 : 4;
     const initialCoords = getPointerGridCoords(e.clientX, e.clientY);
     const origStart = parseTimeToMinutes(block.startTime);
     const origEnd = parseTimeToMinutes(block.endTime);
@@ -1365,12 +1406,17 @@ export function WeekScheduleGrid({
       ? Math.max(0, Math.min(duration, initialCoords.rawMinutes - origStart))
       : 0;
 
+    let hasMoved = false;
     let isDragging = false;
     let nextBlock: ScheduleBlock = { ...block };
 
     const onMove = (ev: PointerEvent) => {
+      if (ev.pointerId !== pointerId) return;
+      if (Math.hypot(ev.clientX - startX, ev.clientY - startY) >= moveThreshold) {
+        hasMoved = true;
+      }
       if (!isDragging) {
-        if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < 4) return;
+        if (!hasMoved) return;
         isDragging = true;
         setHiddenCustomId(block.id);
       }
@@ -1397,17 +1443,46 @@ export function WeekScheduleGrid({
     const cleanup = () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("pointercancel", onUp);
+      window.removeEventListener("pointercancel", onCancel);
       window.removeEventListener("touchmove", preventTouchScroll);
       cleanupDragRef.current = null;
     };
 
-    const onUp = () => {
+    const onCancel = (ev: PointerEvent) => {
+      if (ev.pointerId !== pointerId) return;
+      cleanup();
+      if (isDragging) {
+        setHiddenCustomId(null);
+        setDragCustomPreviews([]);
+      }
+    };
+
+    const onUp = (ev: PointerEvent) => {
+      if (ev.pointerId !== pointerId) return;
       cleanup();
       setHiddenCustomId(null);
       setDragCustomPreviews([]);
       if (!isDragging) {
-        if (mode === "move") {
+        const scrolled =
+          Math.abs(window.scrollX - startScrollX) > 4 ||
+          Math.abs(window.scrollY - startScrollY) > 4;
+        const movedAtRelease =
+          Math.hypot(ev.clientX - startX, ev.clientY - startY) >= moveThreshold;
+        const rect = blockEl.getBoundingClientRect();
+        const stillOnBlock =
+          ev.clientX >= rect.left &&
+          ev.clientX <= rect.right &&
+          ev.clientY >= rect.top &&
+          ev.clientY <= rect.bottom;
+        if (
+          mode === "move" &&
+          !hasMoved &&
+          !movedAtRelease &&
+          !scrolled &&
+          stillOnBlock
+        ) {
+          ignoreNextModalClickRef.current = true;
+          selectedModalBackdropDownRef.current = false;
           setSelectedCourse(block);
         }
         return;
@@ -1421,7 +1496,7 @@ export function WeekScheduleGrid({
     cleanupDragRef.current = cleanup;
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
-    window.addEventListener("pointercancel", onUp);
+    window.addEventListener("pointercancel", onCancel);
     window.addEventListener("touchmove", preventTouchScroll, { passive: false });
   };
 
@@ -1738,7 +1813,7 @@ export function WeekScheduleGrid({
           <div
             ref={gridBodyRef}
             onPointerDown={startCreateBlockedDrag}
-            className={`grid flex-1 ${getGridColsClass(visibleDays.length)} divide-x divide-line-subtle ${
+            className={`isolate grid flex-1 ${getGridColsClass(visibleDays.length)} divide-x divide-line-subtle ${
               isEditMode && (isBlockingMode || isCustomBlockDragMode)
                 ? "touch-none select-none"
                 : ""
@@ -2431,8 +2506,28 @@ export function WeekScheduleGrid({
       {selectedCourse && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm"
+          onPointerDownCapture={(e) => {
+            ignoreNextModalClickRef.current = false;
+            selectedModalBackdropDownRef.current = e.target === e.currentTarget;
+          }}
+          onKeyDownCapture={() => {
+            ignoreNextModalClickRef.current = false;
+          }}
+          onClickCapture={(e) => {
+            if (ignoreNextModalClickRef.current) {
+              ignoreNextModalClickRef.current = false;
+              e.stopPropagation();
+              e.preventDefault();
+            }
+          }}
           onClick={(e) => {
-            if (e.target === e.currentTarget) setSelectedCourse(null);
+            if (
+              e.target === e.currentTarget &&
+              selectedModalBackdropDownRef.current
+            ) {
+              setSelectedCourse(null);
+            }
+            selectedModalBackdropDownRef.current = false;
           }}
         >
           <div className="w-full max-w-sm rounded-2xl border border-slate-200/90 bg-white p-5 shadow-2xl dark:border-slate-700 dark:bg-slate-900">

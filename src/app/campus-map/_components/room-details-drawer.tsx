@@ -213,7 +213,7 @@ export function RoomDetailsDrawer({
       onMouseDown={(e) => e.stopPropagation()}
       onTouchStart={(e) => e.stopPropagation()}
       onWheel={(e) => e.stopPropagation()}
-      className="absolute inset-x-2 bottom-[calc(max(0.75rem,env(safe-area-inset-bottom))+3.5rem)] top-auto z-[1050] flex max-h-[min(60dvh,calc(100%-4.5rem))] flex-col rounded-2xl border border-line bg-surface/98 text-ink shadow-[var(--shadow-lg)] backdrop-blur-md lg:inset-x-auto lg:bottom-0 lg:left-0 lg:top-0 lg:max-h-none lg:w-full lg:max-w-[360px] lg:rounded-none lg:border-r lg:border-t-0"
+      className="absolute inset-x-2 bottom-[calc(max(0.75rem,env(safe-area-inset-bottom))+3.5rem)] top-auto z-[1050] flex max-h-[min(60dvh,calc(100%-4.5rem))] flex-col rounded-2xl border border-line bg-surface/98 text-ink shadow-[var(--shadow-lg)] backdrop-blur-md phone-landscape:inset-x-auto phone-landscape:bottom-0 phone-landscape:left-0 phone-landscape:top-0 phone-landscape:max-h-none phone-landscape:w-[min(50%,380px)] phone-landscape:rounded-none phone-landscape:border-y-0 phone-landscape:border-l-0 phone-landscape:border-r lg:inset-x-auto lg:bottom-0 lg:left-0 lg:top-0 lg:max-h-none lg:w-full lg:max-w-[360px] lg:rounded-none lg:border-r lg:border-t-0"
     >
       {/* Mobile Bottom Sheet Handle (tap or drag to collapse/expand) */}
       <button
@@ -225,14 +225,14 @@ export function RoomDetailsDrawer({
         onClick={handleHandleClick}
         aria-expanded={!isMinimized}
         aria-label={isMinimized ? "Expand room details" : "Minimize room details"}
-        className="flex w-full shrink-0 cursor-pointer touch-none select-none items-center justify-center pb-1 pt-2 lg:hidden"
+        className="flex w-full shrink-0 cursor-pointer touch-none select-none items-center justify-center pb-1 pt-2 phone-landscape:hidden lg:hidden"
       >
         <span className="h-1 w-10 rounded-full bg-slate-300 dark:bg-zinc-700" />
       </button>
 
       {/* Mobile Minimized Summary Bar */}
       {isMinimized && (
-        <div className="flex items-center justify-between gap-2 px-3.5 pb-2 pt-0.5 lg:hidden">
+        <div className="flex items-center justify-between gap-2 px-3.5 pb-2 pt-0.5 phone-landscape:hidden lg:hidden">
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <h2 className="truncate text-sm font-bold tracking-tight text-slate-900 dark:text-zinc-50">
               {roomCode}
@@ -304,12 +304,12 @@ export function RoomDetailsDrawer({
       {/* Drawer Header */}
       <div
         className={`${
-          isMinimized ? "hidden lg:flex" : "flex"
-        } items-start justify-between gap-3 border-b border-slate-200 px-4 py-3 lg:py-3.5 dark:border-zinc-800`}
+          isMinimized ? "hidden lg:flex phone-landscape:flex" : "flex"
+        } items-start justify-between gap-3 border-b border-slate-200 px-4 py-3 phone-landscape:gap-2 phone-landscape:px-3 phone-landscape:py-2 lg:py-3.5 dark:border-zinc-800`}
       >
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <h2 className="truncate text-lg font-bold tracking-tight text-slate-900 dark:text-zinc-50">
+            <h2 className="truncate text-lg font-bold tracking-tight text-slate-900 phone-landscape:text-base dark:text-zinc-50">
               {roomCode}
             </h2>
             {p.isLibraryRoom && (
@@ -358,12 +358,12 @@ export function RoomDetailsDrawer({
       {/* Scrollable Body */}
       <div
         className={`${
-          isMinimized ? "hidden lg:block" : "block"
-        } flex-1 space-y-4 overflow-y-auto px-4 py-3.5`}
+          isMinimized ? "hidden lg:block phone-landscape:block" : "block"
+        } flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-3.5 phone-landscape:space-y-2.5 phone-landscape:px-3 phone-landscape:py-2.5`}
       >
         {/* Current Availability Card */}
         <div
-          className={`rounded-xl border p-3 ${
+          className={`rounded-xl border p-3 phone-landscape:p-2 ${
             !status.isScheduled
               ? "border-slate-200 bg-slate-50 dark:border-zinc-700 dark:bg-zinc-800/60"
               : status.isBuildingContainer
@@ -473,8 +473,8 @@ export function RoomDetailsDrawer({
         </div>
 
         {/* Room Metadata Grid */}
-        <div className="grid grid-cols-2 gap-2 text-xs">
-          <div className="rounded-lg border border-line-subtle bg-surface-subtle p-2.5">
+        <div className="grid grid-cols-2 gap-2 text-xs phone-landscape:gap-1.5 phone-landscape:text-[11px]">
+          <div className="rounded-lg border border-line-subtle bg-surface-subtle p-2.5 phone-landscape:p-1.5">
             <div className="text-[11px] font-medium text-ink-muted">
               Floor
             </div>
@@ -486,7 +486,7 @@ export function RoomDetailsDrawer({
             </div>
           </div>
 
-          <div className="rounded-lg border border-line-subtle bg-surface-subtle p-2.5">
+          <div className="rounded-lg border border-line-subtle bg-surface-subtle p-2.5 phone-landscape:p-1.5">
             <div className="text-[11px] font-medium text-ink-muted">
               Capacity
             </div>
@@ -500,7 +500,7 @@ export function RoomDetailsDrawer({
             )}
           </div>
 
-          <div className="rounded-lg border border-line-subtle bg-surface-subtle p-2.5">
+          <div className="rounded-lg border border-line-subtle bg-surface-subtle p-2.5 phone-landscape:p-1.5">
             <div className="text-[11px] font-medium text-ink-muted">
               Room type
             </div>
@@ -509,7 +509,7 @@ export function RoomDetailsDrawer({
             </div>
           </div>
 
-          <div className="rounded-lg border border-line-subtle bg-surface-subtle p-2.5">
+          <div className="rounded-lg border border-line-subtle bg-surface-subtle p-2.5 phone-landscape:p-1.5">
             <div className="text-[11px] font-medium text-ink-muted">
               {p.configType ? "Configuration" : "Building"}
             </div>
@@ -677,8 +677,8 @@ export function RoomDetailsDrawer({
       {/* Primary Action Footer */}
       <div
         className={`${
-          isMinimized ? "hidden lg:block" : "block"
-        } border-t border-slate-200 bg-slate-50/90 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] lg:py-3 dark:border-zinc-800 dark:bg-zinc-900/90`}
+          isMinimized ? "hidden lg:block phone-landscape:block" : "block"
+        } border-t border-slate-200 bg-slate-50/90 px-4 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] phone-landscape:px-3 phone-landscape:py-2 lg:py-3 dark:border-zinc-800 dark:bg-zinc-900/90`}
       >
         {activeBookingUuid ? (
           <div className="flex gap-2">

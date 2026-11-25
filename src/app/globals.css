@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
 @custom-variant dark (&:where(.dark, .dark *));
+@custom-variant phone-landscape (@media (orientation: landscape) and (max-height: 540px));
 
 :root {
   /* Core surfaces (cool navy/teal-tinted neutral ramp) */
@@ -56,8 +57,14 @@
   --background: var(--bg-canvas);
   --foreground: var(--text-primary);
   --site-nav-height: 2.75rem;
-  --site-footer-height: 2rem;
+  --site-footer-height: 2.5rem;
   color-scheme: light;
+}
+
+@media (min-width: 640px) {
+  :root {
+    --site-footer-height: 2rem;
+  }
 }
 
 @theme inline {
@@ -152,9 +159,11 @@ html.dark {
   color-scheme: dark;
 }
 
-html {
-  scrollbar-gutter: stable;
-  overflow-y: scroll;
+@media (min-width: 768px) {
+  html {
+    scrollbar-gutter: stable;
+    overflow-y: scroll;
+  }
 }
 
 body {

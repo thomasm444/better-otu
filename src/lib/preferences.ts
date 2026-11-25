@@ -56,3 +56,18 @@ export function setHomeViewPreference(view: HomeViewMode): void {
     );
   }
 }
+
+export const PHONE_VIEWPORT_MEDIA_QUERY =
+  "(max-width: 767px), (orientation: landscape) and (max-height: 540px)";
+
+export function isPhoneViewport(): boolean {
+  if (typeof window === "undefined") return false;
+  return window.matchMedia(PHONE_VIEWPORT_MEDIA_QUERY).matches;
+}
+
+export function subscribePhoneViewport(onChange: () => void): () => void {
+  if (typeof window === "undefined") return () => {};
+  const mq = window.matchMedia(PHONE_VIEWPORT_MEDIA_QUERY);
+  mq.addEventListener("change", onChange);
+  return () => mq.removeEventListener("change", onChange);
+}

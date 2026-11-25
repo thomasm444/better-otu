@@ -25,7 +25,7 @@ export default function CourseSchedulesPage({
 }) {
   return (
     <div className="flex flex-1 flex-col bg-canvas font-sans text-ink">
-      <header className="border-b border-line-subtle bg-surface/95 px-4 py-2.5 backdrop-blur-sm sm:sticky sm:top-[var(--site-nav-height,2.75rem)] sm:z-40 sm:px-6 sm:py-3 lg:px-8">
+      <header className="border-b border-line-subtle bg-surface/95 px-4 py-2.5 backdrop-blur-sm sm:px-6 sm:py-3 lg:sticky lg:top-[var(--site-nav-height,2.75rem)] lg:z-40 lg:px-8">
         <div className="mx-auto flex max-w-[1700px] flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-base font-semibold tracking-tight text-ink sm:text-xl">

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useSyncExternalStore } from "react";
 
 import {
   HOME_VIEW_CHANGE_EVENT,
@@ -9,8 +9,10 @@ import {
   THEME_STORAGE_KEY,
   getEffectiveTheme,
   getStoredHomeView,
+  isPhoneViewport,
   setHomeViewPreference,
   setThemePreference,
+  subscribePhoneViewport,
   type HomeViewMode,
   type ThemeMode,
 } from "@/lib/preferences";
@@ -18,6 +20,12 @@ import {
 export function ProfilePreferencesCard() {
   const [theme, setTheme] = useState<ThemeMode>("light");
   const [homeView, setHomeView] = useState<HomeViewMode>("classic");
+  const isPhone = useSyncExternalStore(
+    subscribePhoneViewport,
+    isPhoneViewport,
+    () => false,
+  );
+  const effectiveHomeView: HomeViewMode = isPhone ? "classic" : homeView;
 
   useEffect(() => {
     const sync = () => {
@@ -99,20 +107,23 @@ export function ProfilePreferencesCard() {
         </div>
       </div>
 
-      {/* Home Layout: Classic / Stacked */}
+      {/* Home Layout: Classic / Stacked (Desktop/tablet toggle; always Classic on phone) */}
       <div className="flex items-center justify-between gap-4 px-5 py-4">
         <div className="min-w-0">
           <p className="text-xs text-ink-muted">
             Home layout
           </p>
           <p className="mt-0.5 text-sm font-medium text-ink">
-            {homeView === "stacked" ? "Stacked" : "Classic"}
+            {effectiveHomeView === "stacked" ? "Stacked" : "Classic"}
           </p>
         </div>
+        <span className="inline-flex shrink-0 items-center rounded-lg border border-line bg-surface-subtle px-2.5 py-1 text-xs font-medium text-ink-secondary md:hidden phone-landscape:inline-flex!">
+          Classic
+        </span>
         <div
           role="radiogroup"
           aria-label="Home layout"
-          className="inline-flex shrink-0 items-center rounded-lg border border-line bg-surface-subtle p-0.5 text-xs font-medium"
+          className="hidden shrink-0 items-center rounded-lg border border-line bg-surface-subtle p-0.5 text-xs font-medium md:inline-flex phone-landscape:hidden!"
         >
           {(
             [

@@ -756,11 +756,11 @@ export function RequirementsSidebar({
     <aside
       className={
         inModal
-          ? "flex h-full max-h-full flex-col overflow-y-auto rounded-2xl border border-line bg-surface shadow-[var(--shadow-lg)]"
-          : "overflow-hidden rounded-2xl border border-line bg-surface shadow-[var(--shadow-sm)] md:max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-var(--planner-header-h,152px)-24px)] md:overflow-auto"
+          ? "flex h-full max-h-full flex-col overflow-y-auto overscroll-contain rounded-2xl border border-line bg-surface shadow-[var(--shadow-lg)]"
+          : "overflow-hidden rounded-2xl border border-line bg-surface shadow-[var(--shadow-sm)] phone-landscape:max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-1rem)]! phone-landscape:overflow-auto! md:max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-var(--planner-header-h,152px)-24px)] md:overflow-auto"
       }
     >
-      <div className="sticky top-0 z-10 border-b border-line-subtle bg-surface-subtle/60 px-4 pt-3 pb-2.5 backdrop-blur-sm">
+      <div className="sticky top-0 z-10 border-b border-line-subtle bg-surface-subtle/60 px-4 pt-3 pb-2.5 backdrop-blur-sm phone-landscape:static!">
         <div className="flex items-center justify-between gap-2">
           <h2 className="text-xs font-medium text-ink">
             What you need

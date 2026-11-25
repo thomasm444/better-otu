@@ -1536,7 +1536,7 @@ export function CampusMapView() {
   };
 
   return (
-    <div className="relative flex h-[calc(100dvh-var(--site-nav-height,2.75rem)-var(--site-footer-height,2rem))] w-full flex-col overflow-hidden bg-canvas font-sans text-ink">
+    <div className="relative flex h-[calc(100dvh-var(--site-nav-height,2.75rem)-var(--site-footer-height,2.5rem))] w-full flex-col overflow-hidden overscroll-none bg-canvas font-sans text-ink">
       {/* Compact Top Navigation Bar */}
       <header className="relative z-30 flex w-full flex-wrap items-center gap-x-3 gap-y-2 border-b border-line-subtle bg-surface px-3 py-2 sm:px-4 md:flex-nowrap">
         {/* Left: Title + Campus Switcher Pill Toggle */}
@@ -1757,7 +1757,7 @@ export function CampusMapView() {
               <div
                 role="dialog"
                 aria-label="Campus map menu"
-                className="absolute right-0 top-full z-50 mt-2 max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-var(--site-footer-height,2rem)-4.5rem)] w-80 max-w-[calc(100vw-1.25rem)] overflow-x-hidden overflow-y-auto rounded-2xl border border-line bg-surface p-3 text-xs text-ink shadow-[var(--shadow-lg)] sm:w-[352px]"
+                className="absolute right-0 top-full z-50 mt-2 max-h-[calc(100dvh-var(--site-nav-height,2.75rem)-var(--site-footer-height,2.5rem)-4.5rem)] w-80 max-w-[calc(100vw-1.25rem)] overflow-x-hidden overflow-y-auto rounded-2xl border border-line bg-surface p-3 text-xs text-ink shadow-[var(--shadow-lg)] sm:w-[352px]"
               >
                 {/* Buildings */}
                 <div>
@@ -2076,7 +2076,9 @@ export function CampusMapView() {
           onTouchStart={(e) => e.stopPropagation()}
           onWheel={(e) => e.stopPropagation()}
           className={`absolute left-2.5 top-2.5 z-[1000] flex items-center gap-1.5 rounded-full border border-line bg-surface/95 px-2.5 py-1 text-xs font-medium text-ink shadow-[var(--shadow-md)] backdrop-blur-md lg:bottom-4 lg:top-auto ${
-            selectedFeature ? "lg:left-[376px]" : "lg:left-4"
+            selectedFeature
+              ? "phone-landscape:left-[calc(min(50%,380px)+0.5rem)] lg:left-[376px]"
+              : "lg:left-4"
           }`}
         >
           {isLegendLoading ? (
