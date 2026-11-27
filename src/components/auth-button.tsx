@@ -12,17 +12,24 @@ import { createClient } from "@/lib/supabase/client";
 export function AuthButton({
   compact = false,
   isProfileActive = false,
+  onAuthChange,
 }: {
   compact?: boolean;
   isProfileActive?: boolean;
+  onAuthChange?: (isSignedIn: boolean) => void;
 } = {}) {
   const router = useRouter();
   const profileTriggerRef = useRef<HTMLButtonElement>(null);
+  const onAuthChangeRef = useRef(onAuthChange);
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    onAuthChangeRef.current = onAuthChange;
+  }, [onAuthChange]);
 
   useEffect(() => {
     const supabase = createClient();
@@ -42,6 +49,7 @@ export function AuthButton({
 
       setUser(data.user ?? null);
       setLoading(false);
+      onAuthChangeRef.current?.(Boolean(data.user));
     });
 
     const {
@@ -50,6 +58,7 @@ export function AuthButton({
       if (!active) return;
       setUser(session?.user ?? null);
       setLoading(false);
+      onAuthChangeRef.current?.(Boolean(session?.user));
 
       if (event === "SIGNED_OUT" && window.location.pathname !== "/login") {
         router.replace("/login");

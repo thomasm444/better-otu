@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+
+import { PrivacyPolicyFooterLink } from "./_components/privacy-policy-footer-link";
 
 export const metadata: Metadata = {
   title: "Privacy Policy | Better OTU",
@@ -232,13 +233,7 @@ export default function PrivacyPolicyPage() {
             </section>
 
             <div className="flex items-center border-t border-line-subtle pt-5">
-              <Link
-                href="/"
-                className="inline-flex items-center gap-1.5 rounded-lg bg-brand px-4 py-2 text-xs font-medium text-brand-fg transition-colors hover:bg-brand-hover focus-visible:ring-2 focus-visible:ring-focus focus-visible:outline-none"
-              >
-                <span aria-hidden="true">&larr;</span>
-                <span>Back to Home</span>
-              </Link>
+              <PrivacyPolicyFooterLink />
             </div>
           </div>
         </article>

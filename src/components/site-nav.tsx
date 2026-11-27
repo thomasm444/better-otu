@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useState } from "react";
 import { AuthButton } from "./auth-button";
 
 const NAV_ITEMS = [
@@ -19,15 +20,21 @@ function isActivePath(pathname: string, href: string): boolean {
 
 function NavChrome({
   pathname,
+  isSignedIn = false,
   rightSlot,
 }: {
   pathname: string | null;
+  isSignedIn?: boolean;
   rightSlot: React.ReactNode;
 }) {
   const isHome = pathname === "/";
   const isLoginPage =
     pathname !== null &&
     (pathname === "/login" || pathname.startsWith("/login/"));
+  const isPrivacyPolicy =
+    pathname !== null &&
+    (pathname === "/privacy-policy" || pathname.startsWith("/privacy-policy/"));
+  const hidePrimaryNav = isLoginPage || (isPrivacyPolicy && !isSignedIn);
 
   const brandContent = (
     <>
@@ -62,7 +69,7 @@ function NavChrome({
       <div className="mx-auto flex h-full w-full max-w-[1600px] items-center justify-between gap-2 px-3 sm:px-6">
         {!isHome && (
           <div className="flex min-w-0 flex-1 items-center gap-2 sm:gap-6">
-            {isLoginPage ? (
+            {hidePrimaryNav ? (
               <div className="inline-flex h-7 shrink-0 items-center gap-2 text-xs font-medium leading-none tracking-tight text-ink sm:text-sm">
                 {brandContent}
               </div>
@@ -75,7 +82,7 @@ function NavChrome({
               </Link>
             )}
 
-            {!isLoginPage && (
+            {!hidePrimaryNav && (
               <nav
                 aria-label="Primary navigation"
                 className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
@@ -113,13 +120,21 @@ function NavChrome({
 
 export function SiteNav() {
   const pathname = usePathname();
+  const [isSignedIn, setIsSignedIn] = useState(false);
   const profileActive =
     pathname === "/profile" || pathname.startsWith("/profile/");
 
   return (
     <NavChrome
       pathname={pathname}
-      rightSlot={<AuthButton compact isProfileActive={profileActive} />}
+      isSignedIn={isSignedIn}
+      rightSlot={
+        <AuthButton
+          compact
+          isProfileActive={profileActive}
+          onAuthChange={setIsSignedIn}
+        />
+      }
     />
   );
 }
