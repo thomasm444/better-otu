@@ -60,9 +60,53 @@ export function ProfileDrawer({
     return () => {
       cancelAnimationFrame(raf);
       document.removeEventListener("keydown", onKeyDown);
-      triggerEl?.focus();
+      triggerEl?.focus({ preventScroll: true });
     };
   }, [isOpen, onClose, triggerRef]);
+
+  useEffect(() => {
+    if (!isOpen || typeof window === "undefined") return;
+
+    const html = document.documentElement;
+    const body = document.body;
+
+    // If another modal already locked body scroll, keep html overflow locked without clobbering its scrollY offset.
+    if (body.style.position === "fixed") {
+      const prevHtmlOverflow = html.style.overflow;
+      html.style.overflow = "hidden";
+      return () => {
+        html.style.overflow = prevHtmlOverflow;
+      };
+    }
+
+    const scrollY = window.scrollY;
+    const prevHtmlOverflow = html.style.overflow;
+    const prevBodyOverflow = body.style.overflow;
+    const prevBodyPosition = body.style.position;
+    const prevBodyTop = body.style.top;
+    const prevBodyLeft = body.style.left;
+    const prevBodyRight = body.style.right;
+    const prevBodyWidth = body.style.width;
+
+    html.style.overflow = "hidden";
+    body.style.overflow = "hidden";
+    body.style.position = "fixed";
+    body.style.top = `-${scrollY}px`;
+    body.style.left = "0";
+    body.style.right = "0";
+    body.style.width = "100%";
+
+    return () => {
+      html.style.overflow = prevHtmlOverflow;
+      body.style.overflow = prevBodyOverflow;
+      body.style.position = prevBodyPosition;
+      body.style.top = prevBodyTop;
+      body.style.left = prevBodyLeft;
+      body.style.right = prevBodyRight;
+      body.style.width = prevBodyWidth;
+      window.scrollTo({ top: scrollY, behavior: "instant" });
+    };
+  }, [isOpen]);
 
   useEffect(() => {
     if (!isOpen || payload) return;
@@ -99,7 +143,7 @@ export function ProfileDrawer({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center bg-[#0b1018]/55 p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-[9999] flex items-center justify-center overscroll-contain bg-[#0b1018]/55 p-4 backdrop-blur-sm"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -108,7 +152,7 @@ export function ProfileDrawer({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="flex max-h-[88vh] w-full max-w-lg flex-col overflow-y-auto rounded-2xl border border-line bg-canvas p-5 shadow-[var(--shadow-lg)] sm:p-6"
+        className="flex max-h-[88dvh] w-full max-w-lg flex-col overflow-y-auto overscroll-contain rounded-2xl border border-line bg-canvas p-5 shadow-[var(--shadow-lg)] sm:p-6"
       >
         <div className="flex items-start justify-between gap-4 border-b border-line-subtle pb-4">
           <div className="min-w-0">
